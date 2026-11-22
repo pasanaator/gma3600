@@ -75,6 +75,48 @@ The report does not contain the binary. A matching ELF architecture is necessary
 but does not establish the DDK ABI, firmware, GPU revision, or kernel compatibility.
 Review the report before sharing it; it includes system/library version metadata.
 
+## D2500HN target inventory result
+
+The user supplied the inventory from the running Debian installation on
+2026-11-22. The relevant facts are:
+
+| Item | Observed result | Consequence |
+| --- | --- | --- |
+| Device | Intel `8086:0be1`, revision `09`, bound to gma3600 1.0.4 | Existing display baseline is in use; the SGX silicon revision is still unprobed. |
+| Kernel and userspace | `6.12.117+deb13-amd64`, amd64 userspace | Native applications require 64-bit libraries. |
+| Kernel compat options | `CONFIG_IA32_EMULATION=y`, `CONFIG_COMPAT=y` | A 32-bit process can be investigated without replacing the kernel, provided its loader/libraries and a correct driver compat ABI exist. |
+| Foreign Debian architectures | None enabled | There is no configured i386 multiarch environment yet; this does not prove every possible 32-bit binary is absent. |
+| Graphics libraries in scanned locations | ELF64 x86-64 GL/GLX/EGL/GLES libraries; no verified legacy SGX candidates | Matching Intel DDK userspace remains outstanding. The scan is not an exhaustive filesystem search. |
+| Renderer | Mesa 25.0.7, llvmpipe (LLVM 19.1.7) | `direct rendering: Yes` still describes software rendering in this report. |
+| DRM nodes for this PCI device | `card0` only | Consistent with display-only support; creating a render node is not the missing acceleration implementation. |
+| PCI resources | BAR 0 is 1 MiB; BAR 2 and BAR 3 have zero-sized assignments | Preserve the working display resource handling; do not infer usable SGX mappings from nonexistent BARs. |
+
+The initial legacy target should therefore be a **32-bit offscreen test process
+on the existing amd64 kernel**, contingent on obtaining compatible Intel i386
+libraries and implementing/validating the required kernel bridge. This is a
+research target, not proof that this combination will work. It would not
+accelerate the existing 64-bit desktop by installing 32-bit libraries alone.
+Do not prescribe adding i386 packages until the actual library and dependency
+requirements are known.
+
+The additional bridge audit at the same pinned openpvrsgx commit found that
+`PVRSRV_BRIDGE_PACKAGE` embeds `IMG_HANDLE` fields. In `img_types.h`, kernel
+handles are pointers, while Linux userspace handles can be 32-bit or selected
+64-bit values. `pvr_compat_ioctl` passes private commands onward to `drm_ioctl`;
+that function alone does not translate these private payloads. Audit the full
+bridge and build options for size, alignment, nested pointers, and handle
+translation before making any amd64/i386 compatibility claim. The DDK-version
+ABI option is not by itself proof of Linux 32-on-64 ioctl compatibility.
+
+Historical archive access is an outstanding environment prerequisite. The
+`old-releases.ubuntu.com` request failed at HTTP CONNECT with a proxy 403,
+before reaching the package URL. A draft now adds this hostname to restricted
+network access, preserving the existing package-manager preset. Saving the
+draft does not apply it to the running machine. Once the environment settings
+change is saved/published and access is available, retry the archive lookup,
+locate the authoritative Intel package, and inspect metadata and binaries
+without installing them. Do not infer a missing package from this proxy denial.
+
 ## The next implementation gates
 
 1. **Identify a matching userspace stack.** Record the Intel package version,
@@ -124,6 +166,7 @@ project descriptions being treated as hardware validation.
 * [openpvrsgx build targets at the same commit](https://github.com/openpvrsgx-devgroup/linux_openpvrsgx/blob/4000c3fb6577ecad4800e4fa2695777643bfaf86/drivers/gpu/drm/pvrsgx/Makefile): SGX545/Cedarview target and revision 10141.
 * [Intel 1.7 build file at the same commit](https://github.com/openpvrsgx-devgroup/linux_openpvrsgx/blob/4000c3fb6577ecad4800e4fa2695777643bfaf86/drivers/gpu/drm/pvrsgx/1.7.862890/pvr/Makefile): x86 Cedarview flags and revision 10131.
 * [1.17 Cedarview sysconfig at the same commit](https://github.com/openpvrsgx-devgroup/linux_openpvrsgx/blob/4000c3fb6577ecad4800e4fa2695777643bfaf86/drivers/gpu/drm/pvrsgx/1.17.4948957/eurasia_km/services4/system/cedarview_linux/sysconfig.c): legacy PCI/DRM integration needing review and porting.
+* [1.17 bridge declarations](https://github.com/openpvrsgx-devgroup/linux_openpvrsgx/blob/4000c3fb6577ecad4800e4fa2695777643bfaf86/drivers/gpu/drm/pvrsgx/1.17.4948957/eurasia_km/services4/include/pvr_bridge.h), [handle types](https://github.com/openpvrsgx-devgroup/linux_openpvrsgx/blob/4000c3fb6577ecad4800e4fa2695777643bfaf86/drivers/gpu/drm/pvrsgx/1.17.4948957/eurasia_km/include4/img_types.h), and [DRM compat dispatch](https://github.com/openpvrsgx-devgroup/linux_openpvrsgx/blob/4000c3fb6577ecad4800e4fa2695777643bfaf86/drivers/gpu/drm/pvrsgx/1.17.4948957/eurasia_km/services4/srvkm/env/linux/pvr_drm.c): private ABI layouts need a complete 32/64-bit audit.
 * [Maemo sgx-ddk-um control, commit 6fb7fa24d8aa3d7d97b835b42e464e95bbdf0588](https://github.com/maemo-leste/sgx-ddk-um/blob/6fb7fa24d8aa3d7d97b835b42e464e95bbdf0588/debian/control): ARM-only TI userspace package targets.
 
 Test the inventory parser with:
