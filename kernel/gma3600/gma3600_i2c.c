@@ -33,7 +33,7 @@ static int gma3600_gmbus_wait_ready(struct gma3600_device *gdev)
 }
 
 static int gma3600_gmbus_xfer_read(struct gma3600_device *gdev,
-				   struct i2c_msg *msg, bool is_last)
+				   struct i2c_msg *msg)
 {
 	u16 len = msg->len;
 	u8 *buf = msg->buf;
@@ -41,7 +41,7 @@ static int gma3600_gmbus_xfer_read(struct gma3600_device *gdev,
 	int ret;
 
 	cmd = GMBUS_SW_RDY |
-	      (is_last ? GMBUS_CYCLE_STOP : GMBUS_CYCLE_WAIT) |
+	      GMBUS_CYCLE_WAIT |
 	      ((len & 0x1FF) << GMBUS_BYTE_COUNT_SHIFT) |
 	      ((msg->addr & 0x7F) << GMBUS_SLAVE_ADDR_SHIFT) |
 	      GMBUS_SLAVE_READ;
@@ -66,7 +66,7 @@ static int gma3600_gmbus_xfer_read(struct gma3600_device *gdev,
 }
 
 static int gma3600_gmbus_xfer_write(struct gma3600_device *gdev,
-				    struct i2c_msg *msg, bool is_last)
+				    struct i2c_msg *msg)
 {
 	u16 len = msg->len;
 	u8 *buf = msg->buf;
@@ -74,7 +74,7 @@ static int gma3600_gmbus_xfer_write(struct gma3600_device *gdev,
 	int ret;
 
 	cmd = GMBUS_SW_RDY |
-	      (is_last ? GMBUS_CYCLE_STOP : GMBUS_CYCLE_WAIT) |
+	      GMBUS_CYCLE_WAIT |
 	      ((len & 0x1FF) << GMBUS_BYTE_COUNT_SHIFT) |
 	      ((msg->addr & 0x7F) << GMBUS_SLAVE_ADDR_SHIFT) |
 	      GMBUS_SLAVE_WRITE;
@@ -89,23 +89,23 @@ static int gma3600_gmbus_xfer_write(struct gma3600_device *gdev,
 
 	gma3600_write(gdev, GMBUS1, cmd);
 
+	/* The first word is already queued. A one-byte EDID index write
+	 * completes at WAIT_PHASE, not at another HW_RDY data request.
+	 */
+	buf += min_t(int, len, 4);
+	len -= min_t(int, len, 4);
 	while (len > 0) {
-		int chunk = min_t(int, len, 4);
-		int i;
+		int i, chunk = min_t(int, len, 4);
 
+		val = 0;
+		for (i = 0; i < chunk; i++)
+			val |= (u32)buf[i] << (i * 8);
+		gma3600_write(gdev, GMBUS3, val);
 		ret = gma3600_gmbus_wait_ready(gdev);
 		if (ret)
 			return ret;
-
 		buf += chunk;
 		len -= chunk;
-
-		if (len > 0) {
-			val = 0;
-			for (i = 0; i < 4 && i < len; i++)
-				val |= ((u32)buf[i]) << (i * 8);
-			gma3600_write(gdev, GMBUS3, val);
-		}
 	}
 
 	return 0;
@@ -117,32 +117,53 @@ static int gma3600_gmbus_xfer(struct i2c_adapter *adapter,
 	struct gma3600_gmbus *bus = container_of(adapter, struct gma3600_gmbus, adapter);
 	struct gma3600_device *gdev = bus->gdev;
 	int i, ret = 0;
+	u32 val;
 
+	for (i = 0; i < num; i++) {
+		if (!msgs[i].len || msgs[i].len > GMBUS_BYTE_COUNT_MAX ||
+		    msgs[i].addr > 0x7f ||
+		    (msgs[i].flags & ~(I2C_M_RD | I2C_M_DMA_SAFE)))
+			return -EOPNOTSUPP;
+	}
+	/* All pin pairs share the same hardware controller. */
+	mutex_lock(&gdev->gmbus_lock);
 	/* Select GMBUS pin pair and 100 kHz bus speed */
 	gma3600_write(gdev, GMBUS0, bus->pin | GMBUS_RATE_100KHZ);
 
 	for (i = 0; i < num; i++) {
-		bool is_last = (i == num - 1);
-
 		if (msgs[i].flags & I2C_M_RD)
-			ret = gma3600_gmbus_xfer_read(gdev, &msgs[i], is_last);
+			ret = gma3600_gmbus_xfer_read(gdev, &msgs[i]);
 		else
-			ret = gma3600_gmbus_xfer_write(gdev, &msgs[i], is_last);
+			ret = gma3600_gmbus_xfer_write(gdev, &msgs[i]);
 
+		if (!ret) {
+			ret = read_poll_timeout(gma3600_read, val,
+				val & (GMBUS_HW_WAIT_PHASE | GMBUS_SATOER),
+				10, GMBUS_TIMEOUT_US, false, gdev, GMBUS2);
+			if (!ret && (val & GMBUS_SATOER))
+				ret = -ENXIO;
+		}
 		if (ret)
 			break;
 	}
 
-	/* Clear and reset GMBUS port to idle */
-	gma3600_write(gdev, GMBUS0, GMBUS_PIN_DISABLED);
+	if (!ret) {
+		gma3600_write(gdev, GMBUS1, GMBUS_CYCLE_STOP | GMBUS_SW_RDY);
+		ret = read_poll_timeout(gma3600_read, val, !(val & GMBUS_ACTIVE),
+			10, GMBUS_TIMEOUT_US, false, gdev, GMBUS2);
+	}
+	/* Toggle SW_CLR_INT; leaving it asserted breaks the next transfer. */
 	gma3600_write(gdev, GMBUS1, GMBUS_SW_CLR_INT);
+	gma3600_write(gdev, GMBUS1, 0);
+	gma3600_write(gdev, GMBUS0, GMBUS_PIN_DISABLED);
+	mutex_unlock(&gdev->gmbus_lock);
 
 	return (ret == 0) ? num : ret;
 }
 
 static u32 gma3600_gmbus_functionality(struct i2c_adapter *adapter)
 {
-	return I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL;
+	return I2C_FUNC_I2C;
 }
 
 static const struct i2c_algorithm gma3600_gmbus_algo = {
@@ -176,6 +197,8 @@ int gma3600_i2c_init(struct gma3600_device *gdev)
 		GMA3600_GMBUS_DPB,
 	};
 	int i, ret;
+
+	mutex_init(&gdev->gmbus_lock);
 
 	for (i = 0; i < ARRAY_SIZE(active_pins); i++) {
 		enum gma3600_gmbus_pin pin = active_pins[i];

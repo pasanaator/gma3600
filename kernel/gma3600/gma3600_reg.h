@@ -50,6 +50,7 @@
 
 /* 32-bit PTE format: PA[31:12] | VALID[0] */
 #define GMA3600_PTE_VALID		(1 << 0)
+#define GMA3600_PTE_CACHED		(1 << 3)
 
 /* ================================================================
  * Clock Gating
@@ -497,8 +498,8 @@
 #define PSB_LANE2			0x2320
 #define PSB_LANE3			0x2420
 #define   LANE_PLL_MASK			(0x7u << 20)
-#define   LANE_PLL_ENABLE		(1u << 20)
-#define   LANE_PLL_PIPE(p)		((u32)(p) << 21)
+#define   LANE_PLL_ENABLE		(0x3u << 20)
+#define   LANE_PLL_PIPE(p)		((p) == PIPE_A ? (1u << 21) : 0)
 
 /* ================================================================
  * Fence Registers (X-tiling)

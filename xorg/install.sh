@@ -64,9 +64,11 @@ if command -v dkms >/dev/null 2>&1; then
     DKMS_SRC="/usr/src/gma3600-1.0.0"
     mkdir -p "${DKMS_SRC}"
     cp -r "${KERNEL_SRC_DIR}"/* "${DKMS_SRC}/"
-    dkms add -m gma3600 -v 1.0.0 || true
-    dkms build -m gma3600 -v 1.0.0 || true
-    dkms install -m gma3600 -v 1.0.0 --force || true
+    if ! dkms status -m gma3600 -v 1.0.0 | grep -q .; then
+        dkms add -m gma3600 -v 1.0.0
+    fi
+    dkms build -m gma3600 -v 1.0.0
+    dkms install -m gma3600 -v 1.0.0 --force
 fi
 
 # Configure autoload on boot
@@ -90,12 +92,21 @@ echo "Installed /etc/X11/xorg.conf.d/20-gma3600.conf"
 
 # 5. Load module
 echo -e "\n${BLUE}[5/5] Loading gma3600 module into current kernel...${NC}"
-if lsmod | grep -q gma500_gfx; then
-    echo "Unloading legacy gma500_gfx..."
-    modprobe -r gma500_gfx || true
+if lsmod | grep -q '^gma500_gfx '; then
+    echo "Installed. gma500_gfx currently owns the device; reboot to switch drivers."
+    echo "Do not unload a graphics driver while the desktop is using it."
+    exit 0
 fi
 
-modprobe gma3600 || insmod "${DEST_DIR}/gma3600.ko" || true
+modprobe gma3600
+bound=false
+for device in /sys/bus/pci/drivers/gma3600/????:??:??.?; do
+    if [ -e "$device" ]; then bound=true; break; fi
+done
+if [ "$bound" != true ]; then
+    echo "Module loaded, but no PCI device is bound to gma3600. Check lspci -nnk and journalctl -b -k." >&2
+    exit 1
+fi
 
 echo -e "\n${GREEN}======================================================${NC}"
 echo -e "${GREEN}   Installation Complete!                             ${NC}"

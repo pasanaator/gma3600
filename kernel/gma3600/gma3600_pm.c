@@ -74,7 +74,8 @@ int gma3600_pm_resume(struct device *dev)
 	pci_set_master(pdev);
 
 	/* Re-enable GTT hardware address translation */
-	gma3600_write(gdev, PGETBL_CTL, PGETBL_ENABLED);
+	gma3600_write_post(gdev, PGETBL_CTL,
+			    gdev->gtt.saved_pgetbl_ctl | PGETBL_ENABLED);
 
 	/* Disable legacy VGA hardware plane */
 	gma3600_write(gdev, VGACNTRL, VGA_DISP_DISABLE);

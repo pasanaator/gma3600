@@ -13,6 +13,7 @@ gma3600-y := gma3600_drv.o \
              gma3600_gem.o \
              gma3600_display.o \
              gma3600_dpll.o \
+             gma3600_clock.o \
              gma3600_lvds.o \
              gma3600_crt.o \
              gma3600_hdmi.o \

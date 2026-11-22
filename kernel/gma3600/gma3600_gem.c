@@ -7,6 +7,7 @@
 
 #include <linux/dma-mapping.h>
 #include <linux/mm.h>
+#include <linux/iosys-map.h>
 #include <linux/pagemap.h>
 #include <linux/slab.h>
 #include <linux/version.h>
@@ -61,11 +62,13 @@ static int gma3600_gem_mmap(struct drm_gem_object *gem_obj,
 {
 	vma->vm_ops = &gma3600_gem_vm_ops;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	vm_flags_clear(vma, VM_PFNMAP);
 	vm_flags_set(vma, VM_IO | VM_MIXEDMAP | VM_DONTEXPAND | VM_DONTDUMP);
 #else
+	vma->vm_flags &= ~VM_PFNMAP;
 	vma->vm_flags |= VM_IO | VM_MIXEDMAP | VM_DONTEXPAND | VM_DONTDUMP;
 #endif
-	vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
+	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
 	return 0;
 }
 
@@ -104,8 +107,27 @@ void gma3600_gem_free_object(struct drm_gem_object *gem_obj)
 	kfree(obj);
 }
 
+static int gma3600_gem_vmap(struct drm_gem_object *gem, struct iosys_map *map)
+{
+	struct gma3600_gem_object *obj = to_gma3600_gem(gem);
+
+	if (!obj->vaddr)
+		obj->vaddr = vmap(obj->pages, obj->num_pages, VM_MAP, PAGE_KERNEL);
+	if (!obj->vaddr)
+		return -ENOMEM;
+	iosys_map_set_vaddr(map, obj->vaddr);
+	return 0;
+}
+
+static void gma3600_gem_vunmap(struct drm_gem_object *gem, struct iosys_map *map)
+{
+	/* Keep the mapping until object destruction; concurrent clients share it. */
+}
+
 static const struct drm_gem_object_funcs gma3600_gem_funcs = {
 	.free = gma3600_gem_free_object,
+	.vmap = gma3600_gem_vmap,
+	.vunmap = gma3600_gem_vunmap,
 	.mmap = gma3600_gem_mmap,
 };
 
@@ -203,12 +225,20 @@ int gma3600_gem_dumb_create(struct drm_file *file, struct drm_device *dev,
 {
 	struct gma3600_device *gdev = to_gma3600(dev);
 	struct gma3600_gem_object *obj;
-	u32 pitch, size;
+	u32 pitch;
+	u64 size, row;
 	int ret;
 
 	/* 64-byte aligned stride is required by Intel display engines */
-	pitch = ALIGN(args->width * DIV_ROUND_UP(args->bpp, 8), 64);
-	size = pitch * args->height;
+	if (!args->width || !args->height ||
+	    (args->bpp != 16 && args->bpp != 32))
+		return -EINVAL;
+	row = ALIGN((u64)args->width * (args->bpp / 8), 64);
+	size = row * args->height;
+	if (row > U32_MAX || size > SIZE_MAX - PAGE_SIZE ||
+	    size > gdev->aperture_size)
+		return -EINVAL;
+	pitch = row;
 
 	args->pitch = pitch;
 	args->size = size;

@@ -7,6 +7,8 @@
 
 #include <linux/pci.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/dmi.h>
 
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
@@ -15,12 +17,10 @@ int gma3600_device_init(struct gma3600_device *gdev)
 {
 	struct pci_dev *pdev = gdev->pdev;
 	u32 bsm = 0;
-	u16 gmch_ctrl = 0;
-	u8 gms;
 	int ret;
 
 	/*
-	 * BAR 0: GTTMMADR (MMIO registers 512KB + GTT entries)
+	 * BAR 0: display MMIO registers; the GTT is mapped separately.
 	 */
 	gdev->mmio_phys = pci_resource_start(pdev, 0);
 	gdev->mmio_size = pci_resource_len(pdev, 0);
@@ -59,139 +59,73 @@ int gma3600_device_init(struct gma3600_device *gdev)
 	pci_read_config_dword(pdev, GMA3600_PCI_BSM, &bsm);
 	gdev->gtt.stolen_base = bsm & ~0xFFF;
 
-	/* Determine stolen memory size from GMCH host bridge (PCI 0:0.0) */
+	/* Buffers are allocated from system RAM, not firmware stolen memory. */
 	gdev->gtt.stolen_size = 0;
-	if (gdev->bridge) {
-		pci_read_config_word(gdev->bridge, GMA3600_GMCH_CTRL, &gmch_ctrl);
-		gms = (gmch_ctrl & GMCH_GMS_MASK) >> GMCH_GMS_SHIFT;
-		switch (gms) {
-		case 0x1:
-			gdev->gtt.stolen_size = 32 * 1024 * 1024;
-			break;
-		case 0x2:
-			gdev->gtt.stolen_size = 64 * 1024 * 1024;
-			break;
-		case 0x3:
-			gdev->gtt.stolen_size = 128 * 1024 * 1024;
-			break;
-		case 0x4:
-			gdev->gtt.stolen_size = 256 * 1024 * 1024;
-			break;
-		default:
-			dev_info(&pdev->dev, "Unknown GMS encoding 0x%x, probing fallback\n", gms);
-			break;
-		}
-	}
 
-	if (!gdev->gtt.stolen_size)
-		gdev->gtt.stolen_size = 32 * 1024 * 1024; /* Standard 32MB fallback */
-
-	dev_info(&pdev->dev, "Stolen memory: base 0x%08x, size %u MB\n",
-		 gdev->gtt.stolen_base, gdev->gtt.stolen_size >> 20);
-
-	/* Initialize Graphics Translation Table (GTT) */
-	ret = gma3600_gtt_init(gdev);
-	if (ret) {
-		dev_err(&pdev->dev, "Failed to initialize GTT: %d\n", ret);
-		pci_iounmap(pdev, gdev->mmio);
-		return ret;
-	}
-
-	/* Detect display PLL reference clock (27 MHz vs 96 MHz) and LVDS */
+	/* Read the BIOS clock before shutting down its pipes. A VBT signature
+	 * alone cannot identify a board's reference crystal or panel wiring.
+	 */
 	{
-		bool vbt_found = false;
-		size_t rom_size = 0;
-		void __iomem *rom = pci_map_rom(pdev, &rom_size);
+		u32 n_vco, n;
 
-		gdev->dplla_96mhz = false;
-		gdev->has_lvds = false;
-
-		/* 1. Try reading VBT from PCI Expansion ROM */
-		if (rom && rom_size >= 64) {
-			size_t i;
-
-			for (i = 0; i + 64 <= rom_size; i++) {
-				if (readb(rom + i) == '$' &&
-				    readb(rom + i + 1) == 'V' &&
-				    readb(rom + i + 2) == 'B' &&
-				    readb(rom + i + 3) == 'T') {
-					u16 bdb_offset = readw(rom + i + 24);
-
-					if (i + bdb_offset + 32 <= rom_size) {
-						void __iomem *bdb = rom + i + bdb_offset;
-						u16 bdb_size = readw(bdb + 18);
-						u16 hdr_size = readw(bdb + 16);
-						u16 idx = hdr_size;
-
-						while (idx + 3 < bdb_size && i + bdb_offset + idx + 3 <= rom_size) {
-							u8 sec_id = readb(bdb + idx);
-							u16 sec_sz = readw(bdb + idx + 1);
-
-							if (sec_id == 12 /* BDB_DRIVER_FEATURES */ && sec_sz >= 4) {
-								u8 primary_lfp_id = readb(bdb + idx + 4);
-								u8 lvds_cfg = readb(bdb + idx + 6) & 0x3;
-
-								if (primary_lfp_id)
-									gdev->dplla_96mhz = true;
-								if (lvds_cfg != 0)
-									gdev->has_lvds = true;
-								vbt_found = true;
-								break;
-							}
-							idx += 3 + sec_sz;
-						}
-					}
-					break;
-				}
-			}
-			pci_unmap_rom(pdev, rom);
+		gdev->has_lvds = !!(gma3600_read(gdev, LVDS) & LVDS_PORT_EN);
+		gdev->dplla_96mhz = gdev->has_lvds;
+		if (!gma3600_sb_read(gdev, SB_N_VCO(PIPE_A), &n_vco)) {
+			n = (n_vco & SB_N_DIVIDER_MASK) >> SB_N_DIVIDER_SHIFT;
+			gdev->dplla_96mhz = n >= 2 && n <= 6;
 		}
-
-		/* 2. Fallback: inspect initial DPLL sideband configuration set by BIOS */
-		if (!vbt_found) {
-			u32 init_n_vco = 0;
-			if (gma3600_sb_read(gdev, SB_N_VCO(PIPE_A), &init_n_vco) == 0) {
-				u32 n = (init_n_vco & SB_N_DIVIDER_MASK) >> SB_N_DIVIDER_SHIFT;
-				if (n >= 2 && n <= 6)
-					gdev->dplla_96mhz = true;  /* 96 MHz (Netbook / LVDS) */
-				else
-					gdev->dplla_96mhz = false; /* 27 MHz (Desktop CRT/HDMI) */
-			} else {
-				gdev->dplla_96mhz = false; /* Default 27 MHz for desktop */
-			}
-
-			/*
-			 * Only consider LVDS present if the BIOS already enabled the port.
-			 * Do NOT rely on LVDS_DETECTED alone as unpopulated headers on desktop
-			 * motherboards float high and falsely trigger LVDS detection.
-			 */
-			gdev->has_lvds = (gma3600_read(gdev, LVDS) & LVDS_PORT_EN) != 0;
-		}
-
-		/* 3. If LVDS panel is confirmed present, reference clock is 96 MHz */
-		if (gdev->has_lvds)
-			gdev->dplla_96mhz = true;
-
-		/* 4. Module parameter override if specified by user */
-		if (gma3600_refclk == 27 || gma3600_refclk == 27000) {
+		/* Desktop Cedarview board with a 27 MHz display reference. */
+		if (dmi_match(DMI_BOARD_NAME, "D2500HN"))
 			gdev->dplla_96mhz = false;
-			gdev->has_lvds = false;
-		} else if (gma3600_refclk == 96 || gma3600_refclk == 96000) {
-			gdev->dplla_96mhz = true;
-		}
-
+		if (gma3600_refclk)
+			gdev->dplla_96mhz = gma3600_refclk == 96000;
 		gdev->lvds_ssc_freq = GMA3600_REF_CLK_96;
 		gdev->lvds_use_ssc = false;
-
-		dev_info(&pdev->dev, "Display PLL reference clock: %s (%d kHz), LVDS: %s\n",
-			 gdev->dplla_96mhz ? "96 MHz" : "27 MHz",
-			 gdev->dplla_96mhz ? GMA3600_REF_CLK_96 : 27000,
-			 gdev->has_lvds ? "present" : "not present");
+		dev_info(&pdev->dev, "Display reference %d kHz, LVDS %s\n",
+			 gdev->dplla_96mhz ? 96000 : 27000,
+			 gdev->has_lvds ? "present" : "absent");
 	}
+
+	/* DRM starts with disabled software state. Quiesce the firmware's
+	 * scanout before changing its page tables or reprogramming a live PLL.
+	 */
+	gma3600_write_post(gdev, ADPA, ADPA_VSYNC_CNTL_DISABLE |
+					 ADPA_HSYNC_CNTL_DISABLE);
+	gma3600_write_post(gdev, HDMIB, gma3600_read(gdev, HDMIB) & ~HDMI_PORT_EN);
+	gma3600_write_post(gdev, LVDS, gma3600_read(gdev, LVDS) & ~LVDS_PORT_EN);
+	{
+		enum gma3600_pipe pipe;
+		u32 val;
+
+		for (pipe = PIPE_A; pipe <= PIPE_B; pipe++) {
+			gma3600_write(gdev, CURCNTR(pipe), CURSOR_MODE_DISABLE);
+			gma3600_write(gdev, DSPCNTR(pipe), 0);
+			gma3600_write_post(gdev, DSPSURF(pipe), 0);
+			gma3600_write_post(gdev, PIPECONF(pipe),
+					    gma3600_read(gdev, PIPECONF(pipe)) & ~PIPE_ENABLE);
+			ret = read_poll_timeout(gma3600_read, val,
+					       !(val & PIPE_STATE_ENABLED),
+					       100, 100000, false, gdev, PIPECONF(pipe));
+			if (ret) {
+				dev_err(&pdev->dev, "Firmware pipe %c did not stop\n", 'A' + pipe);
+				goto err_unmap;
+			}
+			gma3600_dpll_disable(gdev, pipe);
+		}
+	}
+
+	ret = gma3600_gtt_init(gdev);
+	if (ret)
+		goto err_unmap;
 
 	spin_lock_init(&gdev->irq_lock);
 
 	return 0;
+
+err_unmap:
+	pci_iounmap(pdev, gdev->mmio);
+	gdev->mmio = NULL;
+	return ret;
 }
 
 void gma3600_device_fini(struct gma3600_device *gdev)

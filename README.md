@@ -1,5 +1,14 @@
 # Intel GMA 3600 (Cedar Trail) Modern Linux DRM/KMS Driver
 
+Development status: hardware operation is under investigation. The current fixes
+address invalid VGA timings and driver takeover reported on an Intel D2500HN with
+Debian 13 / Linux 6.12.117. See [the staged hardware test guide](docs/D2500HN-VGA-TESTING.md)
+before installing. A successful module build does not establish working display output.
+
+Run host clock regression tests with `bash tests/run.sh`. Build validation currently
+targets Debian Linux 6.12.117; compatibility with other kernel APIs requires separate testing.
+
+
 A modern Direct Rendering Manager (DRM) and Kernel Mode-Setting (KMS) driver for the **Intel GMA 3600** integrated graphics controller (Intel Atom Cedar Trail processors: **D2500, D2550, D2700, N2600, N2800**), engineered for **modern Linux kernels (5.x / 6.x)** and **modern X.Org Server (1.20+, 21.1+)** and **Wayland**.
 
 ---
@@ -132,7 +141,7 @@ Cedar Trail uses an indirect DPIO Sideband (SB) interface for its Display PLLs. 
 * **Desktop SKUs (D2500, D2550, D2700)**: Typically use a **27 MHz** reference clock for external CRT (VGA) and HDMI/DVI monitors.
 * **Netbook / Mobile SKUs (N2600, N2800)**: Use a **96 MHz** (or 100 MHz SSC) reference clock for internal LVDS flat panels.
 
-The driver automatically detects the correct reference clock by inspecting the system Video BIOS Table (VBT) and the BIOS boot PLL state. It also includes an automatic fallback retry mechanism that tests the alternative reference clock if the primary clock fails to achieve DPLL lock.
+The driver automatically detects the correct reference clock from the board identification and BIOS boot PLL state. D2500HN uses the desktop 27 MHz reference. The driver does not retry unrelated crystal frequencies when lock fails, because a locked PLL can still produce incorrect monitor timings.
 
 You can also manually override the reference clock via module parameter if needed:
 ```bash

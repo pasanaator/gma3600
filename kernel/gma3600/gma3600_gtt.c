@@ -13,12 +13,11 @@
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
 
-#define GMA3600_GTT_OFFSET_BAR0		0x80000		/* 512KB offset in BAR 0 */
 #define GMA3600_PTE_SIZE		4		/* 32-bit PTE */
 
 void gma3600_gtt_write_pte(struct gma3600_device *gdev, u32 entry, dma_addr_t addr)
 {
-	u32 pte_val = (lower_32_bits(addr) & ~0xFFF) | GMA3600_PTE_VALID;
+	u32 pte_val = (lower_32_bits(addr) & ~0xFFF) | GMA3600_PTE_VALID | GMA3600_PTE_CACHED;
 	void __iomem *pte_addr = gdev->gtt.gtt_map + (entry * GMA3600_PTE_SIZE);
 
 	iowrite32(pte_val, pte_addr);
@@ -39,19 +38,20 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 
 	mutex_init(&gtt->lock);
 
-	/*
-	 * Cedar Trail BAR 0 is 1MB. The lower 512KB is MMIO registers,
-	 * and the upper 512KB is the GTT table holding 128K 32-bit PTEs.
-	 * 128K * 4KB page = 512MB addressable aperture.
+	/* Cedarview's GTT is at the physical address in PGETBL_CTL,
+	 * not a guessed offset inside the display-register BAR. BAR 3 can
+	 * omit its size on CDV; Linux's gma500 uses 64 table pages then.
 	 */
-	if (gdev->mmio_size > GMA3600_GTT_OFFSET_BAR0) {
-		gtt->gtt_map = gdev->mmio + GMA3600_GTT_OFFSET_BAR0;
-		gtt->gtt_total_entries = (gdev->mmio_size - GMA3600_GTT_OFFSET_BAR0) / GMA3600_PTE_SIZE;
-	} else {
-		/* Fallback to aperture size calculation */
-		gtt->gtt_map = gdev->mmio + 0x10000;
-		gtt->gtt_total_entries = gdev->aperture_size / GMA3600_GTT_PAGE_SIZE;
-	}
+	gtt->saved_pgetbl_ctl = gma3600_read(gdev, PGETBL_CTL);
+	gtt->gtt_phys = gtt->saved_pgetbl_ctl & ~0xfffU;
+	if (!gtt->gtt_phys)
+		return -ENODEV;
+	gtt->gtt_total_entries = (pci_resource_len(gdev->pdev, 3) ?: 64 * PAGE_SIZE) /
+				GMA3600_PTE_SIZE;
+	gtt->gtt_map = ioremap(gtt->gtt_phys,
+			       gtt->gtt_total_entries * GMA3600_PTE_SIZE);
+	if (!gtt->gtt_map)
+		return -ENOMEM;
 
 	if (gtt->gtt_total_entries > (gdev->aperture_size / GMA3600_GTT_PAGE_SIZE))
 		gtt->gtt_total_entries = gdev->aperture_size / GMA3600_GTT_PAGE_SIZE;
@@ -60,24 +60,16 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 		 gtt->gtt_total_entries,
 		 (gtt->gtt_total_entries * GMA3600_GTT_PAGE_SIZE) >> 20);
 
-	/* Stolen memory entry reservation */
-	gtt->gtt_stolen_entries = gtt->stolen_size / GMA3600_GTT_PAGE_SIZE;
-	if (gtt->gtt_stolen_entries > gtt->gtt_total_entries)
-		gtt->gtt_stolen_entries = gtt->gtt_total_entries;
+	/* All GEM objects use system RAM; no guessed stolen-memory mapping. */
+	gtt->gtt_stolen_entries = 0;
 
 	/* Allocate allocation tracking bitmap */
 	bitmap_size = BITS_TO_LONGS(gtt->gtt_total_entries) * sizeof(unsigned long);
 	gtt->gtt_free_bitmap = kzalloc(bitmap_size, GFP_KERNEL);
-	if (!gtt->gtt_free_bitmap)
+	if (!gtt->gtt_free_bitmap) {
+		iounmap(gtt->gtt_map);
+		gtt->gtt_map = NULL;
 		return -ENOMEM;
-
-	/* Mark stolen memory region as allocated (bit set = allocated) */
-	bitmap_set(gtt->gtt_free_bitmap, 0, gtt->gtt_stolen_entries);
-
-	/* Populate stolen memory PTEs into GTT */
-	for (i = 0; i < gtt->gtt_stolen_entries; i++) {
-		dma_addr_t paddr = (dma_addr_t)(gtt->stolen_base + (i * GMA3600_GTT_PAGE_SIZE));
-		gma3600_gtt_write_pte(gdev, i, paddr);
 	}
 
 	/* Clear remaining dynamic GTT PTEs */
@@ -88,7 +80,8 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 	(void)ioread32(gtt->gtt_map);
 
 	/* Enable Page Table in hardware */
-	gma3600_write(gdev, PGETBL_CTL, PGETBL_ENABLED);
+	gma3600_write_post(gdev, PGETBL_CTL,
+			    gtt->saved_pgetbl_ctl | PGETBL_ENABLED);
 
 	return 0;
 }
@@ -101,8 +94,8 @@ void gma3600_gtt_fini(struct gma3600_device *gdev)
 	if (!gtt->gtt_free_bitmap)
 		return;
 
-	/* Disable Page Table */
-	gma3600_write(gdev, PGETBL_CTL, 0);
+	/* Restore firmware control bits; do not zero the table address. */
+	gma3600_write_post(gdev, PGETBL_CTL, gtt->saved_pgetbl_ctl);
 
 	/* Clear all dynamic PTEs */
 	for (i = gtt->gtt_stolen_entries; i < gtt->gtt_total_entries; i++)
@@ -112,6 +105,8 @@ void gma3600_gtt_fini(struct gma3600_device *gdev)
 
 	kfree(gtt->gtt_free_bitmap);
 	gtt->gtt_free_bitmap = NULL;
+	iounmap(gtt->gtt_map);
+	gtt->gtt_map = NULL;
 }
 
 int gma3600_gtt_insert(struct gma3600_device *gdev, struct gma3600_gem_object *obj)
@@ -162,6 +157,12 @@ void gma3600_gtt_remove(struct gma3600_device *gdev, struct gma3600_gem_object *
 
 	if (!obj->in_gtt || obj->stolen)
 		return;
+
+	/* DRM objects can outlive PCI removal. Hardware is already stopped. */
+	if (!gtt->gtt_free_bitmap) {
+		obj->in_gtt = false;
+		return;
+	}
 
 	start_entry = obj->gtt_offset / GMA3600_GTT_PAGE_SIZE;
 

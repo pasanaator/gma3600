@@ -108,6 +108,9 @@ static void gma3600_hdmi_encoder_atomic_enable(struct drm_encoder *encoder,
 	if (!crtc_state)
 		return;
 
+	if (!to_gma3600_crtc(crtc)->active)
+		return;
+
 	pipe = to_gma3600_crtc(crtc)->pipe;
 	mode = &crtc_state->adjusted_mode;
 
@@ -189,6 +192,7 @@ int gma3600_hdmi_init(struct gma3600_device *gdev)
 	if (ret)
 		goto err_cleanup_enc;
 
+	gconn->base.polled = DRM_CONNECTOR_POLL_CONNECT | DRM_CONNECTOR_POLL_DISCONNECT;
 	drm_connector_helper_add(&gconn->base, &gma3600_hdmi_conn_helper_funcs);
 
 	ret = drm_connector_attach_encoder(&gconn->base, &genc->base);

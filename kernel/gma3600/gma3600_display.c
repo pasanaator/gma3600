@@ -21,7 +21,6 @@
 
 /* Supported pixel formats for primary planes */
 static const u32 gma3600_primary_formats[] = {
-	DRM_FORMAT_C8,
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
 	DRM_FORMAT_ARGB8888,
@@ -48,10 +47,10 @@ static int gma3600_plane_atomic_check(struct drm_plane *plane,
 	if (!new_plane_state->crtc)
 		return 0;
 
-	crtc_state = drm_atomic_get_new_crtc_state(state,
+	crtc_state = drm_atomic_get_crtc_state(state,
 						   new_plane_state->crtc);
-	if (!crtc_state)
-		return -EINVAL;
+	if (IS_ERR(crtc_state))
+		return PTR_ERR(crtc_state);
 
 	return drm_atomic_helper_check_plane_state(new_plane_state,
 						   crtc_state,
@@ -81,9 +80,6 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 	obj = to_gma3600_gem(drm_gem_fb_get_obj(fb, 0));
 
 	switch (fb->format->format) {
-	case DRM_FORMAT_C8:
-		dspcntr |= DSP_FORMAT_C8;
-		break;
 	case DRM_FORMAT_RGB565:
 		dspcntr |= DSP_FORMAT_RGB565;
 		break;
@@ -104,14 +100,15 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 	else
 		dspcntr |= DSP_PIPE_SEL_A;
 
-	dspcntr |= DSP_GAMMA_ENABLE;
+	/* Use direct color until a gamma LUT has been installed. */
 
 	/* Calculate GTT byte address */
-	start_addr = obj->gtt_offset +
+	start_addr = obj->gtt_offset + fb->offsets[0] +
 		     (new_state->src.y1 >> 16) * fb->pitches[0] +
 		     (new_state->src.x1 >> 16) * fb->format->cpp[0];
 
 	gma3600_write(gdev, DSPSTRIDE(pipe), fb->pitches[0]);
+	gma3600_write(gdev, DSPLINOFF(pipe), start_addr & ~PAGE_MASK);
 	gma3600_write(gdev, DSPPOS(pipe), 0);
 	gma3600_write(gdev, DSPSIZE(pipe),
 		      (((new_state->crtc_h - 1) & 0xFFF) << 16) |
@@ -119,7 +116,7 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 	gma3600_write(gdev, DSPCNTR(pipe), dspcntr);
 
 	/* Writing DSPSURF latches all plane registers on next VBlank */
-	gma3600_write_post(gdev, DSPSURF(pipe), start_addr);
+	gma3600_write_post(gdev, DSPSURF(pipe), start_addr & PAGE_MASK);
 }
 
 static void gma3600_plane_atomic_disable(struct drm_plane *plane,
@@ -212,7 +209,7 @@ static void gma3600_cursor_atomic_update(struct drm_plane *plane,
 
 	gma3600_write(gdev, CURPOS(pipe), pos);
 	gma3600_write(gdev, CURCNTR(pipe),
-		      CURSOR_MODE_64_ARGB_AX | CURSOR_GAMMA_ENABLE);
+		      CURSOR_MODE_64_ARGB_AX);
 
 	/* Writing CURBASE latches cursor updates */
 	gma3600_write_post(gdev, CURBASE(pipe), obj->gtt_offset);
@@ -299,22 +296,51 @@ void gma3600_update_wm(struct gma3600_device *gdev, enum gma3600_pipe pipe, bool
  * CRTC Implementation
  * ================================================================ */
 
+/* Use the encoder mask in the transaction, never a connector's old state. */
+static int gma3600_crtc_clock(struct drm_crtc *crtc,
+			      const struct drm_crtc_state *state,
+			      struct gma3600_dpll_clock *clock,
+			      bool *is_lvds, bool *is_hdmi)
+{
+	struct gma3600_device *gdev = to_gma3600(crtc->dev);
+	struct drm_encoder *encoder;
+	const struct gma3600_dpll_limits *limits;
+	int refclk = gdev->dplla_96mhz ? 96000 : 27000;
+
+	*is_lvds = false;
+	*is_hdmi = false;
+	drm_for_each_encoder_mask(encoder, crtc->dev, state->encoder_mask) {
+		*is_lvds |= to_gma3600_encoder(encoder)->type == GMA3600_OUTPUT_LVDS;
+		*is_hdmi |= to_gma3600_encoder(encoder)->type == GMA3600_OUTPUT_HDMI;
+	}
+	if (*is_lvds && gdev->lvds_use_ssc)
+		refclk = gdev->lvds_ssc_freq;
+	limits = gma3600_dpll_get_limits(*is_lvds ? GMA3600_OUTPUT_LVDS :
+					GMA3600_OUTPUT_ANALOG, refclk);
+	return gma3600_dpll_find_best(refclk, state->adjusted_mode.clock,
+				     limits, clock) ? 0 : -EINVAL;
+}
+
 static int gma3600_crtc_atomic_check(struct drm_crtc *crtc,
 				     struct drm_atomic_state *state)
 {
-	struct drm_crtc_state *crtc_state =
-		drm_atomic_get_new_crtc_state(state, crtc);
+	struct drm_crtc_state *new = drm_atomic_get_new_crtc_state(state, crtc);
+	struct drm_display_mode *m = &new->adjusted_mode;
+	struct gma3600_dpll_clock clock;
+	bool is_lvds, is_hdmi;
 
-	if (!crtc_state->enable)
+	if (!new->enable)
 		return 0;
-
-	drm_mode_set_crtcinfo(&crtc_state->adjusted_mode, CRTC_INTERLACE_HALVE_V);
-
-	/* Cedar Trail DAC max is ~355 MHz; LVDS single-link max is ~115 MHz */
-	if (crtc_state->adjusted_mode.clock > 400000)
+	/* No interlaced/doublescan programming or scaling is implemented. */
+	if (m->flags & (DRM_MODE_FLAG_INTERLACE | DRM_MODE_FLAG_DBLSCAN) ||
+	    m->hdisplay <= 0 || m->vdisplay <= 0 ||
+	    m->hdisplay > m->hsync_start || m->hsync_start >= m->hsync_end ||
+	    m->hsync_end > m->htotal || m->vdisplay > m->vsync_start ||
+	    m->vsync_start >= m->vsync_end || m->vsync_end > m->vtotal ||
+	    m->htotal > 8192 || m->vtotal > 8192)
 		return -EINVAL;
-
-	return 0;
+	drm_mode_set_crtcinfo(m, 0);
+	return gma3600_crtc_clock(crtc, new, &clock, &is_lvds, &is_hdmi);
 }
 
 static void gma3600_crtc_atomic_enable(struct drm_crtc *crtc,
@@ -326,82 +352,35 @@ static void gma3600_crtc_atomic_enable(struct drm_crtc *crtc,
 	struct gma3600_device *gdev = to_gma3600(crtc->dev);
 	struct gma3600_crtc *gcrtc = to_gma3600_crtc(crtc);
 	enum gma3600_pipe pipe = gcrtc->pipe;
-	const struct gma3600_dpll_limits *limits;
 	struct gma3600_dpll_clock clock;
-	struct drm_connector *connector;
-	struct drm_connector_state *conn_state;
-	struct drm_connector_list_iter conn_iter;
 	u32 pipeconf;
-	bool is_lvds = false;
-	bool is_hdmi = false;
-	int refclk;
+	bool is_lvds, is_hdmi;
 	int ret;
-	int i;
 
-	/*
-	 * Ensure CRTC-adjusted timing fields (crtc_htotal, crtc_hblank_start,
-	 * crtc_hsync_start, crtc_vtotal, crtc_vblank_start, etc.) are always
-	 * properly calculated before register programming.
-	 */
-	drm_mode_set_crtcinfo(mode, CRTC_INTERLACE_HALVE_V);
+	gcrtc->active = false;
+	ret = gma3600_crtc_clock(crtc, crtc_state, &clock, &is_lvds, &is_hdmi);
+	if (ret)
+		return; /* Already rejected during atomic_check. */
 
-	/* Determine active encoder/connector type connected to this CRTC */
-	for_each_new_connector_in_state(state, connector, conn_state, i) {
-		if (conn_state->crtc == crtc) {
-			struct gma3600_connector *gconn = to_gma3600_connector(connector);
-
-			if (gconn->type == GMA3600_OUTPUT_LVDS)
-				is_lvds = true;
-			else if (gconn->type == GMA3600_OUTPUT_HDMI)
-				is_hdmi = true;
-			break;
-		}
-	}
-	if (!is_lvds && !is_hdmi) {
-		drm_connector_list_iter_begin(&gdev->drm, &conn_iter);
-		drm_for_each_connector_iter(connector, &conn_iter) {
-			if (connector->state && connector->state->crtc == crtc) {
-				struct gma3600_connector *gconn = to_gma3600_connector(connector);
-
-				if (gconn->type == GMA3600_OUTPUT_LVDS)
-					is_lvds = true;
-				else if (gconn->type == GMA3600_OUTPUT_HDMI)
-					is_hdmi = true;
-				break;
-			}
-		}
-		drm_connector_list_iter_end(&conn_iter);
-	}
-
-	/* Select reference clock: 96 MHz for LVDS or netbook SKUs, 27 MHz for desktop SKUs */
+	/* LVDS clock pairs must be powered before enabling the VCO. */
 	if (is_lvds)
-		refclk = GMA3600_REF_CLK_96;
-	else
-		refclk = gdev->dplla_96mhz ? GMA3600_REF_CLK_96 : 27000;
+		gma3600_write_post(gdev, LVDS, gma3600_read(gdev, LVDS) |
+				    LVDS_PORT_EN | LVDS_A0A2_CLKA_POWER_UP |
+				    LVDS_PIPE_B_SELECT);
 
-	limits = gma3600_dpll_get_limits(
-			is_lvds ? GMA3600_OUTPUT_LVDS : GMA3600_OUTPUT_ANALOG,
-			refclk);
-
-	gma3600_dpll_find_best(refclk, mode->clock, limits, &clock);
+	dev_info(gdev->drm.dev,
+		 "Pipe %c: %dx%d clock %d -> %d kHz (N=%d M2=%d P1=%d P2=%d)\n",
+		 'A' + pipe, mode->hdisplay, mode->vdisplay, mode->clock,
+		 clock.dot, clock.n, clock.m2, clock.p1, clock.p2);
 	ret = gma3600_dpll_program(gdev, pipe, &clock, is_lvds, is_hdmi);
-	if (ret && !is_lvds) {
-		/* If DPLL failed to lock, try the alternate reference clock */
-		int alt_refclk = (refclk == 27000) ? GMA3600_REF_CLK_96 : 27000;
-
-		dev_info(gdev->drm.dev,
-			 "Retrying DPLL lock on Pipe %c with alternate refclk %d kHz\n",
-			 'A' + pipe, alt_refclk);
-		limits = gma3600_dpll_get_limits(GMA3600_OUTPUT_ANALOG, alt_refclk);
-		if (gma3600_dpll_find_best(alt_refclk, mode->clock, limits, &clock)) {
-			ret = gma3600_dpll_program(gdev, pipe, &clock, is_lvds, is_hdmi);
-			if (!ret) {
-				gdev->dplla_96mhz = (alt_refclk == GMA3600_REF_CLK_96);
-				dev_info(gdev->drm.dev,
-					 "DPLL successfully locked with refclk %d kHz\n",
-					 alt_refclk);
-			}
-		}
+	if (ret) {
+		dev_err(gdev->drm.dev, "Pipe %c: PLL failed (%d); keeping output disabled\n",
+			'A' + pipe, ret);
+		gma3600_dpll_disable(gdev, pipe);
+		if (is_lvds)
+			gma3600_write_post(gdev, LVDS,
+				gma3600_read(gdev, LVDS) & ~LVDS_PORT_EN);
+		return;
 	}
 
 	/* Program FIFO watermarks to prevent display underrun */
@@ -445,7 +424,15 @@ static void gma3600_crtc_atomic_enable(struct drm_crtc *crtc,
 	/* Enable CRTC Display Pipe */
 	pipeconf = PIPE_ENABLE | PIPE_8BPC;
 	gma3600_write_post(gdev, PIPECONF(pipe), pipeconf);
-	udelay(150);
+	ret = read_poll_timeout(gma3600_read, pipeconf,
+				pipeconf & PIPE_STATE_ENABLED,
+				100, 100000, false, gdev, PIPECONF(pipe));
+	if (ret) {
+		dev_err(gdev->drm.dev, "Pipe %c did not enable\n", 'A' + pipe);
+		gma3600_write_post(gdev, PIPECONF(pipe), 0);
+		gma3600_dpll_disable(gdev, pipe);
+		return;
+	}
 
 	drm_crtc_vblank_on(crtc);
 	gcrtc->active = true;

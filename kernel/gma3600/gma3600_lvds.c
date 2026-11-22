@@ -155,6 +155,9 @@ static void gma3600_lvds_encoder_atomic_enable(struct drm_encoder *encoder,
 	if (!crtc)
 		return;
 
+	if (!to_gma3600_crtc(crtc)->active)
+		return;
+
 	pipe = to_gma3600_crtc(crtc)->pipe;
 
 	/* Power sequence on */

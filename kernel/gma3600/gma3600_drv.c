@@ -8,7 +8,12 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/pm.h>
+#include <linux/version.h>
 
+#include <drm/drm_aperture.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+#include <drm/drm_fbdev_ttm.h>
+#endif
 #include <drm/drm_drv.h>
 #include <drm/drm_file.h>
 #include <drm/drm_ioctl.h>
@@ -58,6 +63,9 @@ static const struct drm_driver gma3600_drm_driver = {
 	.major                 = DRIVER_MAJOR,
 	.minor                 = DRIVER_MINOR,
 	.patchlevel            = DRIVER_PATCHLEVEL,
+#ifdef DRM_FBDEV_TTM_DRIVER_OPS
+	DRM_FBDEV_TTM_DRIVER_OPS,
+#endif
 	.dumb_create           = gma3600_gem_dumb_create,
 	.dumb_map_offset       = drm_gem_dumb_map_offset,
 };
@@ -66,6 +74,15 @@ static int gma3600_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 {
 	struct gma3600_device *gdev;
 	int ret;
+
+	if (gma3600_refclk != 0 && gma3600_refclk != 27000 &&
+	    gma3600_refclk != 96000)
+		return -EINVAL;
+
+	ret = drm_aperture_remove_conflicting_pci_framebuffers(pdev,
+						     &gma3600_drm_driver);
+	if (ret)
+		return ret;
 
 	ret = pci_enable_device(pdev);
 	if (ret) {
@@ -144,6 +161,8 @@ static int gma3600_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 		goto err_uninstall_irq;
 	}
 
+	drm_kms_helper_poll_init(&gdev->drm);
+
 	/* Setup generic fbdev emulation for Linux VT / console */
 	ret = gma3600_fbdev_init(gdev);
 	if (ret)
@@ -176,10 +195,11 @@ static void gma3600_pci_remove(struct pci_dev *pdev)
 	if (!gdev)
 		return;
 
+	drm_kms_helper_poll_fini(&gdev->drm);
 	drm_dev_unregister(&gdev->drm);
 	gma3600_backlight_fini(gdev);
-	gma3600_irq_uninstall(gdev);
 	gma3600_display_fini(gdev);
+	gma3600_irq_uninstall(gdev);
 	gma3600_i2c_fini(gdev);
 	gma3600_device_fini(gdev);
 

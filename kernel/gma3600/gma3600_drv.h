@@ -66,6 +66,7 @@
 #include <drm/drm_file.h>
 
 #include "gma3600_reg.h"
+#include "gma3600_clock.h"
 
 /* ================================================================
  * Version / identity
@@ -119,13 +120,6 @@ enum gma3600_pipe {
 	PIPE_B = 1,
 };
 
-enum gma3600_output_type {
-	GMA3600_OUTPUT_UNUSED = 0,
-	GMA3600_OUTPUT_ANALOG,		/* VGA / CRT */
-	GMA3600_OUTPUT_LVDS,
-	GMA3600_OUTPUT_HDMI,
-};
-
 enum gma3600_gmbus_pin {
 	GMA3600_GMBUS_SSC    = 1,
 	GMA3600_GMBUS_VGADDC = 2,
@@ -139,41 +133,6 @@ enum gma3600_gmbus_pin {
  * DPLL clock structures
  * ================================================================ */
 
-struct gma3600_dpll_clock {
-	int n;
-	int m1;		/* Always 0 on CDV */
-	int m2;
-	int m;		/* = m2 + 2             */
-	int p1;
-	int p2;
-	int p;		/* = p1 × p2            */
-	int vco;	/* kHz                  */
-	int dot;	/* Pixel-clock in kHz   */
-};
-
-struct gma3600_dpll_range {
-	int min;
-	int max;
-};
-
-struct gma3600_dpll_p2 {
-	int dot_limit;	/* kHz boundary between fast/slow P2 */
-	int p2_slow;
-	int p2_fast;
-};
-
-struct gma3600_dpll_limits {
-	struct gma3600_dpll_range dot;
-	struct gma3600_dpll_range vco;
-	struct gma3600_dpll_range n;
-	struct gma3600_dpll_range m;
-	struct gma3600_dpll_range m1;
-	struct gma3600_dpll_range m2;
-	struct gma3600_dpll_range p;
-	struct gma3600_dpll_range p1;
-	struct gma3600_dpll_p2   p2;
-};
-
 /* ================================================================
  * GTT (Graphics Translation Table)
  * ================================================================ */
@@ -181,6 +140,7 @@ struct gma3600_dpll_limits {
 struct gma3600_gtt {
 	resource_size_t  gtt_phys;	   /* Physical addr of GTT           */
 	void __iomem    *gtt_map;	   /* ioremapped GTT PTE array        */
+	u32		 saved_pgetbl_ctl;
 	u32		 gtt_total_entries;/* Total PTE count                 */
 	u32		 stolen_base;	   /* Physical base of stolen memory  */
 	u32		 stolen_size;	   /* Bytes of stolen memory           */
@@ -321,6 +281,7 @@ struct gma3600_device {
 
 	/* GTT */
 	struct gma3600_gtt gtt;
+	struct mutex gmbus_lock;
 
 	/* GMBUS I²C */
 	struct gma3600_gmbus gmbus[GMA3600_NUM_GMBUS_PORTS];

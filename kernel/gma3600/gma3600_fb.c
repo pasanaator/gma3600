@@ -37,11 +37,10 @@ gma3600_fb_create(struct drm_device *dev, struct drm_file *file,
 	const struct drm_format_info *info;
 
 	info = drm_get_format_info(dev, cmd);
-	if (!info)
+	if (!info || (cmd->pitches[0] & 63))
 		return ERR_PTR(-EINVAL);
 
 	switch (cmd->pixel_format) {
-	case DRM_FORMAT_C8:
 	case DRM_FORMAT_RGB565:
 	case DRM_FORMAT_XRGB8888:
 	case DRM_FORMAT_ARGB8888:
