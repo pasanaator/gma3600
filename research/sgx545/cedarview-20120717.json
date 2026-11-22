@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "package": {
+    "name": "cedarview-graphics-drivers",
+    "version": "20120717-0ubuntu1",
+    "architecture": "i386",
+    "url": "https://old-releases.ubuntu.com/ubuntu/pool/multiverse/c/cedarview-graphics-drivers/cedarview-graphics-drivers_20120717-0ubuntu1_i386.deb",
+    "size": 3187994,
+    "sha256": "819254e7d78d078b90d6b22c6ec19f6fba470ad13f1e9a0eae366d51cbcdf46b"
+  },
+  "source_archive": {
+    "url": "https://old-releases.ubuntu.com/ubuntu/pool/multiverse/c/cedarview-graphics-drivers/cedarview-graphics-drivers_20120717.orig.tar.gz",
+    "size": 3243217,
+    "sha256": "c23e7261631860f3bc132c294e269ea982e34e37b5e838fafea0e7070da8fd83"
+  },
+  "provenance": {
+    "release": {
+      "url": "https://old-releases.ubuntu.com/ubuntu/dists/precise-updates/Release",
+      "size": 55448,
+      "sha256": "6f2a79215e2288131f2be08511acf47c16154b0444ee4788c787b759669fac5c"
+    },
+    "release_signature": {
+      "url": "https://old-releases.ubuntu.com/ubuntu/dists/precise-updates/Release.gpg",
+      "size": 181,
+      "sha256": "3e547b26d84609304b4db71058fbb38ea256a676cd57097147034ca865a65401"
+    },
+    "signing_key_fingerprint": "630239CC130E1A7FD81A27B140976EAF437D05B5",
+    "signature_date": "2021-05-04",
+    "signature_digest": "SHA1",
+    "verification": "GnuPG default detached-signature verification returned GOODSIG and VALIDSIG; no verification bypass flags were used. Key is an archived Ubuntu signing key from the official keyring, not a current software-support claim.",
+    "keyring_package": {
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/u/ubuntu-keyring/ubuntu-keyring_2026.08.18_all.deb",
+      "size": 12718,
+      "sha256": "fec10bd81d9ce809a5c11c6227a367611dd0e2589afebb41d46aefb350be8f40"
+    },
+    "binary_index": {
+      "url": "https://old-releases.ubuntu.com/ubuntu/dists/precise-updates/multiverse/binary-i386/Packages.bz2",
+      "size": 22874,
+      "sha256": "da948edbe5d92eef5d82825caa6ed12e61941710761822d0ae76bef20346914b"
+    },
+    "source_index": {
+      "url": "https://old-releases.ubuntu.com/ubuntu/dists/precise-updates/multiverse/source/Sources.bz2",
+      "size": 14846,
+      "sha256": "8ea08d2a2f36d3b65ce858d32c6383c60a9d80b8c5e3a6b5aaaa071f829e1ff1"
+    }
+  },
+  "ddk_version_observed": "1.7.862890",
+  "license_file_in_package": "usr/share/doc/cedarview-graphics-drivers/copyright",
+  "binary_distribution": "Not included in this repository. Retain the archive license with any independently obtained binary copies.",
+  "runtime_status": "Not installed or executed. Metadata inspection only; SGX545 rendering remains unimplemented in gma3600."
+}

@@ -19,4 +19,4 @@ trap 'rm -f "$test_binary"' EXIT
     tests/memory_test.c kernel/gma3600/gma3600_memory.c -o "$test_binary"
 "$test_binary"
 
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_sgx545_inventory.py' -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_sgx545_*.py' -v

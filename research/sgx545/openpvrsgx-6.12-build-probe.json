@@ -1,0 +1,47 @@
+{
+  "source_repository": "https://github.com/openpvrsgx-devgroup/linux_openpvrsgx",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "source_subpath": "drivers/gpu/drm/pvrsgx/1.17.4948957/eurasia_km",
+  "kernel_headers": "Debian 6.12.117+deb13-amd64",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "scope": "Isolated compile probe; unmodified committed SGX candidate sources. No install or module load.",
+  "script": "tools/sgx545_kernel_build_probe.sh",
+  "result": "failed",
+  "make_exit_code": 2,
+  "configuration": {
+    "CONFIG_SGX_DRM": "y",
+    "CONFIG_SGX_CEDARVIEW": "m",
+    "CONFIG_SGX_HW_PERF": "y",
+    "CONFIG_SGX_HW_RECOVERY": "y",
+    "CONFIG_SGX_PB_PER_CONTEXT": "y",
+    "CONFIG_PVRSGX_1_7_862890_ABI": "y",
+    "CONFIG_SGX_IOCTL_ALIAS": "18",
+    "SOC_VENDOR": "intel",
+    "SOC_FAMILY": "cedarview_linux",
+    "SOC": "gma3600",
+    "SGX": "sgx545",
+    "SGX_REV": "10141",
+    "TARGET_TYPE": "m",
+    "AM_VERSION": "0"
+  },
+  "revision_note": "10141 is the pinned candidate default for compile reproducibility, not a detected or validated target revision.",
+  "compiler_errors": {
+    "services4/3rdparty/dc_poulsbo/poulsbo_linux.c": [
+      "initialization of \u2018struct drm_framebuffer * (*)(struct drm_device *, struct drm_file *, const struct drm_mode_fb_cmd2 *)\u2019 from incompatible pointer type \u2018struct drm_framebuffer * (*)(struct drm_device *, struct drm_file *, struct drm_mode_fb_cmd2 *)\u2019 [-Wincompatible-pointer-types]",
+      "\u2018struct drm_device\u2019 has no member named \u2018pdev\u2019; did you mean \u2018dev\u2019?",
+      "passing argument 3 of \u2018drm_fb_helper_prepare\u2019 makes integer from pointer without a cast [-Wint-conversion]",
+      "too few arguments to function \u2018drm_fb_helper_prepare\u2019",
+      "too many arguments to function \u2018drm_fb_helper_init\u2019",
+      "implicit declaration of function \u2018drm_fb_helper_single_add_all_connectors\u2019 [-Wimplicit-function-declaration]",
+      "too many arguments to function \u2018drm_fb_helper_initial_config\u2019",
+      "\u2018struct drm_fb_helper\u2019 has no member named \u2018fbdev\u2019; did you mean \u2018dev\u2019?"
+    ],
+    "services4/3rdparty/dc_poulsbo/poulsbo_linux_sdvo.c": [
+      "initialization of \u2018enum drm_mode_status (*)(struct drm_connector *, struct drm_display_mode *)\u2019 from incompatible pointer type \u2018int (*)(struct drm_connector *, const struct drm_display_mode *)\u2019 [-Wincompatible-pointer-types]"
+    ]
+  },
+  "compiled_object_count": 47,
+  "kernel_module_produced": false,
+  "runtime_tested": false,
+  "first_attempt_note": "Initial probe omitted a parameter-buffer allocation choice and stopped in sgxconfig.h. Re-run selected the per-context option documented by the Intel 1.7 source Makefile; remaining failures are reported above."
+}

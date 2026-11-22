@@ -1,6 +1,9 @@
 # SGX545 hardware acceleration: legacy compatibility investigation
 
-Status: investigation and read-only inventory tooling, not an accelerated driver.
+Status: the Intel i386 userspace package has been retrieved, archive-verified,
+and statically audited. A reproducible SGX kernel candidate compile fails in
+legacy display APIs. This is not an accelerated driver. See the
+[artifact audit and build instructions](../research/sgx545/README.md).
 The user selected the legacy compatibility route on 2026-11-22. Keep the working
 1.0.4 display kernel module while investigating a separate rendering stack.
 
@@ -32,18 +35,21 @@ The community openpvrsgx tree contains:
 * Cedarview platform integration sources, including PCI and display dependencies.
 
 These are source-level leads, not evidence of a working Debian 13 configuration.
-The inspected 1.17 Cedarview sysconfig still includes `drm/drmP.h` (absent from
-our 6.12.117 headers) and has disabled legacy DRM integration code. The original
+The inspected 1.17 Cedarview sysconfig contains an old `drm/drmP.h` include,
+but it is guarded for kernels before 5.5 and is not itself the 6.12 blocker.
+An actual 6.12.117 build, with the per-context parameter-buffer option selected,
+reaches failures in the bundled Poulsbo display/DRM fb-helper callbacks.
+The platform glue also retains disabled legacy DRM integration code. The original
 1.7 build file names SGX core revision 10131; the top-level Cedarview target names
 10141. Do not select a revision solely from either default: actual silicon,
 firmware, ABI options, and any applicable errata must agree.
 
 The inspected Maemo userspace package supplies TI343x/TI443x libraries and
 explicitly declares `Architecture: armhf`. Those packages cannot supply native
-x86 userspace libraries for an Atom. A matching Intel x86 DDK package has not
-been retrieved or verified. Attempts at the current Ubuntu pool locations
-returned 404, while the old-releases request returned 403 in this environment;
-that is not evidence the historical package no longer exists.
+x86 userspace libraries for an Atom. The Intel package `cedarview-graphics-drivers_20120717-0ubuntu1_i386.deb` has now
+been retrieved from Ubuntu's historical archive and verified against its signed
+Precise-updates package index. It contains ELF32/i386 DDK 1.7.862890 libraries.
+This confirms a candidate artifact, not kernel/runtime compatibility.
 
 No external driver was installed, no proprietary library was executed or copied
 into this repository, and no claim is made that the inspected SGX tree builds
@@ -86,7 +92,7 @@ The user supplied the inventory from the running Debian installation on
 | Kernel and userspace | `6.12.117+deb13-amd64`, amd64 userspace | Native applications require 64-bit libraries. |
 | Kernel compat options | `CONFIG_IA32_EMULATION=y`, `CONFIG_COMPAT=y` | A 32-bit process can be investigated without replacing the kernel, provided its loader/libraries and a correct driver compat ABI exist. |
 | Foreign Debian architectures | None enabled | There is no configured i386 multiarch environment yet; this does not prove every possible 32-bit binary is absent. |
-| Graphics libraries in scanned locations | ELF64 x86-64 GL/GLX/EGL/GLES libraries; no verified legacy SGX candidates | Matching Intel DDK userspace remains outstanding. The scan is not an exhaustive filesystem search. |
+| Graphics libraries in scanned locations | ELF64 x86-64 GL/GLX/EGL/GLES libraries; no verified legacy SGX candidates | Matching Intel DDK userspace was not installed at inventory time; a candidate archive has since been verified separately. The scan is not an exhaustive filesystem search. |
 | Renderer | Mesa 25.0.7, llvmpipe (LLVM 19.1.7) | `direct rendering: Yes` still describes software rendering in this report. |
 | DRM nodes for this PCI device | `card0` only | Consistent with display-only support; creating a render node is not the missing acceleration implementation. |
 | PCI resources | BAR 0 is 1 MiB; BAR 2 and BAR 3 have zero-sized assignments | Preserve the working display resource handling; do not infer usable SGX mappings from nonexistent BARs. |
@@ -108,14 +114,12 @@ bridge and build options for size, alignment, nested pointers, and handle
 translation before making any amd64/i386 compatibility claim. The DDK-version
 ABI option is not by itself proof of Linux 32-on-64 ioctl compatibility.
 
-Historical archive access is an outstanding environment prerequisite. The
-`old-releases.ubuntu.com` request failed at HTTP CONNECT with a proxy 403,
-before reaching the package URL. A draft now adds this hostname to restricted
-network access, preserving the existing package-manager preset. Saving the
-draft does not apply it to the running machine. Once the environment settings
-change is saved/published and access is available, retry the archive lookup,
-locate the authoritative Intel package, and inspect metadata and binaries
-without installing them. Do not infer a missing package from this proxy denial.
+The archive network prerequisite is resolved. The historical package has
+been verified and inspected without installation. Its old Xorg binary depends
+on video ABI 11 and obsolete system libraries, so it cannot replace the working
+Debian 13 graphics stack. EGL/GLES2 offscreen experimentation remains a candidate,
+subject to the services bridge, initializer, firmware/build-option compatibility,
+and dynamically loaded window-system components.
 
 ## The next implementation gates
 
@@ -149,9 +153,10 @@ without installing them. Do not infer a missing package from this proxy denial.
    path does not supply that integration. Then test EGL/GLES presentation,
    X integration where available, and boot/suspend/regression cases.
 
-Until gate 1 produces usable x86 artifacts and their ABI requirements, kernel
-ioctls or firmware interfaces would be guesses. The current milestone supplies
-the inventory tool and this pinned compatibility record, not hardware 3D.
+Gate 1 now has an authenticated historical Intel userspace artifact, a static
+library/dependency audit, and an actual kernel compile probe. Runtime compatibility
+and the required bridge integration remain unproven. The current milestone
+supplies reproducible research tools and records, not hardware 3D.
 If suitable legacy artifacts cannot be obtained, the alternatives are a new
 open SGX userspace stack/compiler or retaining software rendering.
 

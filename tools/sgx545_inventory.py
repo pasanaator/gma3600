@@ -14,11 +14,12 @@ LIBRARY_DIRS = (
     "usr/lib/x86_64-linux-gnu/dri", "usr/lib/i386-linux-gnu",
     "usr/lib/i386-linux-gnu/dri", "usr/local/lib", "usr/lib/cedarview",
     "usr/lib/pvr", "usr/lib/i386-linux-gnu/cedarview", "usr/lib/i386-linux-gnu/pvr",
-    "usr/lib/x86_64-linux-gnu/pvr",
+    "usr/lib/x86_64-linux-gnu/pvr", "usr/lib/intel-cdv",
 )
 LIBRARY_PATTERNS = (
     "libGL.so*", "libGLX*.so*", "libEGL.so*", "libGLES*.so*", "libpvr*.so*", "libPVR*.so*",
-    "libIMG*.so*", "libglslcompiler*.so*", "cedarview_dri.so",
+    "libIMG*.so*", "libglslcompiler*.so*", "libsrv_*.so*", "libusc.so*",
+    "cedarview_dri.so", "pvr_dri.so",
 )
 MACHINES = {3: "i386", 62: "x86_64", 40: "ARM", 183: "AArch64"}
 

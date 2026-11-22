@@ -1,0 +1,718 @@
+{
+  "schema_version": 1,
+  "package": {
+    "name": "cedarview-graphics-drivers",
+    "version": "20120717-0ubuntu1",
+    "architecture": "i386",
+    "sha256": "819254e7d78d078b90d6b22c6ec19f6fba470ad13f1e9a0eae366d51cbcdf46b",
+    "depends": "libc6 (>= 2.15), libdrm2 (>= 2.4.16), libgcc1 (>= 1:4.1.1), libpciaccess0, libpixman-1-0, libstdc++6 (>= 4.1.1), libudev0 (>= 147), libwsbm1, libx11-6, libxext6, libxfixes3, cedarview-drm, xserver-xorg-core (>= 2:1.10.99.901), xorg-video-abi-11",
+    "pre_depends": "multiarch-support"
+  },
+  "library_count": 21,
+  "libraries": [
+    {
+      "path": "usr/lib/i386-linux-gnu/dri/pvr_dri.so",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "pvr_dri.so"
+      ],
+      "needed": [
+        "libPVROGL_MESA.so",
+        "libpvr2d.so",
+        "libegl4ogl.so",
+        "libsrv_um.so",
+        "libdl.so.2",
+        "libpthread.so.0",
+        "libexpat.so.1",
+        "libdrm.so.2",
+        "libGL.so.1",
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libgcc_s.so.1": [
+          "GCC_3.0",
+          "GCC_3.4",
+          "GLIBC_2.0"
+        ],
+        "libdl.so.2": [
+          "GLIBC_2.0",
+          "GLIBC_2.1"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.1",
+          "GLIBC_2.15",
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.1",
+          "GLIBC_2.4",
+          "GLIBC_2.2",
+          "GLIBC_2.3",
+          "GLIBC_2.3.4",
+          "GLIBC_2.1.3",
+          "GLIBC_2.0"
+        ],
+        "libstdc++.so.6": [
+          "CXXABI_1.3",
+          "GLIBCXX_3.4"
+        ],
+        "libpthread.so.0": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libEGL.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libEGL.so",
+        "libEGL.so.1.7.862890"
+      ],
+      "needed": [
+        "libIMGegl.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [
+        "eglBindAPI",
+        "eglChooseConfig",
+        "eglCreateContext",
+        "eglCreatePbufferSurface",
+        "eglGetDisplay",
+        "eglGetProcAddress",
+        "eglInitialize",
+        "eglMakeCurrent"
+      ],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libGLES_CM.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libGLES_CM.so",
+        "libGLES_CM.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libIMGegl.so",
+        "libusc.so",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [
+        "eglChooseConfig",
+        "eglCreateContext",
+        "eglCreatePbufferSurface",
+        "eglGetDisplay",
+        "eglGetProcAddress",
+        "eglInitialize",
+        "eglMakeCurrent",
+        "glClear",
+        "glClearColor",
+        "glDrawArrays",
+        "glFinish",
+        "glGetString",
+        "glReadPixels"
+      ],
+      "symbol_versions_needed": {
+        "libpthread.so.0": [
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.3.4",
+          "GLIBC_2.11",
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libGLESv2.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libGLESv2.so",
+        "libGLESv2.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libIMGegl.so",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [
+        "glClear",
+        "glClearColor",
+        "glDrawArrays",
+        "glFinish",
+        "glGetString",
+        "glReadPixels"
+      ],
+      "symbol_versions_needed": {
+        "libm.so.6": [
+          "GLIBC_2.0"
+        ],
+        "libpthread.so.0": [
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.0",
+          "GLIBC_2.3.4"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libIMGegl.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libIMGegl.so",
+        "libIMGegl.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libpthread.so.0",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libpthread.so.0": [
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.3.4",
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libOpenVG.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libOpenVG.so",
+        "libOpenVG.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libIMGegl.so",
+        "libm.so.6",
+        "libpthread.so.0",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libpthread.so.0": [
+          "GLIBC_2.0"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.0",
+          "GLIBC_2.1"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.1",
+          "GLIBC_2.0",
+          "GLIBC_2.3.4"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libOpenVGU.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libOpenVGU.so",
+        "libOpenVGU.so.1.7.862890"
+      ],
+      "needed": [
+        "libOpenVG.so",
+        "libm.so.6",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.0"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.0",
+          "GLIBC_2.1"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libPVROGL_MESA.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libPVROGL_MESA.so",
+        "libPVROGL_MESA.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libusc.so",
+        "libegl4ogl.so",
+        "libpthread.so.0",
+        "libm.so.6",
+        "libdl.so.2",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libpthread.so.0": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libm.so.6": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.1",
+          "GLIBC_2.3.4",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libPVRScopeServices.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libPVRScopeServices.so",
+        "libPVRScopeServices.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libstdc++.so.6",
+        "libm.so.6",
+        "libgcc_s.so.1",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4"
+        ],
+        "libstdc++.so.6": [
+          "GLIBCXX_3.4"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libegl4ogl.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libegl4ogl.so",
+        "libegl4ogl.so.1.7.862890"
+      ],
+      "needed": [
+        "libpvr2d.so",
+        "libsrv_um.so",
+        "libdrm.so.2",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.3.4",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libglslcompiler.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libglslcompiler.so",
+        "libglslcompiler.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libusc.so",
+        "libm.so.6",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libm.so.6": [
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.0",
+          "GLIBC_2.3.4"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libpvr2d.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libpvr2d.so",
+        "libpvr2d.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libpvrPVR2D_BLITWSEGL.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libpvrPVR2D_BLITWSEGL.so",
+        "libpvrPVR2D_BLITWSEGL.so.1.7.862890"
+      ],
+      "needed": [
+        "libpvr2d.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libpvrPVR2D_DRIWSEGL.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libpvrPVR2D_DRIWSEGL.so",
+        "libpvrPVR2D_DRIWSEGL.so.1.7.862890"
+      ],
+      "needed": [
+        "libpvr2d.so",
+        "libm.so.6",
+        "libdl.so.2",
+        "libdrm.so.2",
+        "libX11.so.6",
+        "libXext.so.6",
+        "libXfixes.so.3",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libdl.so.2": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.3.4",
+          "GLIBC_2.1.3",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libpvrPVR2D_FLIPWSEGL.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libpvrPVR2D_FLIPWSEGL.so",
+        "libpvrPVR2D_FLIPWSEGL.so.1.7.862890"
+      ],
+      "needed": [
+        "libpvr2d.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libpvrPVR2D_FRONTWSEGL.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libpvrPVR2D_FRONTWSEGL.so",
+        "libpvrPVR2D_FRONTWSEGL.so.1.7.862890"
+      ],
+      "needed": [
+        "libpvr2d.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libpvrPVR2D_LINUXFBWSEGL.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libpvrPVR2D_LINUXFBWSEGL.so",
+        "libpvrPVR2D_LINUXFBWSEGL.so.1.7.862890"
+      ],
+      "needed": [
+        "libpvr2d.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libsrv_init.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libsrv_init.so",
+        "libsrv_init.so.1.7.862890"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [
+        "SrvInit"
+      ],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.1.3"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libsrv_um.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libsrv_um.so",
+        "libsrv_um.so.1.7.862890"
+      ],
+      "needed": [
+        "libdl.so.2",
+        "libpthread.so.0",
+        "librt.so.1",
+        "libdrm.so.2",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [
+        "PVRSRVConnect",
+        "PVRSRVEnumerateDevices"
+      ],
+      "symbol_versions_needed": {
+        "librt.so.1": [
+          "GLIBC_2.2"
+        ],
+        "libdl.so.2": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.3",
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libpthread.so.0": [
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/libusc.so.1.7.862890",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "libusc.so",
+        "libusc.so.1.7.862890"
+      ],
+      "needed": [
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libc.so.6": [
+          "GLIBC_2.11",
+          "GLIBC_2.3.4",
+          "GLIBC_2.1.3",
+          "GLIBC_2.4",
+          "GLIBC_2.0"
+        ]
+      }
+    },
+    {
+      "path": "usr/lib/intel-cdv/xorg/modules/drivers/pvr_drv.so",
+      "status": "elf",
+      "bits": 32,
+      "machine": "i386",
+      "compatibility": "not_verified",
+      "soname": null,
+      "aliases": [
+        "pvr_drv.so"
+      ],
+      "needed": [
+        "libsrv_um.so",
+        "libpvr2d.so",
+        "libdl.so.2",
+        "libudev.so.0",
+        "libwsbm.so.1",
+        "libpixman-1.so.0",
+        "libpciaccess.so.0",
+        "libdrm.so.2",
+        "libc.so.6"
+      ],
+      "exported_test_entrypoints": [],
+      "symbol_versions_needed": {
+        "libdl.so.2": [
+          "GLIBC_2.1",
+          "GLIBC_2.0"
+        ],
+        "libc.so.6": [
+          "GLIBC_2.1.3",
+          "GLIBC_2.15",
+          "GLIBC_2.4",
+          "GLIBC_2.0",
+          "GLIBC_2.3.4"
+        ]
+      }
+    }
+  ],
+  "egl_pbuffer_export_present": true,
+  "offscreen_static_dependencies": {
+    "roots": [
+      "libEGL.so",
+      "libGLESv2.so"
+    ],
+    "internal_libraries": [
+      "usr/lib/intel-cdv/libEGL.so.1.7.862890",
+      "usr/lib/intel-cdv/libGLESv2.so.1.7.862890",
+      "usr/lib/intel-cdv/libIMGegl.so.1.7.862890",
+      "usr/lib/intel-cdv/libsrv_um.so.1.7.862890"
+    ],
+    "external_sonames": [
+      "libc.so.6",
+      "libdl.so.2",
+      "libdrm.so.2",
+      "libm.so.6",
+      "libpthread.so.0",
+      "librt.so.1"
+    ],
+    "scope": "DT_NEEDED only; dynamically selected WSEGL/compiler/init modules are not covered"
+  },
+  "runtime_validation": "not_performed",
+  "scope": "Static metadata only. No library loading, ldd, disassembly, GPU calls, installation, or maintainer scripts."
+}

@@ -51,6 +51,9 @@ class InventoryTests(unittest.TestCase):
             header[:6] = b"\x7fELF\x01\x01"
             header[18:20] = (3).to_bytes(2, "little")
             lib.write_bytes(header)
+            intel = root / "usr/lib/intel-cdv/libsrv_um.so.1.7.862890"
+            intel.parent.mkdir(parents=True)
+            intel.write_bytes(header)
             result = inventory.collect(root)
             self.assertEqual(result["gma3600_version"], "1.0.4")
             gpu = result["devices"][0]
@@ -59,7 +62,9 @@ class InventoryTests(unittest.TestCase):
             self.assertEqual(gpu["resources"][0]["size"], 1024 * 1024)
             self.assertEqual(gpu["resources"][1]["size"], 0)
             self.assertEqual(gpu["resources"][2]["status"], "malformed")
-            self.assertEqual(result["libraries"][0]["machine"], "i386")
+            libraries = {entry["path"]: entry for entry in result["libraries"]}
+            self.assertEqual(libraries["/usr/lib/i386-linux-gnu/libpvr2d.so"]["machine"], "i386")
+            self.assertEqual(libraries["/usr/lib/intel-cdv/libsrv_um.so.1.7.862890"]["bits"], 32)
             self.assertEqual(result["assessment"]["userspace_abi_compatibility"], "not_verified")
             (device / "vendor").write_text("0x1234")
             self.assertEqual(inventory.collect(root)["devices"], [])
