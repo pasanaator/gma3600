@@ -5,7 +5,6 @@
  * Copyright (C) 2026 Antigravity Project
  */
 
-#include <linux/dma-mapping.h>
 #include <linux/mm.h>
 #include <linux/iosys-map.h>
 #include <linux/pagemap.h>
@@ -68,7 +67,7 @@ static int gma3600_gem_mmap(struct drm_gem_object *gem_obj,
 	vma->vm_flags &= ~VM_PFNMAP;
 	vma->vm_flags |= VM_IO | VM_MIXEDMAP | VM_DONTEXPAND | VM_DONTDUMP;
 #endif
-	vma->vm_page_prot = vm_get_page_prot(vma->vm_flags);
+	vma->vm_page_prot = pgprot_writecombine(vm_get_page_prot(vma->vm_flags));
 	return 0;
 }
 
@@ -76,7 +75,6 @@ void gma3600_gem_free_object(struct drm_gem_object *gem_obj)
 {
 	struct gma3600_gem_object *obj = to_gma3600_gem(gem_obj);
 	struct gma3600_device *gdev = to_gma3600(gem_obj->dev);
-	int i;
 
 	if (obj->vaddr) {
 		vunmap(obj->vaddr);
@@ -86,22 +84,7 @@ void gma3600_gem_free_object(struct drm_gem_object *gem_obj)
 	if (obj->in_gtt)
 		gma3600_gtt_remove(gdev, obj);
 
-	if (obj->dma_addrs) {
-		for (i = 0; i < obj->num_pages; i++) {
-			if (obj->dma_addrs[i])
-				dma_unmap_page(&gdev->pdev->dev, obj->dma_addrs[i],
-					       PAGE_SIZE, DMA_BIDIRECTIONAL);
-		}
-		kvfree(obj->dma_addrs);
-	}
-
-	if (obj->pages) {
-		for (i = 0; i < obj->num_pages; i++) {
-			if (obj->pages[i])
-				__free_page(obj->pages[i]);
-		}
-		kvfree(obj->pages);
-	}
+	gma3600_gem_free_pages(obj);
 
 	drm_gem_object_release(&obj->base);
 	kfree(obj);
@@ -112,7 +95,8 @@ static int gma3600_gem_vmap(struct drm_gem_object *gem, struct iosys_map *map)
 	struct gma3600_gem_object *obj = to_gma3600_gem(gem);
 
 	if (!obj->vaddr)
-		obj->vaddr = vmap(obj->pages, obj->num_pages, VM_MAP, PAGE_KERNEL);
+		obj->vaddr = vmap(obj->pages, obj->num_pages, VM_MAP,
+				  pgprot_writecombine(PAGE_KERNEL));
 	if (!obj->vaddr)
 		return -ENOMEM;
 	iosys_map_set_vaddr(map, obj->vaddr);
@@ -135,7 +119,7 @@ struct gma3600_gem_object *gma3600_gem_create(struct gma3600_device *gdev,
 					      size_t size)
 {
 	struct gma3600_gem_object *obj;
-	int ret, i;
+	int ret;
 
 	size = PAGE_ALIGN(size);
 	if (!size)
@@ -160,55 +144,19 @@ struct gma3600_gem_object *gma3600_gem_create(struct gma3600_device *gdev,
 	if (ret)
 		goto err_free_gem;
 
-	obj->pages = kvmalloc_array(obj->num_pages, sizeof(struct page *),
-				    GFP_KERNEL | __GFP_ZERO);
-	if (!obj->pages) {
-		ret = -ENOMEM;
-		goto err_free_gem;
-	}
+	ret = gma3600_gem_alloc_pages(obj);
+	if (ret)
+		goto err_put;
 
-	obj->dma_addrs = kvmalloc_array(obj->num_pages, sizeof(dma_addr_t),
-					GFP_KERNEL | __GFP_ZERO);
-	if (!obj->dma_addrs) {
-		ret = -ENOMEM;
-		goto err_free_pages_arr;
-	}
-
-	for (i = 0; i < obj->num_pages; i++) {
-		obj->pages[i] = alloc_page(GFP_KERNEL | __GFP_ZERO | __GFP_HIGHMEM);
-		if (!obj->pages[i]) {
-			ret = -ENOMEM;
-			goto err_unwind_pages;
-		}
-
-		obj->dma_addrs[i] = dma_map_page(&gdev->pdev->dev, obj->pages[i],
-						  0, PAGE_SIZE, DMA_BIDIRECTIONAL);
-		if (dma_mapping_error(&gdev->pdev->dev, obj->dma_addrs[i])) {
-			__free_page(obj->pages[i]);
-			obj->pages[i] = NULL;
-			ret = -EIO;
-			goto err_unwind_pages;
-		}
-	}
-
-	/* Map into GTT aperture */
 	ret = gma3600_gtt_insert(gdev, obj);
 	if (ret)
-		goto err_unwind_pages;
+		goto err_put;
 
 	return obj;
 
-err_unwind_pages:
-	while (--i >= 0) {
-		if (obj->dma_addrs[i])
-			dma_unmap_page(&gdev->pdev->dev, obj->dma_addrs[i],
-				       PAGE_SIZE, DMA_BIDIRECTIONAL);
-		if (obj->pages[i])
-			__free_page(obj->pages[i]);
-	}
-	kvfree(obj->dma_addrs);
-err_free_pages_arr:
-	kvfree(obj->pages);
+err_put:
+	drm_gem_object_put(&obj->base);
+	return ERR_PTR(ret);
 err_free_gem:
 	drm_gem_object_release(&obj->base);
 	kfree(obj);

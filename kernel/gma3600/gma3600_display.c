@@ -8,6 +8,8 @@
 #include <linux/delay.h>
 #include <linux/iopoll.h>
 #include <linux/version.h>
+#include <linux/highmem.h>
+#include <linux/unaligned.h>
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
@@ -110,6 +112,8 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 		     (new_state->src.y1 >> 16) * fb->pitches[0] +
 		     (new_state->src.x1 >> 16) * fb->format->cpp[0];
 
+	/* Drain CPU WC writes before handing the surface to scanout. */
+	wmb();
 	gma3600_write(gdev, DSPSTRIDE(pipe), fb->pitches[0]);
 	gma3600_write(gdev, DSPLINOFF(pipe), start_addr & ~PAGE_MASK);
 	gma3600_write(gdev, DSPPOS(pipe), 0);
@@ -120,12 +124,32 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 
 	/* Writing DSPSURF latches all plane registers on next VBlank */
 	gma3600_write_post(gdev, DSPSURF(pipe), start_addr & PAGE_MASK);
-	if (drm_atomic_crtc_needs_modeset(new_state->crtc->state))
+	if (drm_atomic_crtc_needs_modeset(new_state->crtc->state)) {
+		u64 center = (u64)fb->offsets[0] +
+			(u64)(fb->height / 2) * fb->pitches[0] +
+			(u64)(fb->width / 2) * fb->format->cpp[0];
+
 		gma3600_dump_display(gdev, "scanout latched");
-	dev_info_once(gdev->drm.dev,
-		 "Plane %c: fb=%u %ux%u pitch=%u GTT=%08x first PTE=%08x\n",
-		 'A' + pipe, fb->base.id, fb->width, fb->height, fb->pitches[0],
-		 obj->gtt_offset, ioread32(gdev->gtt.gtt_map + (obj->gtt_offset >> 12) * 4));
+		dev_info(gdev->drm.dev,
+			 "Plane %c: fb=%u %ux%u pitch=%u GTT=%08x first PTE=%08x WC=%d\n",
+			 'A' + pipe, fb->base.id, fb->width, fb->height, fb->pitches[0],
+			 obj->gtt_offset,
+			 ioread32(gdev->gtt.gtt_map + (obj->gtt_offset >> 12) * 4),
+			 obj->pages_wc);
+		/* A filled modetest surface should contain actual pixel data.
+		 * This is read-only and deliberately logged only on modesets.
+		 */
+		if (center + sizeof(u32) <= obj->base.size &&
+		    offset_in_page(center) <= PAGE_SIZE - sizeof(u32)) {
+			void *page = kmap_local_page(obj->pages[center >> PAGE_SHIFT]);
+			u32 pixel = get_unaligned_le32(page + offset_in_page(center));
+
+			kunmap_local(page);
+			dev_info(gdev->drm.dev, "Plane %c: RAM center pixel=%08x\n",
+				 'A' + pipe, pixel);
+		}
+	}
+
 }
 
 static void gma3600_plane_atomic_disable(struct drm_plane *plane,

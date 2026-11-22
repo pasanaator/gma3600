@@ -14,3 +14,7 @@ trap 'rm -f "$test_binary"' EXIT
     -Itests/stubs -Itests -Ikernel/gma3600 -include tests/gtt_stubs.h \
     tests/gtt_test.c kernel/gma3600/gma3600_gtt.c -o "$test_binary"
 "$test_binary"
+"${CC:-cc}" -std=gnu11 -Wall -Wextra -Werror -fsanitize=undefined \
+    -Itests/stubs -Itests -Ikernel/gma3600 -include tests/memory_stubs.h \
+    tests/memory_test.c kernel/gma3600/gma3600_memory.c -o "$test_binary"
+"$test_binary"

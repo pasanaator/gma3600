@@ -10,7 +10,7 @@
 #include <stddef.h>
 typedef uint32_t u32;
 typedef uint16_t u16;
-typedef uint64_t dma_addr_t;
+typedef uint64_t phys_addr_t;
 typedef uint64_t resource_size_t;
 #define PAGE_SIZE 4096UL
 #define GFP_KERNEL 0
@@ -54,7 +54,7 @@ struct gma3600_device {
 struct gma3600_gem_object {
     bool in_gtt, stolen;
     u32 gtt_num_pages, num_pages, gtt_offset;
-    dma_addr_t *dma_addrs;
+    phys_addr_t *phys_addrs;
 };
 #define GMA3600_GTT_PAGE_SIZE 4096
 u32 gma3600_read(struct gma3600_device *dev, u32 reg);

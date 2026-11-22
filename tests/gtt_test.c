@@ -40,9 +40,9 @@ int main(void)
     struct pci_dev pci = { .gmch = 0x1200 };
     struct gma3600_device dev = { .pdev = &pci, .aperture_size = 128UL << 20,
         .pgetbl = 0x12345000 };
-    dma_addr_t pages[] = { 0x23456000, 0x34567000 };
+    phys_addr_t pages[] = { 0x23456000, 0x34567000 };
     struct gma3600_gem_object obj = { .num_pages = 2, .gtt_num_pages = 2,
-        .dma_addrs = pages };
+        .phys_addrs = pages };
 
     assert(!gma3600_gtt_init(&dev));
     assert(pci.gmch == 0x1204); /* Enable bit, preserving unrelated PCI controls. */

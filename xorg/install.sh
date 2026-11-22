@@ -61,14 +61,14 @@ echo -e "${GREEN}Module installed to ${DEST_DIR}/gma3600.ko${NC}"
 # Optional DKMS registration if dkms is present
 if command -v dkms >/dev/null 2>&1; then
     echo "Registering with DKMS for automatic kernel upgrade builds..."
-    DKMS_SRC="/usr/src/gma3600-1.0.3"
+    DKMS_SRC="/usr/src/gma3600-1.0.4"
     mkdir -p "${DKMS_SRC}"
     cp -r "${KERNEL_SRC_DIR}"/* "${DKMS_SRC}/"
-    if ! dkms status -m gma3600 -v 1.0.3 | grep -q .; then
-        dkms add -m gma3600 -v 1.0.3
+    if ! dkms status -m gma3600 -v 1.0.4 | grep -q .; then
+        dkms add -m gma3600 -v 1.0.4
     fi
-    dkms build -m gma3600 -v 1.0.3
-    dkms install -m gma3600 -v 1.0.3 --force
+    dkms build -m gma3600 -v 1.0.4
+    dkms install -m gma3600 -v 1.0.4 --force
 fi
 
 # Configure autoload on boot

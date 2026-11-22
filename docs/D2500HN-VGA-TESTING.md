@@ -105,7 +105,7 @@ cat /proc/fb
 sudo modetest -M gma3600 -c -p
 ```
 
-Expected: running module version `1.0.3`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
+Expected: running module version `1.0.4`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
 console when fbdev emulation is enabled, and VGA connector modes matching the
 monitor. Seeing the module in `lsmod` alone does not establish display ownership.
 
@@ -178,7 +178,22 @@ GTT PTE, and a `scanout latched` snapshot after the plane update. The `VGA enabl
 snapshot now precedes plane programming; use `scanout latched` for the final
 plane register values. A valid image is the pass condition; successful modetest
 return or a software framebuffer binding alone does not prove working scanout.
-After a clean manual-load test of 1.0.3, collect:
+The user confirmed that 1.0.3's modetest mode switch completed but the image
+remained black. A successful mode switch is therefore not a hardware pass.
+Version 1.0.4 aligns display memory with Linux gma500: allocate physical pages
+below 4 GB for GTT PTEs, set their direct-map aliases to write-combining, and use
+WC for both kernel vmap and userspace mmap. Remove streaming DMA mappings that
+were never synchronized with later CPU framebuffer writes. Restore WB caching
+before releasing pages. This addresses a memory-path discrepancy; the hardware
+cause of the black image remains unconfirmed until retesting.
+
+Host tests cover physical-address bounds, WC/WB transitions, partial allocation
+failures, and cache-conversion failure cleanup. On each modeset the driver logs
+`WC=1`, the first PTE, and a read-only `RAM center pixel` sample. Initial console
+pixels may be zero; collect the sample from the modetest pattern too. A nonzero
+sample demonstrates CPU-visible content, not successful display fetches.
+
+After a clean manual-load test of 1.0.4, collect:
 
 ```sh
 cat /sys/module/gma3600/version
@@ -219,7 +234,7 @@ sudo update-initramfs -u -k "$(uname -r)"
 
 Reboot normally and repeat binding, console, and mode checks. Test the boot once
 with the default reference selection as well. Verify
-`cat /sys/module/gma3600/version` reports `1.0.3`; an older version or a missing
+`cat /sys/module/gma3600/version` reports `1.0.4`; an older version or a missing
 version file means you are still testing an older module, possibly in initramfs. Do not overwrite an existing Xorg
 profile just to test binding; the modesetting driver normally detects KMS.
 

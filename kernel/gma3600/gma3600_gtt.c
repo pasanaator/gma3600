@@ -15,7 +15,7 @@
 
 #define GMA3600_PTE_SIZE		4		/* 32-bit PTE */
 
-void gma3600_gtt_write_pte(struct gma3600_device *gdev, u32 entry, dma_addr_t addr)
+void gma3600_gtt_write_pte(struct gma3600_device *gdev, u32 entry, phys_addr_t addr)
 {
 	u32 pte_val = (lower_32_bits(addr) & ~0xFFF) | GMA3600_PTE_VALID | GMA3600_PTE_CACHED;
 	void __iomem *pte_addr = gdev->gtt.gtt_map + (entry * GMA3600_PTE_SIZE);
@@ -178,9 +178,9 @@ int gma3600_gtt_insert(struct gma3600_device *gdev, struct gma3600_gem_object *o
 
 	bitmap_set(gtt->gtt_free_bitmap, start_entry, obj->gtt_num_pages);
 
-	/* Write DMA pages into the hardware GTT */
+	/* Write physical pages into the hardware GTT */
 	for (i = 0; i < obj->num_pages; i++)
-		gma3600_gtt_write_pte(gdev, start_entry + i, obj->dma_addrs[i]);
+		gma3600_gtt_write_pte(gdev, start_entry + i, obj->phys_addrs[i]);
 
 	/* Ensure memory postings are flushed to GPU */
 	wmb();

@@ -77,7 +77,7 @@
 #define DRIVER_DATE		"20261121"
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
-#define DRIVER_PATCHLEVEL	3
+#define DRIVER_PATCHLEVEL	4
 
 /* ================================================================
  * Compile-time constants
@@ -159,7 +159,8 @@ struct gma3600_gem_object {
 
 	struct page	**pages;	/* Backing page array              */
 	int		  num_pages;
-	dma_addr_t	 *dma_addrs;	/* Per-page DMA addresses          */
+	phys_addr_t	 *phys_addrs;	/* Physical addresses for the display GTT */
+	bool		  pages_wc;
 
 	bool		  in_gtt;
 	u32		  gtt_offset;	/* Byte offset inside GTT aperture */
@@ -376,7 +377,7 @@ int  gma3600_gtt_insert(struct gma3600_device *gdev,
 void gma3600_gtt_remove(struct gma3600_device *gdev,
 			struct gma3600_gem_object *obj);
 void gma3600_gtt_write_pte(struct gma3600_device *gdev,
-			   u32 entry, dma_addr_t addr);
+			   u32 entry, phys_addr_t addr);
 void gma3600_gtt_clear_pte(struct gma3600_device *gdev, u32 entry);
 
 /* gma3600_gem.c */
@@ -384,6 +385,8 @@ int  gma3600_gem_init(struct gma3600_device *gdev);
 struct gma3600_gem_object *
      gma3600_gem_create(struct gma3600_device *gdev, size_t size);
 void gma3600_gem_free_object(struct drm_gem_object *obj);
+int gma3600_gem_alloc_pages(struct gma3600_gem_object *obj);
+void gma3600_gem_free_pages(struct gma3600_gem_object *obj);
 int  gma3600_gem_dumb_create(struct drm_file *file, struct drm_device *dev,
 			     struct drm_mode_create_dumb *args);
 int  gma3600_gem_mmap_offset(struct drm_file *file, struct drm_device *dev,
