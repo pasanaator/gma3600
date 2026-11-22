@@ -255,10 +255,10 @@ void gma3600_update_wm(struct gma3600_device *gdev, enum gma3600_pipe pipe, bool
 	u32 fw;
 
 	fw = gma3600_read(gdev, DSPFW1);
-	fw &= ~0x007F0000;
-	fw |= (0x7E << 16);	/* SR WM */
-	fw &= ~0x00003F00;
-	fw |= (0x04 << 8);	/* Cursor B WM */
+	fw &= ~DSP_FIFO_SR_WM_MASK;
+	fw |= (0x7EU << DSP_FIFO_SR_WM_SHIFT);	/* SR WM */
+	fw &= ~CURSOR_B_FIFO_WM_MASK;
+	fw |= (0x04U << CURSOR_B_FIFO_WM_SHIFT);	/* Cursor B WM */
 	gma3600_write(gdev, DSPFW1, fw);
 
 	fw = gma3600_read(gdev, DSPFW2);
@@ -374,6 +374,7 @@ static void gma3600_crtc_atomic_enable(struct drm_crtc *crtc,
 		 clock.dot, clock.n, clock.m2, clock.p1, clock.p2);
 	ret = gma3600_dpll_program(gdev, pipe, &clock, is_lvds, is_hdmi);
 	if (ret) {
+		gma3600_dump_display(gdev, "PLL failure");
 		dev_err(gdev->drm.dev, "Pipe %c: PLL failed (%d); keeping output disabled\n",
 			'A' + pipe, ret);
 		gma3600_dpll_disable(gdev, pipe);
@@ -428,6 +429,7 @@ static void gma3600_crtc_atomic_enable(struct drm_crtc *crtc,
 				pipeconf & PIPE_STATE_ENABLED,
 				100, 100000, false, gdev, PIPECONF(pipe));
 	if (ret) {
+		gma3600_dump_display(gdev, "pipe enable failure");
 		dev_err(gdev->drm.dev, "Pipe %c did not enable\n", 'A' + pipe);
 		gma3600_write_post(gdev, PIPECONF(pipe), 0);
 		gma3600_dpll_disable(gdev, pipe);

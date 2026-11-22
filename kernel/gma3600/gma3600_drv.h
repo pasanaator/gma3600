@@ -77,7 +77,7 @@
 #define DRIVER_DATE		"20261121"
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
-#define DRIVER_PATCHLEVEL	0
+#define DRIVER_PATCHLEVEL	1
 
 /* ================================================================
  * Compile-time constants
@@ -183,6 +183,7 @@ to_gma3600_gem(struct drm_gem_object *obj)
 #define GMA3600_NUM_GMBUS_PORTS 7
 
 struct gma3600_gmbus {
+	struct i2c_algo_bit_data bit;
 	struct i2c_adapter  adapter;
 	u32		    pin;	/* GMBUS pin number          */
 	struct gma3600_device *gdev;
@@ -328,6 +329,7 @@ struct gma3600_device {
 };
 
 extern int gma3600_refclk;
+void gma3600_dump_display(struct gma3600_device *gdev, const char *reason);
 
 static inline struct gma3600_device *
 to_gma3600(struct drm_device *dev)

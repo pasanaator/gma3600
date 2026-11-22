@@ -5,6 +5,7 @@
  * Copyright (C) 2026 Antigravity Project
  */
 
+#include <linux/iopoll.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_connector.h>
 #include <drm/drm_crtc_helper.h>
@@ -12,6 +13,32 @@
 #include <drm/drm_probe_helper.h>
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
+
+/* The Cedarview CRT load-detect sequence needs two force-detect cycles. */
+static bool gma3600_crt_load_detect(struct gma3600_device *gdev)
+{
+	u32 saved = gma3600_read(gdev, PORT_HOTPLUG_EN);
+	u32 control = (saved & ~CRT_HOTPLUG_DETECT_MASK) |
+		CRT_HOTPLUG_FORCE_DETECT | CRT_HOTPLUG_ACTIVATION_PERIOD_64 |
+		CRT_HOTPLUG_VOLTAGE_COMPARE_50;
+	u32 val;
+	int i, ret = 0;
+	bool connected;
+
+	for (i = 0; i < 2; i++) {
+		gma3600_write_post(gdev, PORT_HOTPLUG_EN, control);
+		ret = read_poll_timeout(gma3600_read, val,
+			!(val & CRT_HOTPLUG_FORCE_DETECT),
+			1000, 1000000, false, gdev, PORT_HOTPLUG_EN);
+		if (ret)
+			break;
+	}
+	connected = !ret && (gma3600_read(gdev, PORT_HOTPLUG_STAT) &
+			      CRT_HOTPLUG_MONITOR_MASK);
+	gma3600_write(gdev, PORT_HOTPLUG_STAT, CRT_HOTPLUG_INT_STATUS);
+	gma3600_write_post(gdev, PORT_HOTPLUG_EN, saved);
+	return connected;
+}
 
 static enum drm_connector_status
 gma3600_crt_detect(struct drm_connector *connector, bool force)
@@ -28,6 +55,8 @@ gma3600_crt_detect(struct drm_connector *connector, bool force)
 		}
 	}
 
+	if (gma3600_crt_load_detect(to_gma3600(connector->dev)))
+		status = connector_status_connected;
 	return status;
 }
 
@@ -46,8 +75,15 @@ static int gma3600_crt_get_modes(struct drm_connector *connector)
 		}
 	}
 
-	if (count == 0)
-		count = drm_add_modes_noedid(connector, 1920, 1080);
+	if (count == 0) {
+		drm_connector_update_edid_property(connector, NULL);
+		count = drm_add_modes_noedid(connector, 1024, 768);
+		drm_set_preferred_mode(connector, 640, 480);
+		dev_warn(connector->dev->dev,
+			 "VGA: no EDID; using fallback modes, preferred 640x480\n");
+	} else {
+		dev_info(connector->dev->dev, "VGA: EDID supplied %d modes\n", count);
+	}
 
 	return count;
 }
@@ -124,6 +160,7 @@ static void gma3600_crt_encoder_atomic_enable(struct drm_encoder *encoder,
 		adpa |= ADPA_VSYNC_ACTIVE_HIGH;
 
 	gma3600_write_post(gdev, ADPA, adpa);
+	gma3600_dump_display(gdev, "VGA enabled");
 }
 
 static void gma3600_crt_encoder_atomic_disable(struct drm_encoder *encoder,

@@ -171,6 +171,67 @@ static const struct i2c_algorithm gma3600_gmbus_algo = {
 	.functionality = gma3600_gmbus_functionality,
 };
 
+/* VGA DDC uses open-drain GPIOA, as in Linux gma500/intel_i2c.c.
+ * A high level releases the line; never drive a monitor's DDC line high.
+ */
+static void gma3600_vga_set_line(void *data, int high, bool clock)
+{
+	struct gma3600_gmbus *bus = data;
+	struct gma3600_device *gdev = bus->gdev;
+	u32 reserved = gma3600_read(gdev, GPIOA) &
+		(GPIO_CLOCK_PULLUP_DISABLE | GPIO_DATA_PULLUP_DISABLE);
+	u32 mask = clock ? GPIO_CLOCK_DIR_MASK : GPIO_DATA_DIR_MASK;
+	u32 drive = clock ? GPIO_CLOCK_DIR_OUT | GPIO_CLOCK_VAL_MASK :
+		GPIO_DATA_DIR_OUT | GPIO_DATA_VAL_MASK;
+
+	gma3600_write_post(gdev, GPIOA, reserved | mask | (high ? 0 : drive));
+	udelay(20);
+}
+
+static void gma3600_vga_setscl(void *data, int high)
+{
+	gma3600_vga_set_line(data, high, true);
+}
+
+static void gma3600_vga_setsda(void *data, int high)
+{
+	gma3600_vga_set_line(data, high, false);
+}
+
+static int gma3600_vga_getscl(void *data)
+{
+	struct gma3600_gmbus *bus = data;
+
+	return !!(gma3600_read(bus->gdev, GPIOA) & GPIO_CLOCK_VAL_IN);
+}
+
+static int gma3600_vga_getsda(void *data)
+{
+	struct gma3600_gmbus *bus = data;
+
+	return !!(gma3600_read(bus->gdev, GPIOA) & GPIO_DATA_VAL_IN);
+}
+
+static int gma3600_vga_pre_xfer(struct i2c_adapter *adapter)
+{
+	struct gma3600_gmbus *bus = i2c_get_adapdata(adapter);
+
+	mutex_lock(&bus->gdev->gmbus_lock);
+	gma3600_write_post(bus->gdev, GMBUS0, GMBUS_PIN_DISABLED);
+	gma3600_vga_setsda(bus, 1);
+	gma3600_vga_setscl(bus, 1);
+	return 0;
+}
+
+static void gma3600_vga_post_xfer(struct i2c_adapter *adapter)
+{
+	struct gma3600_gmbus *bus = i2c_get_adapdata(adapter);
+
+	gma3600_vga_setsda(bus, 1);
+	gma3600_vga_setscl(bus, 1);
+	mutex_unlock(&bus->gdev->gmbus_lock);
+}
+
 static const char *gma3600_gmbus_name(enum gma3600_gmbus_pin pin)
 {
 	switch (pin) {
@@ -215,7 +276,21 @@ int gma3600_i2c_init(struct gma3600_device *gdev)
 
 		i2c_set_adapdata(&bus->adapter, bus);
 
-		ret = i2c_add_adapter(&bus->adapter);
+		if (pin == GMA3600_GMBUS_VGADDC) {
+			bus->bit.data = bus;
+			bus->bit.setsda = gma3600_vga_setsda;
+			bus->bit.setscl = gma3600_vga_setscl;
+			bus->bit.getsda = gma3600_vga_getsda;
+			bus->bit.getscl = gma3600_vga_getscl;
+			bus->bit.pre_xfer = gma3600_vga_pre_xfer;
+			bus->bit.post_xfer = gma3600_vga_post_xfer;
+			bus->bit.udelay = 20;
+			bus->bit.timeout = usecs_to_jiffies(2200);
+			bus->adapter.algo_data = &bus->bit;
+			ret = i2c_bit_add_bus(&bus->adapter);
+		} else {
+			ret = i2c_add_adapter(&bus->adapter);
+		}
 		if (ret) {
 			dev_err(&gdev->pdev->dev, "Failed to add I2C adapter %s: %d\n",
 				bus->adapter.name, ret);

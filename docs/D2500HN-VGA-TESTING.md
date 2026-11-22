@@ -18,6 +18,10 @@ SSH during the first load. Build on the Atom for its own kernel and architecture
   6.12.117 DRM client backport. Add GEM kernel mappings for the console client.
 * Map the GTT at PGETBL_CTL's physical address, preserve its control/address bits,
   use coherent PTEs, and stop guessing stolen-memory mappings.
+* The follow-up uses GPIOA bit-banged VGA DDC and CRT load detection (matching
+  the upstream Cedarview path), corrects DSPFW1 field positions, and enables the
+  reference clock before DPIO reset. Mocked-register tests cover PLL ordering
+  and error propagation; these do not simulate actual analog display hardware.
 * Fix EDID transactions (WAIT phase, separate STOP, reset deassertion), serialize
   shared GMBUS access, and poll connector changes outside hard IRQ context.
 * Correct HDMI lane bits, keep them untouched for VGA, and correct interrupt
@@ -92,14 +96,16 @@ In a second SSH terminal on the Atom, from the changed checkout:
 ```sh
 sudo modprobe drm_kms_helper
 sudo modprobe drm_ttm_helper
+sudo modprobe i2c_algo_bit
 sudo insmod kernel/gma3600/gma3600.ko refclk=27000
+cat /sys/module/gma3600/version
 lspci -nnk -s 00:02.0
 readlink -f /sys/bus/pci/devices/0000:00:02.0/driver
 cat /proc/fb
 sudo modetest -M gma3600 -c -p
 ```
 
-Expected: `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
+Expected: running module version `1.0.1`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
 console when fbdev emulation is enabled, and VGA connector modes matching the
 monitor. Seeing the module in `lsmod` alone does not establish display ownership.
 
@@ -118,6 +124,15 @@ Replace both IDs with those listed by modetest and choose a listed mode if
 1024x768 at 60 Hz is unavailable. Visually confirm the test pattern and monitor
 OSD frequency. Exit modetest with Enter. Test 640x480/60, 1024x768/60, and native
 resolution where advertised. Include which mode triggers an invalid-timing error.
+For the reported immediate signal loss, capture the complete dmesg output after
+loading, plus `sudo modetest -M gma3600 -c -p` and `cat /proc/fb`, over SSH.
+Look for `VGA: EDID supplied ... modes` (or the no-EDID warning), the requested
+pixel-clock line, and `VGA enabled: ...` register snapshots. If the last snapshot
+is missing, a failure message or absent connected output should precede it.
+`firmware scanout: ...` snapshots record the pre-takeover timing registers.
+A forced diagnostic boot option `video=VGA-1:640x480@60e` can isolate detection
+from mode programming; use it only for one boot and still collect the logs.
+
 Then start the desktop with `sudo systemctl start display-manager`.
 An existing desktop does not automatically migrate to a newly loaded DRM device;
 start it after binding. Under X11, save `xrandr --verbose` from the desktop session.
@@ -153,7 +168,9 @@ sudo update-initramfs -u -k "$(uname -r)"
 ```
 
 Reboot normally and repeat binding, console, and mode checks. Test the boot once
-with the default reference selection as well. Do not overwrite an existing Xorg
+with the default reference selection as well. Verify
+`cat /sys/module/gma3600/version` reports `1.0.1`; an older version or a missing
+version file means you are still testing an older module, possibly in initramfs. Do not overwrite an existing Xorg
 profile just to test binding; the modesetting driver normally detects KMS.
 
 ## 5. Results and recovery

@@ -13,6 +13,20 @@
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
 
+/* Read-only snapshots distinguish no modeset, PLL failure, and wrong timings. */
+void gma3600_dump_display(struct gma3600_device *gdev, const char *reason)
+{
+	dev_info(gdev->drm.dev,
+		 "%s: DPLL_A=%08x PIPEA=%08x ADPA=%08x VGACNTRL=%08x\n",
+		 reason, gma3600_read(gdev, DPLL_A), gma3600_read(gdev, PIPEACONF),
+		 gma3600_read(gdev, ADPA), gma3600_read(gdev, VGACNTRL));
+	dev_info(gdev->drm.dev,
+		 "%s: HTOTAL=%08x HBLANK=%08x HSYNC=%08x VTOTAL=%08x VBLANK=%08x VSYNC=%08x\n",
+		 reason, gma3600_read(gdev, HTOTAL_A), gma3600_read(gdev, HBLANK_A),
+		 gma3600_read(gdev, HSYNC_A), gma3600_read(gdev, VTOTAL_A),
+		 gma3600_read(gdev, VBLANK_A), gma3600_read(gdev, VSYNC_A));
+}
+
 int gma3600_device_init(struct gma3600_device *gdev)
 {
 	struct pci_dev *pdev = gdev->pdev;
@@ -48,6 +62,8 @@ int gma3600_device_init(struct gma3600_device *gdev)
 	dev_info(&pdev->dev, "MMIO at 0x%pap (%llu KB), Aperture at 0x%pap (%llu MB)\n",
 		 &gdev->mmio_phys, (u64)(gdev->mmio_size >> 10),
 		 &gdev->aperture_phys, (u64)(gdev->aperture_size >> 20));
+
+	gma3600_dump_display(gdev, "firmware scanout");
 
 	/* Disable legacy VGA hardware plane and display emulation */
 	gma3600_write(gdev, VGACNTRL, VGA_DISP_DISABLE);

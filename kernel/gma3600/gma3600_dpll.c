@@ -104,6 +104,12 @@ int gma3600_dpll_program(struct gma3600_device *gdev,
 	u32 dpll_mode = DPLL_SYNCLOCK_ENABLE | DPLL_VGA_MODE_DIS;
 	int ret;
 
+	/* The DPIO reset requires the reference clock to be running first.
+	 * Match cdv_intel_crtc_mode_set -> cdv_dpll_set_clock_cdv ordering.
+	 */
+	gma3600_write_post(gdev, reg_dpll, dpll_mode);
+	udelay(100);
+
 	/* 1. Reset DPIO indirect bus */
 	gma3600_sb_reset(gdev);
 

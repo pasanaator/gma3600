@@ -398,15 +398,29 @@
 #define GPIOF				0x5024
 
 #define   GPIO_CLOCK_DIR_MASK		(1 << 0)
+#define   GPIO_CLOCK_DIR_IN		0
 #define   GPIO_CLOCK_DIR_OUT		(1 << 1)
 #define   GPIO_CLOCK_VAL_MASK		(1 << 2)
 #define   GPIO_CLOCK_VAL_OUT		(1 << 3)
 #define   GPIO_CLOCK_VAL_IN		(1 << 4)
 #define   GPIO_DATA_DIR_MASK		(1 << 8)
+#define   GPIO_DATA_DIR_IN		0
 #define   GPIO_DATA_DIR_OUT		(1 << 9)
 #define   GPIO_DATA_VAL_MASK		(1 << 10)
 #define   GPIO_DATA_VAL_OUT		(1 << 11)
 #define   GPIO_DATA_VAL_IN		(1 << 12)
+
+#define GPIO_CLOCK_PULLUP_DISABLE (1 << 5)
+#define GPIO_DATA_PULLUP_DISABLE (1 << 13)
+
+#define PORT_HOTPLUG_EN 0x61110
+#define PORT_HOTPLUG_STAT 0x61114
+#define CRT_HOTPLUG_FORCE_DETECT (1 << 3)
+#define CRT_HOTPLUG_DETECT_MASK 0xf8
+#define CRT_HOTPLUG_ACTIVATION_PERIOD_64 (1 << 8)
+#define CRT_HOTPLUG_VOLTAGE_COMPARE_50 (1 << 5)
+#define CRT_HOTPLUG_INT_STATUS (1 << 11)
+#define CRT_HOTPLUG_MONITOR_MASK (3 << 8)
 
 /* ================================================================
  * Top-Level Interrupts
@@ -518,6 +532,10 @@
 
 #define DSPARB				0x70030
 #define DSPFW1				0x70034
+#define DSP_FIFO_SR_WM_MASK 0xff800000U
+#define DSP_FIFO_SR_WM_SHIFT 23
+#define CURSOR_B_FIFO_WM_MASK 0x003f0000U
+#define CURSOR_B_FIFO_WM_SHIFT 16
 #define DSPFW2				0x70038
 #define DSPFW3				0x7003C
 #define DSPFW4				0x70050
