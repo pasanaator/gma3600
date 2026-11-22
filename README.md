@@ -1,9 +1,11 @@
 # Intel GMA 3600 (Cedar Trail) Modern Linux DRM/KMS Driver
 
-Development status: hardware operation is under investigation. The current fixes
-address invalid VGA timings and driver takeover reported on an Intel D2500HN with
-Debian 13 / Linux 6.12.117. See [the staged hardware test guide](docs/D2500HN-VGA-TESTING.md)
-before installing. A successful module build does not establish working display output.
+Development status: version 1.0.4 has user-confirmed visible VGA test patterns at
+1024x768/60 and 1920x1080/60 on an Intel D2500HN with Debian 13 / Linux 6.12.117.
+TTY text renders correctly; stale contents after late driver takeover clear with
+Ctrl+L or `clear`. Desktop operation, automatic boot-time takeover, suspend, and
+other outputs remain unverified. See [the staged hardware test guide](docs/D2500HN-VGA-TESTING.md)
+before installing.
 
 Run host clock regression tests with `bash tests/run.sh`. Build validation currently
 targets Debian Linux 6.12.117; compatibility with other kernel APIs requires separate testing.

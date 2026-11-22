@@ -141,8 +141,8 @@ start it after binding. Under X11, save `xrandr --verbose` from the desktop sess
 
 On the reported 1.0.1 test, EDID detection succeeded (Dell P2417H, 12 modes),
 the PLL locked at 148.5 MHz, Pipe A enabled at 1920x1080/60, and fbdev registered.
-Those results establish mode setup progress, but do not prove that pixels are
-being fetched or that the console contains visible content.
+Those results established mode setup progress, but did not prove pixel delivery.
+The later 1.0.4 hardware results below confirm visible patterns and TTY drawing.
 
 Before changing the installed boot driver, stop the display manager over SSH
 and use the connector/CRTC IDs from your own modetest output. In the supplied
@@ -184,8 +184,9 @@ Version 1.0.4 aligns display memory with Linux gma500: allocate physical pages
 below 4 GB for GTT PTEs, set their direct-map aliases to write-combining, and use
 WC for both kernel vmap and userspace mmap. Remove streaming DMA mappings that
 were never synchronized with later CPU framebuffer writes. Restore WB caching
-before releasing pages. This addresses a memory-path discrepancy; the hardware
-cause of the black image remains unconfirmed until retesting.
+before releasing pages. After these changes, the user confirmed visible test
+patterns on the board. The tests do not isolate which individual memory change
+was responsible for the improvement.
 
 Host tests cover physical-address bounds, WC/WB transitions, partial allocation
 failures, and cache-conversion failure cleanup. On each modeset the driver logs
@@ -201,6 +202,30 @@ cat /proc/fb
 sudo dmesg | grep -Ei 'gma3600|drm|VGA|PLL|GTT|Plane'
 sudo modetest -M gma3600 -c -p
 ```
+
+### Confirmed 1.0.4 hardware results
+
+On Intel D2500HN, Debian 13 / Linux 6.12.117, connected by VGA to a Dell P2417H:
+
+* User visually confirmed clean colour bars at 1024x768/60 and 1920x1080/60.
+* New TTY characters render correctly. The block of garbled old content seen
+  after manual takeover disappears with Ctrl+L or `clear` on the physical TTY.
+* No ongoing TTY corruption was reported after clearing. This observation is
+  consistent with stale console contents during late takeover, rather than
+  evidence of persistent pixel-format or stride corruption.
+* Desktop operation, automatic boot-time takeover, suspend/resume, and other
+  outputs remain unverified. Keep 1.0.4 as the current hardware test revision.
+
+After exiting modetest, clear the physical console if needed and test the desktop:
+
+```sh
+sudo systemctl start display-manager
+```
+
+Starting the display manager does not reboot or reinstall the driver. Report
+whether its login screen and desktop render correctly before treating desktop
+support as validated. Follow the installation and recovery steps below to test
+boot-time loading separately.
 
 ## 4. Install only after the late-load test passes
 
