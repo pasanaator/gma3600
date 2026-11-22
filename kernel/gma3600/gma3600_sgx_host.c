@@ -46,6 +46,9 @@ int gma3600_sgx_host_init(struct gma3600_device *gdev)
 	sgx->regs = gdev->mmio + GMA3600_SGX_REG_OFFSET;
 	sgx->regs_phys = gdev->mmio_phys + GMA3600_SGX_REG_OFFSET;
 	sgx->host_abi = GMA3600_SGX_HOST_ABI;
+	sgx->host = gdev;
+	sgx->irq_ops = &gma3600_sgx_irq_ops;
+	gma3600_sgx_irq_init(gdev);
 	ret = auxiliary_device_init(&sgx->adev);
 	if (ret) {
 		ida_free(&gma3600_sgx_ids, id);
@@ -65,7 +68,12 @@ void gma3600_sgx_host_fini(struct gma3600_device *gdev)
 {
 	if (!gdev->sgx)
 		return;
+	/* Let the child drain jobs with IRQs available, unregister its callback,
+	 * cancel deferred work and free its data, in that order. Closing the IRQ
+	 * gate first could deadlock a valid remove callback waiting for completion.
+	 */
 	auxiliary_device_delete(&gdev->sgx->adev);
+	gma3600_sgx_irq_shutdown(gdev);
 	auxiliary_device_uninit(&gdev->sgx->adev);
 	gdev->sgx = NULL;
 }

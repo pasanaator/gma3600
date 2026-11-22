@@ -13,6 +13,7 @@
 
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
+#include "gma3600_sgx.h"
 
 void gma3600_irq_enable_vblank(struct gma3600_device *gdev, enum gma3600_pipe pipe)
 {
@@ -73,6 +74,17 @@ static irqreturn_t gma3600_irq_handler(int irq, void *arg)
 		gma3600_write(gdev, PIPEASTAT, pipeastat);
 	if (iir & DE_PIPEB_EVENT)
 		gma3600_write(gdev, PIPEBSTAT, pipebstat);
+#ifdef GMA3600_SGX_HOST
+	/* The SGX ISR clears its own source before the parent acknowledges IIR.
+	 * It cannot run under irq_lock: legacy SGX code has its own IRQ locks.
+	 * synchronize_irq() in unregister protects the copied callback's lifetime.
+	 */
+	if (iir & GMA3600_SGX_IRQ_BIT) {
+		spin_unlock_irqrestore(&gdev->irq_lock, flags);
+		gma3600_sgx_irq_dispatch(gdev, iir);
+		spin_lock_irqsave(&gdev->irq_lock, flags);
+	}
+#endif
 	gma3600_write_post(gdev, IIR, iir);
 	spin_unlock_irqrestore(&gdev->irq_lock, flags);
 

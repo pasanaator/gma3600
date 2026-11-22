@@ -1,0 +1,58 @@
+{
+  "source_repository": "https://github.com/openpvrsgx-devgroup/linux_openpvrsgx",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "kernel_headers": "Debian 6.12.117+deb13-amd64",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "builder": "tools/sgx545_hybrid_build.py",
+  "host_interface_abi": 2,
+  "host_module_version": "1.0.4-sgx-host2",
+  "probe_module_version": "0.2.0",
+  "core_module": "gma3600_sgx_core_check (init still returns EOPNOTSUPP)",
+  "results": [
+    {
+      "compile_profile": "10141",
+      "status": "passed",
+      "make_exit_codes": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "compile_profile": "10131",
+      "status": "passed",
+      "make_exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ],
+  "compiler_warnings": 0,
+  "normal_display_build": "Passed independently; version 1.0.4, SGX host excluded.",
+  "host_test_suites": [
+    "PLL arithmetic",
+    "display mock MMIO",
+    "display GTT",
+    "display memory lifecycle",
+    "i386 bridge envelope",
+    "shared IRQ and concurrent callback detach"
+  ],
+  "python_test_count": 10,
+  "shared_irq_checks": [
+    "Registration does not enable the SGX interrupt",
+    "Only the registered data owner can enable/unregister its handler",
+    "SGX and vblank mask updates preserve each other",
+    "SGX-local and pipe sources are cleared before parent IIR acknowledgement",
+    "Child ISR runs outside the parent irq_lock",
+    "An unhandled SGX source is masked without masking vblank",
+    "Concurrent unregister drains an active parent IRQ before returning",
+    "Parent shutdown prevents re-registration and enable"
+  ],
+  "hardware_identification_record": "d2500hn-sgx-identification.json",
+  "hardware_interrupt_delivery_tested": false,
+  "services_isr_connected": false,
+  "gpu_runtime_enabled": false,
+  "profile_note": "Both profiles compile only. The observed raw revision 0001000d decodes to 1.0.13; compatibility with the initializer/microkernel remains unverified.",
+  "parent_remove_order": "Let the child quiesce jobs with IRQ delivery available, unregister its ISR and cancel work; then close the host IRQ gate and release parent resources."
+}

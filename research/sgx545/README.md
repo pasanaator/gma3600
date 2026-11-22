@@ -7,6 +7,13 @@ now separate the services core from its old display driver and produce a
 6.12.117 link-check module. The unmodified-build failure below is retained as
 the baseline, not the result of the patched hybrid build.
 
+The user subsequently supplied the
+[successful D2500HN identification checkpoint](d2500hn-sgx-identification.json):
+raw ID `01150000`, revision `0001000d` (1.0.13), with the same VGA behavior.
+The newer [IRQ implementation/build record](hybrid-irq-6.12-build.json)
+covers the parent-owned interrupt API and an additional `10131` compile profile;
+hardware interrupt delivery and firmware/profile compatibility remain untested.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

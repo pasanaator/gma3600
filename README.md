@@ -9,6 +9,10 @@ before installing.
 
 The **SGX545 hybrid port for Debian 13 amd64** has started: see the
 [experimental build and hardware identification test](experimental/sgx545/README.md).
+The user confirmed readable SGX registers (`01150000` / `0001000d`, revision
+1.0.13) with the prior VGA behavior preserved. Parent-owned SGX interrupt routing
+now has host tests, including concurrent callback teardown; it is not yet wired
+to the legacy services runtime.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the

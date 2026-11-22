@@ -3,6 +3,9 @@
 Status: the selected **hybrid port for Debian 13 amd64** has its first implementation.
 The separated legacy services core builds against stock 6.12.117 headers, and an
 opt-in auxiliary child provides SGX545 identification without a second PCI owner.
+The user confirmed raw ID `01150000` and revision `0001000d` (1.0.13) while
+preserving the prior display behavior. The next implementation adds parent-owned
+interrupt routing, verified with host tests but not hardware SGX interrupt delivery.
 Hardware rendering is not enabled. See the
 [implementation and Atom test instructions](../experimental/sgx545/README.md).
 The Intel i386 userspace artifact has been archive-verified and statically audited;
@@ -91,7 +94,7 @@ The user supplied the inventory from the running Debian installation on
 
 | Item | Observed result | Consequence |
 | --- | --- | --- |
-| Device | Intel `8086:0be1`, revision `09`, bound to gma3600 1.0.4 | Existing display baseline is in use; the SGX silicon revision is still unprobed. |
+| Device | Intel `8086:0be1`, revision `09`, bound to gma3600 1.0.4 at inventory time | A later auxiliary probe read SGX ID `01150000`, revision `0001000d` (1.0.13), with display coexistence confirmed. DDK profile/microkernel matching is still pending. |
 | Kernel and userspace | `6.12.117+deb13-amd64`, amd64 userspace | Native applications require 64-bit libraries. |
 | Kernel compat options | `CONFIG_IA32_EMULATION=y`, `CONFIG_COMPAT=y` | A 32-bit process can be investigated without replacing the kernel, provided its loader/libraries and a correct driver compat ABI exist. |
 | Foreign Debian architectures | None enabled | There is no configured i386 multiarch environment yet; this does not prove every possible 32-bit binary is absent. |
@@ -162,8 +165,10 @@ an opt-in parent-owned auxiliary interface, a hardware identification probe, and
 an outer i386 bridge-envelope decoder. The kernel build checks the pinned DDK's
 48-byte native envelope against the separate 28-byte i386 wire layout. Nested
 payload translation, services activation, power/IRQ/memory ownership, and hardware
-rendering remain unfinished. The next hardware checkpoint is the identification
-snapshot described in the implementation guide.
+rendering remain unfinished. The identification checkpoint has now passed on
+the Atom. Its [recorded result](../research/sgx545/d2500hn-sgx-identification.json)
+does not validate the newer interrupt API or services initialization. The next
+runtime milestone is services attachment and initialization through the parent.
 
 ## Inspected source references
 

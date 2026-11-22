@@ -10,6 +10,7 @@
 #define __GMA3600_DRV_H__
 
 #include <linux/pci.h>
+#include <linux/interrupt.h>
 #include <linux/i2c.h>
 #include <linux/i2c-algo-bit.h>
 #include <linux/backlight.h>
@@ -274,6 +275,10 @@ struct gma3600_device {
 	struct pci_dev	 *bridge;	/* Host bridge PCI 0:0.0        */
 #ifdef GMA3600_SGX_HOST
 	struct gma3600_sgx_device *sgx;
+	struct mutex sgx_irq_mutex;
+	bool sgx_irq_closing;
+	irqreturn_t (*sgx_irq_handler)(void *);
+	void *sgx_irq_data;
 #endif
 
 	/* MMIO (BAR 0) */

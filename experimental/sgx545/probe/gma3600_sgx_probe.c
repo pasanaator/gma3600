@@ -71,4 +71,4 @@ module_auxiliary_driver(gma3600_sgx_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("GMA3600 hybrid SGX545 identification probe (no rendering)");
-MODULE_VERSION("0.1.0");
+MODULE_VERSION("0.2.0");

@@ -5,8 +5,25 @@ against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
 The [build validation record](../../research/sgx545/hybrid-6.12-build.json)
-records the three successful module builds and the ABI checks; hardware testing
-is pending.
+records the first three successful module builds and ABI checks. The user has
+now [confirmed the identification checkpoint](../../research/sgx545/d2500hn-sgx-identification.json)
+on the Atom with the same display behavior as before. Rendering remains untested.
+
+## D2500HN hardware result
+
+The supplied SSH output reports `core_id=0x01150000` and
+`core_revision=0x0001000d`, whose revision bytes decode to **1.0.13**. PCI
+ownership remains `gma3600`, and the log shows the working 1920x1080 VGA mode.
+The user reports that everything loaded as before. No probe-related oops or
+fault appears in the supplied excerpt. This establishes readable SGX registers
+and display coexistence for this boot, without power/reset writes. It does not
+establish firmware compatibility, working SGX interrupts, or hardware rendering.
+
+Do not convert `1.0.13` directly into the build token `10131` or `10141`.
+The original Intel 1.7 Makefile selects `10131`, and both tokens are accepted by
+the pinned newer SGX545 errata header. The microkernel's revision/build-option
+checks must still agree with the chosen profile. The `10131` services core has
+now also been build-validated; that is not a hardware compatibility result.
 
 ## Implemented
 
@@ -17,6 +34,15 @@ is pending.
   driver or DRM device. It reads the SGX545 ID/revision registers once and
   exposes a cached sysfs snapshot. It performs no reset, power, interrupt,
   page-table, or display-register writes.
+* A parent-owned SGX interrupt routing API. Registration leaves the SGX source
+  masked; an explicit enable operation preserves the vblank bits in IER/IMR.
+  The child ISR must clear SGX-local events before the parent acknowledges IIR.
+  Unregister masks the source and waits for active IRQ callbacks before their
+  data can be freed. Unhandled SGX interrupts are masked to prevent a storm.
+  Host tests exercise simultaneous SGX/vblank delivery and concurrent detach.
+  The identification probe does not use or enable this API, and the legacy
+  services ISR is not attached yet. The new host interface is ABI 2, module
+  `1.0.4-sgx-host2`; build its companion probe from the same checkout.
 * Patches separating the pinned openpvrsgx services core from its old
   Poulsbo display driver and PCI/DRM registration. The core builds and passes
   modpost using stock Debian headers and symbol exports.
@@ -45,7 +71,7 @@ sudo apt install build-essential linux-headers-$(uname -r) dwarves python3 git p
 bash tests/run.sh
 python3 tools/sgx545_hybrid_build.py \
   --kdir /lib/modules/$(uname -r)/build \
-  --output /tmp/gma3600-sgx-host1
+  --output /tmp/gma3600-sgx-host2
 ```
 
 The output directory must be new; choose another name for a repeat build.
@@ -54,8 +80,8 @@ It leaves both source checkouts untouched and records commands/results in
 `build-report.json`. Check both module files' vermagic against `uname -r`:
 
 ```sh
-modinfo /tmp/gma3600-sgx-host1/host/gma3600.ko
-modinfo /tmp/gma3600-sgx-host1/probe/gma3600_sgx_probe.ko
+modinfo /tmp/gma3600-sgx-host2/host/gma3600.ko
+modinfo /tmp/gma3600-sgx-host2/probe/gma3600_sgx_probe.ko
 ```
 
 ## Test identification on the D2500HN
@@ -82,15 +108,15 @@ sudo modprobe drm_kms_helper
 sudo modprobe drm_ttm_helper
 sudo modprobe drm_display_helper
 sudo modprobe i2c_algo_bit
-sudo insmod /tmp/gma3600-sgx-host1/host/gma3600.ko refclk=27000 sgx_host=1
+sudo insmod /tmp/gma3600-sgx-host2/host/gma3600.ko refclk=27000 sgx_host=1
 cat /sys/module/gma3600/version
-sudo insmod /tmp/gma3600-sgx-host1/probe/gma3600_sgx_probe.ko
+sudo insmod /tmp/gma3600-sgx-host2/probe/gma3600_sgx_probe.ko
 cat /sys/bus/auxiliary/devices/gma3600.sgx.*/identity
 lspci -nnk -s 00:02.0
 sudo dmesg | grep -Ei 'gma3600|sgx|oops|fault' | tail -100
 ```
 
-Expected version: `1.0.4-sgx-host1`. PCI ownership remains `gma3600`, the VGA
+Expected version: `1.0.4-sgx-host2`. PCI ownership remains `gma3600`, the VGA
 console remains usable, and the new `identity` file reports raw `core_id` and
 `core_revision` values. Please return those outputs and whether VGA stayed
 usable. `register_state=unavailable` means zero/all-ones readings: the SGX
@@ -123,8 +149,8 @@ python3 tools/sgx545_hybrid_build.py \
 ```
 
 `--sgx-rev 10141` is the default **compile profile only**; the tool also accepts
-`10131`, which has not been build-validated in this milestone. Neither is a
-detected hardware revision. The core output is
+`10131`, which has also passed the services-core build. Neither token has been
+matched to a running microkernel on this board. The core output is
 `core/gma3600_sgx_core_check.ko`. Build it, but do not install or load it.
 The proprietary userspace libraries are not needed for this checkpoint.
 Their provenance and static audit are recorded in
@@ -132,11 +158,11 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Use the identification result to select revision/errata and design minimal
-   SGX power sequencing. Implement services attachment to the auxiliary child
+1. Match the observed revision to the initializer/microkernel build and design
+   minimal SGX power sequencing. Implement services attachment to the auxiliary child
    with borrowed PCI resources and teardown before parent resources disappear.
-2. Port memory/cache ownership and top-level interrupt demultiplexing; bounded
-   initialization/recovery must preserve display scanout.
+2. Port memory/cache ownership and connect the legacy ISR through the parent's
+   tested interrupt API; bounded initialization/recovery must preserve scanout.
 3. Translate the i386 service commands and nested structures explicitly. Begin
    with connect/enumerate/acquire/init, reject unsupported commands, and check
    handle ownership and user-buffer sizes before exposing a private bridge.

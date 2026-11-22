@@ -1,0 +1,44 @@
+{
+  "source": "User-supplied SSH output and display observation",
+  "target": {
+    "board_from_session": "Intel D2500HN",
+    "os_from_previous_inventory": "Debian 13 amd64",
+    "kernel_from_previous_inventory": "6.12.117+deb13-amd64",
+    "pci_device": "0000:00:02.0",
+    "pci_id": "8086:0be1",
+    "pci_revision": "09",
+    "subsystem_id": "8086:202e",
+    "driver_in_use": "gma3600"
+  },
+  "snapshot": {
+    "bar0_offset": "0x80000",
+    "registers_physical_base": "0x00000000d0180000",
+    "core_id": "0x01150000",
+    "core_revision": "0x0001000d",
+    "revision_bytes": {"major": 1, "minor": 0, "maintenance": 13},
+    "revision_display": "1.0.13",
+    "register_state": "unverified",
+    "probe_log": "SGX545 identification snapshot: ID=01150000 REV=0001000d (no reset or power writes)"
+  },
+  "display": {
+    "output": "VGA",
+    "mode_from_log": "1920x1080",
+    "pixel_clock_khz": 148500,
+    "reference_clock_khz": 27000,
+    "user_observation": "it all loaded up the same as before",
+    "coexistence_confirmed_for_this_boot": true
+  },
+  "probe_related_oops_or_fault_in_supplied_excerpt": false,
+  "proven": [
+    "SGX identification registers are readable in the tested boot state",
+    "The auxiliary identification probe binds while gma3600 owns PCI",
+    "The user reports the prior display behavior is preserved"
+  ],
+  "not_yet_validated": [
+    "Mapping the revision bytes to a specific DDK compile profile",
+    "Initializer and microkernel build-option/revision compatibility",
+    "SGX interrupt delivery, DMA/MMU mappings, rendering, or recovery",
+    "Power transitions and resume"
+  ],
+  "next_implementation": "Parent-owned interrupt routing, borrowed services resources, memory/cache and i386 bridge translation"
+}
