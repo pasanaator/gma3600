@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
+config DRM_GMA3600
+	tristate "Intel GMA 3600 (Cedar Trail)"
+	depends on DRM && PCI && X86
+	select DRM_KMS_HELPER
+	select DRM_GEM_SHMEM_HELPER
+	select I2C
+	select I2C_ALGOBIT
+	select BACKLIGHT_CLASS_DEVICE
+	help
+	  Direct Rendering Manager (DRM) and Kernel Mode Setting (KMS) driver
+	  for the Intel GMA 3600 integrated graphics controller found in Intel
+	  Atom Cedar Trail processors (D2500, D2550, D2700, N2600, N2800).
+
+	  This driver provides full kernel modesetting, atomic page flipping,
+	  hardware cursor, DPMS power management, GMBUS DDC EDID probing,
+	  backlight control, and compatibility with modern X.Org Server versions
+	  via the generic modesetting DDX driver, as well as modern Wayland
+	  compositors.
+
+	  To compile this driver as a module, choose M here: the module will be
+	  called gma3600.
