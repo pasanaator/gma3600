@@ -1,0 +1,14 @@
+--- a/services4/srvkm/env/linux/mutils.h
++++ b/services4/srvkm/env/linux/mutils.h
+@@ -65,7 +65,10 @@
+ // #define ioremap_wt(physaddr, size) memremap((physaddr), (size), MEMREMAP_WT)
+ #endif
+ 
+-#if defined(SUPPORT_LINUX_X86_PAT)
++#if defined(GMA3600_SGX_HYBRID)
++	/* Modern x86 PAT helpers keep direct-map/vmap/mmap cache types identical. */
++	#define PGPROT_WC(pv) pgprot_writecombine(pv)
++#elif defined(SUPPORT_LINUX_X86_PAT)
+ 	pgprot_t pvr_pgprot_writecombine(pgprot_t prot);
+ 	#define	PGPROT_WC(pv)	pvr_pgprot_writecombine(pv)
+ #else

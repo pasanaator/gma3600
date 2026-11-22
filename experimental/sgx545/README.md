@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-This is the first implementation stage of the selected hybrid port. It builds
+The hybrid port now has a **CPU-side services preparation checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -8,6 +8,8 @@ The [build validation record](../../research/sgx545/hybrid-6.12-build.json)
 records the first three successful module builds and ABI checks. The user has
 now [confirmed the identification checkpoint](../../research/sgx545/d2500hn-sgx-identification.json)
 on the Atom with the same display behavior as before. Rendering remains untested.
+The next [hardware test initializes and tears down real DDK services](../../docs/SGX545-SERVICES-TESTING.md)
+without enabling GPU execution. It can use the already loaded host2 driver.
 
 ## D2500HN hardware result
 
@@ -49,17 +51,26 @@ now also been build-validated; that is not a hardware compatibility result.
 * Replacement of the unexported `__vmalloc_node_range_noprof` dependency:
   cached metadata uses exported `__vmalloc`, and device allocations select
   the existing page-array/vmap path. The patches also fix incorrect vmap flags
-  and missing vmap failure handling. Cache aliases and device-memory lifetime
-  still require an audit before any runtime activation.
+  and missing vmap failure handling. The preparation allocator now manages low
+  zeroed pages and WB/WC/UC direct-map cache attributes, restores WB before
+  freeing RAM, and retains allocations if that restoration fails. The amd64
+  protection macros use Linux's PAT helpers instead of silently mapping WC
+  requests uncached. Device DMA, CMA and userspace buffer paths remain unvalidated.
+* Correct reset-buffer physical addresses for noncontiguous RAM, and cleanup
+  of partially initialized SGX contexts/heaps. Mocked tests compile the actual
+  patched DDK functions to check reset addresses and blocked register accesses.
 * A fixed-width Intel 1.7 i386 bridge-envelope decoder with bounds/overflow
   tests. The core build checks the actual pinned native DDK envelope is 48 bytes;
   the legacy i386 envelope is 28. This is the outer envelope only, **not a complete
   compat ioctl implementation**. No private ioctls are exposed.
 
-`core/gma3600_sgx_adapter.c` deliberately returns `-EOPNOTSUPP` from module init.
-This is a link-check artifact, not a loadable rendering driver. Do not remove
-that guard: the legacy PCI acquisition, power/reset, shared IRQ, memory/cache
-handling, initialization scripts, and nested bridge payloads are not ported.
+`core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
+when explicitly loaded with `prepare=1`. It starts the OS/memory services and
+DDK initialization part 1, then enumerates the SGX device. It borrows the parent's
+mapping, never acquires/enables PCI again, and omits legacy procfs, mmap and ioctl
+entry points. Legacy register reads/writes are blocked and counted; part 2 and
+system finalization reject execution. No firmware or SGX interrupt is enabled.
+Without `prepare=1`, module init still returns `-EOPNOTSUPP`.
 
 ## Build the hardware identification checkpoint
 
@@ -130,7 +141,7 @@ permanent boot/module configuration is changed by these steps; rebooting
 restores the previously installed display driver. Do not install these test
 modules through DKMS yet. `glxinfo` will still report llvmpipe.
 
-## Also reproduce the legacy-core link check (optional)
+## Build the services preparation module
 
 Use an existing clean checkout at commit
 `4000c3fb6577ecad4800e4fa2695777643bfaf86`, or fetch just that commit:
@@ -150,22 +161,25 @@ python3 tools/sgx545_hybrid_build.py \
 
 `--sgx-rev 10141` is the default **compile profile only**; the tool also accepts
 `10131`, which has also passed the services-core build. Neither token has been
-matched to a running microkernel on this board. The core output is
-`core/gma3600_sgx_core_check.ko`. Build it, but do not install or load it.
+matched to a running microkernel on this board. The current core output is
+`core/gma3600_sgx_services.ko`. Follow the
+[preparation test](../../docs/SGX545-SERVICES-TESTING.md) for its explicit
+`prepare=1` load, status checks, and unload verification. Earlier build records
+name the historical `gma3600_sgx_core_check.ko`, which did not support preparation.
 The proprietary userspace libraries are not needed for this checkpoint.
 Their provenance and static audit are recorded in
 [research/sgx545](../../research/sgx545/README.md); they are not bundled here.
 
 ## Remaining implementation sequence
 
-1. Match the observed revision to the initializer/microkernel build and design
-   minimal SGX power sequencing. Implement services attachment to the auxiliary child
-   with borrowed PCI resources and teardown before parent resources disappear.
-2. Port memory/cache ownership and connect the legacy ISR through the parent's
-   tested interrupt API; bounded initialization/recovery must preserve scanout.
-3. Translate the i386 service commands and nested structures explicitly. Begin
+1. Validate CPU-side preparation and zero-page cleanup on the Atom with the
+   current services module. PCI/display ownership stays in the existing parent.
+2. Translate the i386 service commands and nested structures explicitly. Begin
    with connect/enumerate/acquire/init, reject unsupported commands, and check
    handle ownership and user-buffer sizes before exposing a private bridge.
+3. Port device DMA ownership, match the initializer/microkernel build, and
+   connect the legacy ISR through the parent's interrupt API. Design bounded
+   power/reset/recovery before allowing GPU execution.
 4. Run the matching 32-bit initializer and EGL/GLES2 clear/readback, then a
    triangle with GPU completion. Verify pixels and renderer; test malformed
    requests and repeated teardown before enabling broader access.

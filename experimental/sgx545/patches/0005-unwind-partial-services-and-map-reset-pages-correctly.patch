@@ -1,0 +1,155 @@
+--- a/services4/system/cedarview_linux/sysconfig.c
++++ b/services4/system/cedarview_linux/sysconfig.c
+@@ -91,6 +91,7 @@
+ SYS_DATA  gsSysData;
+ 
+ static SYS_SPECIFIC_DATA gsSysSpecificData;
++#define GMA_PREPARE_COMMON_READY (1U << 30)
+ 
+ /**
+  * SOC structures
+@@ -374,6 +375,8 @@
+ 		goto errorExit;
+ 	}
+ 
++	SYS_SPECIFIC_DATA_SET(&gsSysSpecificData, GMA_PREPARE_COMMON_READY);
++
+ 	/*
+ 	 * Locate the devices within the system and get the
+ 	 * physical addresses of each
+@@ -675,7 +678,7 @@
+ 	}
+ #endif
+ 
+-	if (SYS_SPECIFIC_DATA_TEST(psSysSpecData, SYS_SPECIFIC_DATA_INITSGXDEV))
++	if (SYS_SPECIFIC_DATA_TEST(psSysSpecData, SYS_SPECIFIC_DATA_REGSGXDEV))
+ 	{
+ 		/* de-initialise all services managed devices */
+ 		eError = PVRSRVDeinitialiseDevice(gui32SGXDeviceID);
+@@ -691,7 +694,10 @@
+ 
+ 	PCIDeInitDev(psSysData);
+ 
+-	SysDeinitialiseCommon(gpsSysData);
++    if (SYS_SPECIFIC_DATA_TEST(psSysSpecData, GMA_PREPARE_COMMON_READY)) {
++        SysDeinitialiseCommon(gpsSysData);
++        SYS_SPECIFIC_DATA_CLEAR(psSysSpecData, GMA_PREPARE_COMMON_READY);
++    }
+ 
+ 	if (SYS_SPECIFIC_DATA_TEST(psSysSpecData, SYS_SPECIFIC_DATA_ENVDATA))
+ 	{
+--- a/services4/srvkm/devices/sgx/sgxinit.c
++++ b/services4/srvkm/devices/sgx/sgxinit.c
+@@ -889,6 +889,8 @@
+ 						the heap handle in the heap info structure
+ 					*/
+ 					psDeviceMemoryHeap[i].hDevMemHeap = hDevMemHeap;
++                    if (!hDevMemHeap)
++                        return PVRSRV_ERROR_OUT_OF_MEMORY;
+ 				}
+ 				break;
+ 			}
+@@ -1127,7 +1129,8 @@
+ 	{
+ 		/* Can happen if DevInitSGX failed */
+ 		PVR_DPF((PVR_DBG_ERROR,"DevDeInitSGX: Null DevInfo"));
+-		return PVRSRV_OK;
++        psDeviceMemoryHeap = psDeviceNode->sDevMemoryInfo.psDeviceMemoryHeap;
++        goto free_device_heaps;
+ 	}
+ 
+ #if defined(SUPPORT_HW_RECOVERY)
+@@ -1153,7 +1156,8 @@
+ 	}
+ #endif /* SUPPORT_EXTERNAL_SYSTEM_CACHE */
+ 
+-	MMU_BIFResetPDFree(psDevInfo);
++	if (psDevInfo->pui32BIFResetPD)
++		MMU_BIFResetPDFree(psDevInfo);
+ 
+ 	/*
+ 		DeinitDevInfo the DevInfo
+@@ -1180,7 +1184,8 @@
+ 	}
+ 
+ 	/* Destroy the kernel context. */
+-	eError = BM_DestroyContext(psDeviceNode->sDevMemoryInfo.pBMKernelContext, IMG_NULL);
++	eError = psDeviceNode->sDevMemoryInfo.pBMKernelContext ?
++        BM_DestroyContext(psDeviceNode->sDevMemoryInfo.pBMKernelContext, IMG_NULL) : PVRSRV_OK;
+ 	if (eError != PVRSRV_OK)
+ 	{
+ 		PVR_DPF((PVR_DBG_ERROR,"DevDeInitSGX : Failed to destroy kernel context"));
+@@ -1237,6 +1242,7 @@
+ 
+ 	psDeviceNode->pvDevice = IMG_NULL;
+ 
++free_device_heaps:
+ 	if (psDeviceMemoryHeap != IMG_NULL)
+ 	{
+ 	/* Free the device memory heap info. */
+--- a/services4/srvkm/devices/sgx/mmu.c
++++ b/services4/srvkm/devices/sgx/mmu.c
+@@ -2489,6 +2489,7 @@
+ 		PVRSRV_SGXDEV_INFO *psDevInfo = (PVRSRV_SGXDEV_INFO*)psMMUContext->psDevInfo;
+ #endif
+ 		MakeKernelPageReadWrite(psMMUContext->pvPDCpuVAddr);
++		if (psMMUContext->hPDOSMemHandle)
+ 		OSFreePages(PVRSRV_HAP_WRITECOMBINE | PVRSRV_HAP_KERNEL_ONLY,
+ 						SGX_MMU_PAGE_SIZE,
+ 						psMMUContext->pvPDCpuVAddr,
+@@ -4424,8 +4425,15 @@
+ 
+ 	psDevInfo->hBIFResetPDOSMemHandle = hOSMemHandle;
+ 	psDevInfo->sBIFResetPDDevPAddr = SysCpuPAddrToDevPAddr(PVRSRV_DEVICE_TYPE_SGX, sMemBlockCpuPAddr);
+-	psDevInfo->sBIFResetPTDevPAddr.uiAddr = psDevInfo->sBIFResetPDDevPAddr.uiAddr + SGX_MMU_PAGE_SIZE;
+-	psDevInfo->sBIFResetPageDevPAddr.uiAddr = psDevInfo->sBIFResetPTDevPAddr.uiAddr + SGX_MMU_PAGE_SIZE;
++	if (hOSMemHandle) {
++        sMemBlockCpuPAddr = OSMemHandleToCpuPAddr(hOSMemHandle, SGX_MMU_PAGE_SIZE);
++        psDevInfo->sBIFResetPTDevPAddr = SysCpuPAddrToDevPAddr(PVRSRV_DEVICE_TYPE_SGX, sMemBlockCpuPAddr);
++        sMemBlockCpuPAddr = OSMemHandleToCpuPAddr(hOSMemHandle, 2 * SGX_MMU_PAGE_SIZE);
++        psDevInfo->sBIFResetPageDevPAddr = SysCpuPAddrToDevPAddr(PVRSRV_DEVICE_TYPE_SGX, sMemBlockCpuPAddr);
++    } else {
++        psDevInfo->sBIFResetPTDevPAddr.uiAddr = psDevInfo->sBIFResetPDDevPAddr.uiAddr + SGX_MMU_PAGE_SIZE;
++        psDevInfo->sBIFResetPageDevPAddr.uiAddr = psDevInfo->sBIFResetPTDevPAddr.uiAddr + SGX_MMU_PAGE_SIZE;
++    }
+ 	/* override pointer cast warnings */
+ 	/* PRQA S 3305,509 2 */
+ 	psDevInfo->pui32BIFResetPD = (IMG_UINT32 *)pui8MemBlock;
+--- a/services4/srvkm/common/pvrsrv.c
++++ b/services4/srvkm/common/pvrsrv.c
+@@ -933,6 +933,7 @@
+ 		return PVRSRV_ERROR_DEVICEID_NOT_FOUND;
+ 	}
+ 
++#if !defined(GMA3600_SGX_PREPARE_ONLY)
+ 	eError = PVRSRVPowerLock(KERNEL_ID, IMG_FALSE);
+ 	if (eError != PVRSRV_OK)
+ 	{
+@@ -952,13 +953,15 @@
+ 		return eError;
+ 	}
+ 
++#endif
++
+ 	/*
+ 		Free the dissociated device memory.
+ 	*/
+-	eError = ResManFreeResByCriteria(psDeviceNode->hResManContext,
++	eError = psDeviceNode->hResManContext ? ResManFreeResByCriteria(psDeviceNode->hResManContext,
+ 									 RESMAN_CRITERIA_RESTYPE,
+ 									 RESMAN_TYPE_DEVICEMEM_ALLOCATION,
+-									 IMG_NULL, 0);
++									 IMG_NULL, 0) : PVRSRV_OK;
+ 	if (eError != PVRSRV_OK)
+ 	{
+ 		PVR_DPF((PVR_DBG_ERROR,"PVRSRVDeinitialiseDevice: Failed ResManFreeResByCriteria call"));
+@@ -981,7 +984,8 @@
+ 	/*
+ 		Close the device's resource manager context.
+ 	*/
+-	PVRSRVResManDisconnect(psDeviceNode->hResManContext, IMG_TRUE);
++	if (psDeviceNode->hResManContext)
++		PVRSRVResManDisconnect(psDeviceNode->hResManContext, IMG_TRUE);
+ 	psDeviceNode->hResManContext = IMG_NULL;
+ 
+ 	/* remove node from list */

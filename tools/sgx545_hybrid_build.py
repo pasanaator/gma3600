@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
-"""Build the opt-in SGX host/probe and, optionally, the pinned legacy core.
+"""Build the opt-in SGX host/probe and, optionally, services preparation.
 
 Never installs/loads modules, downloads source, or runs proprietary libraries.
 All builds occur in a new output directory, leaving input checkouts untouched.
@@ -57,7 +57,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True,
                         help="new directory; existing paths are rejected")
     parser.add_argument("--source", type=Path,
-                        help="optional pinned openpvrsgx checkout for core link check")
+                        help="optional pinned openpvrsgx checkout for services preparation")
     parser.add_argument("--sgx-rev", choices=("10131", "10141"), default="10141",
                         help="compile profile only; hardware revision remains unverified")
     parser.add_argument("--jobs", type=int, default=2)
@@ -114,11 +114,17 @@ def main():
             for patch in sorted((ROOT / "experimental/sgx545/patches").glob("*.patch")):
                 run_logged(["patch", "--batch", "--fuzz=0", "-p1", "-i", str(patch)],
                            core, output / (patch.stem + ".log"), report)
-            shutil.copy2(ROOT / "experimental/sgx545/core/gma3600_sgx_adapter.c", core)
+            for item in (ROOT / "experimental/sgx545/core").iterdir():
+                if item.suffix in (".c", ".h"):
+                    shutil.copy2(item, core)
+            shutil.copy2(ROOT / "kernel/gma3600/gma3600_sgx.h", core)
             for item in (ROOT / "experimental/sgx545/abi").iterdir():
                 shutil.copy2(item, core)
             with (core / "Makefile").open("a") as stream:
                 stream.write("\n$(TARGET) += sgx545_abi.o\n")
+            run_logged([sys.executable, str(ROOT / "tests/sgx545_source_test.py"),
+                        str(core), str(output / "source-tests")],
+                       output, output / "source-tests.log", report)
             run_logged(make + [f"M={core}", "CONFIG_SGX_DRM=y", "CONFIG_SGX_CEDARVIEW=m",
                        "CONFIG_SGX_HW_PERF=y", "CONFIG_SGX_HW_RECOVERY=y",
                        "CONFIG_SGX_PB_PER_CONTEXT=y", "CONFIG_PVRSGX_1_7_862890_ABI=y",
@@ -127,7 +133,7 @@ def main():
                        "SGX_FLAG=SGX545", f"SGX_REV={args.sgx_rev}", "TARGET_TYPE=m",
                        "AM_VERSION=0", f"-j{args.jobs}", "modules"],
                        output, output / "core.log", report)
-            record_module(report, "core_link_check_only", core / "gma3600_sgx_core_check.ko")
+            record_module(report, "services_prepare_only", core / "gma3600_sgx_services.ko")
         report["status"] = "passed"
     except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
         report["status"] = "failed"

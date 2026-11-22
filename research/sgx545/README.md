@@ -14,6 +14,12 @@ The newer [IRQ implementation/build record](hybrid-irq-6.12-build.json)
 covers the parent-owned interrupt API and an additional `10131` compile profile;
 hardware interrupt delivery and firmware/profile compatibility remain untested.
 
+The next [services preparation checkpoint](../../docs/SGX545-SERVICES-TESTING.md)
+adds real CPU-side DDK initialization, borrowed resources, modern cache handling,
+partial-init cleanup, and noncontiguous reset-page addresses. Its build/test
+evidence is in [services-prepare-6.12-build.json](services-prepare-6.12-build.json).
+No proprietary libraries are needed or executed in this checkpoint.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

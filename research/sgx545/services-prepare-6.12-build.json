@@ -1,0 +1,78 @@
+{
+  "source_repository": "https://github.com/openpvrsgx-devgroup/linux_openpvrsgx",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "target": "Debian 13 amd64 / 6.12.117+deb13-amd64",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "builder": "tools/sgx545_hybrid_build.py",
+  "module": "core/gma3600_sgx_services.ko",
+  "version": "0.3.0",
+  "host_interface_abi": 2,
+  "activation": "Explicit prepare=1 parameter; one preparation attempt per module load.",
+  "scope": "CPU-side DDK OS/memory initialization, SGX registration, kernel MMU/reset-buffer preparation and device enumeration. No GPU execution or userspace bridge.",
+  "profile_builds": [
+    {
+      "profile": "10131",
+      "status": "passed",
+      "make_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "source_tests_exit_code": 0
+    },
+    {
+      "profile": "10141",
+      "status": "passed",
+      "make_exit_codes": [
+        0,
+        0,
+        0
+      ],
+      "source_tests_exit_code": 0
+    }
+  ],
+  "compiler_warnings": 0,
+  "host_regression_suites": [
+    "clock arithmetic",
+    "display MMIO",
+    "display GTT",
+    "display memory",
+    "i386 bridge envelope",
+    "shared IRQ concurrency",
+    "SGX page cache/lifetime faults"
+  ],
+  "python_tests": 10,
+  "actual_patched_DDK_function_tests": [
+    "MMU_BIFResetPDAlloc with noncontiguous physical pages",
+    "MMU_BIFResetPDAlloc allocation failure",
+    "OSReadHWReg and OSWriteHWReg blocked even for NULL register bases",
+    "amd64 PGPROT_WC and PGPROT_UC use distinct kernel protections"
+  ],
+  "memory_checks": [
+    "DMA32 and zeroing flags",
+    "WB/WC/UC selection",
+    "partial metadata/page allocation cleanup",
+    "reject high physical addresses",
+    "partial cache transition rollback",
+    "retain pages on WB restoration failure and support restoration retry"
+  ],
+  "hardware_execution_blocks": [
+    "No PCI acquire/enable/disable or BAR reservation in prepare path",
+    "Borrowed mapping is not unmapped by the child",
+    "Legacy OS register reads/writes are blocked and counted",
+    "DevInitSGXPart2KM and SysFinalise return NOT_SUPPORTED",
+    "No procfs, mmap, private ioctl or DRM rendering interface is registered",
+    "No SGX interrupt or firmware initialization"
+  ],
+  "fixed_legacy_bugs": [
+    "Missing direct-map WC/UC cache ownership",
+    "amd64 WC requests silently mapped uncached",
+    "Reset buffers assumed physical adjacency across a noncontiguous allocation",
+    "Partially initialized device/context/heap cleanup and duplicate common teardown"
+  ],
+  "runtime_preparation_tested": false,
+  "gpu_execution_enabled": false,
+  "i386_nested_bridge_complete": false,
+  "hardware_test_guide": "docs/SGX545-SERVICES-TESTING.md",
+  "profile_note": "Compilation only; no initializer or microkernel compatibility has been validated."
+}

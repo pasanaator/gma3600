@@ -1,0 +1,139 @@
+--- a/services4/system/cedarview_linux/sysconfig.c
++++ b/services4/system/cedarview_linux/sysconfig.c
+@@ -50,6 +50,7 @@
+ 
+ #include "sgxdefs.h"
+ #include "services_headers.h"
++#include "gma3600_sgx_prepare.h"
+ #include "kerneldisplay.h"
+ #include "oemfuncs.h"
+ #include "sgxinfo.h"
+@@ -128,6 +129,10 @@
+  **************************************************************************/
+ static PVRSRV_ERROR SysLocateDevices(SYS_DATA *psSysData)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    PVR_UNREFERENCED_PARAMETER(psSysData);
++    return gma3600_sgx_borrow_map(&gsSGXDeviceMap);
++#else
+ 	IMG_UINT32 ui32IRQ = 0;
+ #if !defined(NO_HARDWARE)
+ 	SYS_SPECIFIC_DATA *psSysSpecData = (SYS_SPECIFIC_DATA *) psSysData->pvSysSpecificData;
+@@ -288,6 +293,7 @@
+ #endif
+ 
+ 	return PVRSRV_OK;
++#endif
+ }
+ 
+ /***********************************************************************//**
+@@ -564,6 +570,9 @@
+  **************************************************************************/
+ PVRSRV_ERROR SysFinalise(IMG_VOID)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    return PVRSRV_ERROR_NOT_SUPPORTED;
++#else
+ 	PVRSRV_ERROR eError;
+ #if defined(SYS_USING_INTERRUPTS)
+ 
+@@ -603,6 +612,7 @@
+ 	}
+ 
+ 	return PVRSRV_OK;
++#endif
+ }
+ 
+ /***********************************************************************//**
+--- a/services4/system/cedarview_linux/sysutils.c
++++ b/services4/system/cedarview_linux/sysutils.c
+@@ -59,6 +59,10 @@
+ ******************************************************************************/
+ PVRSRV_ERROR PCIInitDev(SYS_DATA *psSysData)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    SYS_SPECIFIC_DATA *data = psSysData->pvSysSpecificData;
++    return data->psPCIDev ? PVRSRV_OK : PVRSRV_ERROR_PCI_DEVICE_NOT_FOUND;
++#else
+ 	SYS_SPECIFIC_DATA *psSysSpecData = (SYS_SPECIFIC_DATA *) psSysData->pvSysSpecificData;
+ 
+ #if defined(LDM_PCI) || defined(SUPPORT_DRI_DRM)
+@@ -92,6 +96,7 @@
+ 	 SYS_SPECIFIC_DATA_SET(psSysSpecData, SYS_SPECIFIC_DATA_PCI_REQUEST_SGX_ADDR_RANGE);
+ 
+ 	return PVRSRV_OK;
++#endif
+ }
+ 
+ /*******************************************************************************
+@@ -103,6 +108,9 @@
+ ******************************************************************************/
+ IMG_VOID PCIDeInitDev(SYS_DATA *psSysData)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    PVR_UNREFERENCED_PARAMETER(psSysData);
++#else
+ 	SYS_SPECIFIC_DATA *psSysSpecData = (SYS_SPECIFIC_DATA *) psSysData->pvSysSpecificData;
+ 
+ 	if (SYS_SPECIFIC_DATA_TEST(psSysSpecData, SYS_SPECIFIC_DATA_PCI_REQUEST_SGX_ADDR_RANGE))
+@@ -114,6 +122,7 @@
+ 	{
+ 		OSPCIReleaseDev(psSysSpecData->hSGXPCI);
+ 	}
++#endif
+ }
+ 
+ /*******************************************************************************
+--- a/services4/srvkm/env/linux/osfunc.c
++++ b/services4/srvkm/env/linux/osfunc.c
+@@ -98,6 +98,7 @@
+ 
+ #include "img_types.h"
+ #include "services_headers.h"
++#include "gma3600_sgx_prepare.h"
+ #include "mm.h"
+ #include "pvrmmap.h"
+ #include "mmap.h"
+@@ -2255,19 +2256,30 @@
+ 
+ IMG_UINT32 OSReadHWReg(IMG_PVOID pvLinRegBaseAddr, IMG_UINT32 ui32Offset)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    PVR_UNREFERENCED_PARAMETER(pvLinRegBaseAddr);
++    gma3600_sgx_blocked_write(ui32Offset, 0);
++    return 0;
++#else
+ #if !defined(NO_HARDWARE)
+     return (IMG_UINT32) readl((IMG_PBYTE)pvLinRegBaseAddr+ui32Offset);
+ #else
+     return *(IMG_UINT32 *)((IMG_PBYTE)pvLinRegBaseAddr+ui32Offset);
+ #endif
++#endif
+ }
+ 
+ IMG_VOID OSWriteHWReg(IMG_PVOID pvLinRegBaseAddr, IMG_UINT32 ui32Offset, IMG_UINT32 ui32Value)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    PVR_UNREFERENCED_PARAMETER(pvLinRegBaseAddr);
++    gma3600_sgx_blocked_write(ui32Offset, ui32Value);
++#else
+ #if !defined(NO_HARDWARE)
+     writel(ui32Value, (IMG_PBYTE)pvLinRegBaseAddr+ui32Offset);
+ #else
+     *(IMG_UINT32 *)((IMG_PBYTE)pvLinRegBaseAddr+ui32Offset) = ui32Value;
++#endif
+ #endif
+ }
+ 
+--- a/services4/srvkm/devices/sgx/sgxinit.c
++++ b/services4/srvkm/devices/sgx/sgxinit.c
+@@ -977,6 +977,9 @@
+ 	SGX_DEVICE_MAP			*psSGXDeviceMap;
+ 	PVRSRV_DEV_POWER_STATE	eDefaultPowerState;
+ 
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    return PVRSRV_ERROR_NOT_SUPPORTED;
++#endif
+ 	PDUMPCOMMENT("SGX Initialisation Part 2");
+ 
+ 	psDeviceNode = (PVRSRV_DEVICE_NODE *)hDevHandle;

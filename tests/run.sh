@@ -31,4 +31,10 @@ trap 'rm -f "$test_binary"' EXIT
     kernel/gma3600/gma3600_sgx_irq.c -o "$test_binary"
 "$test_binary"
 
+"${CC:-cc}" -std=gnu11 -Wall -Wextra -Werror -fsanitize=undefined \
+    -Itests/stubs -Itests -Iexperimental/sgx545/core \
+    -include tests/sgx_memory_stubs.h tests/sgx_memory_test.c \
+    experimental/sgx545/core/gma3600_sgx_memory.c -o "$test_binary"
+"$test_binary"
+
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_sgx545_*.py' -v

@@ -13,6 +13,8 @@ The user confirmed readable SGX registers (`01150000` / `0001000d`, revision
 1.0.13) with the prior VGA behavior preserved. Parent-owned SGX interrupt routing
 now has host tests, including concurrent callback teardown; it is not yet wired
 to the legacy services runtime.
+The new [services preparation test](docs/SGX545-SERVICES-TESTING.md) exercises
+real DDK bookkeeping/MMU-memory setup and cleanup with GPU execution disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the

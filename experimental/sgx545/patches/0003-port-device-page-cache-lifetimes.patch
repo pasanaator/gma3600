@@ -1,0 +1,120 @@
+--- a/services4/srvkm/env/linux/mm.c
++++ b/services4/srvkm/env/linux/mm.c
+@@ -80,6 +80,7 @@
+ #include "syscommon.h"
+ #include "mutils.h"
+ #include "mm.h"
++#include "gma3600_sgx_memory.h"
+ #include "pvrmmap.h"
+ #include "mmap.h"
+ #include "osfunc.h"
+@@ -806,7 +807,7 @@
+ 	return psPagePoolEntry;
+ }
+ 
+-static struct page *
++static __maybe_unused struct page *
+ AllocPage(IMG_UINT32 ui32AreaFlags, IMG_BOOL *pbFromPagePool)
+ {
+ 	struct page *psPage = NULL;
+@@ -846,7 +847,7 @@
+ 
+ }
+ 
+-static IMG_VOID
++static __maybe_unused IMG_VOID
+ FreePage(IMG_BOOL bToPagePool, struct page *psPage)
+ {
+ 	/* Only uncached allocations can be freed to the page pool */
+@@ -957,6 +958,29 @@
+ static IMG_BOOL
+ AllocPages(IMG_UINT32 ui32AreaFlags, struct page ***pppsPageList, IMG_HANDLE *phBlockPageList, IMG_UINT32 ui32NumPages, IMG_BOOL *pbFromPagePool)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    struct gma3600_sgx_pages *allocation = NULL;
++    enum gma3600_sgx_cache cache;
++    int ret;
++    *pppsPageList = NULL;
++    *phBlockPageList = NULL;
++    *pbFromPagePool = IMG_FALSE;
++    switch (ui32AreaFlags & PVRSRV_HAP_CACHETYPE_MASK) {
++    case PVRSRV_HAP_CACHED: cache = GMA_SGX_WB; break;
++    case PVRSRV_HAP_WRITECOMBINE: cache = GMA_SGX_WC; break;
++    case PVRSRV_HAP_UNCACHED: cache = GMA_SGX_UC; break;
++    default: return IMG_FALSE;
++    }
++    ret = gma3600_sgx_pages_alloc(ui32NumPages, cache, &allocation);
++    if (ret) {
++        if (allocation && gma3600_sgx_pages_free(allocation))
++            pr_err("gma3600 SGX: retaining pages after failed WB restoration\n");
++        return IMG_FALSE;
++    }
++    *pppsPageList = allocation->pages;
++    *phBlockPageList = allocation;
++    return IMG_TRUE;
++#else
+     struct page **ppsPageList;
+     IMG_HANDLE hBlockPageList;
+     IMG_INT32 i;		/* Must be signed; see "for" loop conditions */
+@@ -1013,12 +1037,24 @@
+ 
+ failed_page_list_alloc:
+     return IMG_FALSE;
++#endif
+ }
+ 
+ 
+ static IMG_VOID
+ FreePages(IMG_BOOL bToPagePool, struct page **ppsPageList, IMG_HANDLE hBlockPageList, IMG_UINT32 ui32NumPages)
+ {
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++    struct gma3600_sgx_pages *allocation = hBlockPageList;
++    PVR_UNREFERENCED_PARAMETER(bToPagePool);
++    if (!allocation || allocation->pages != ppsPageList ||
++        allocation->count != ui32NumPages) {
++        pr_err("gma3600 SGX: invalid page allocation handle\n");
++        return;
++    }
++    if (gma3600_sgx_pages_free(allocation))
++        pr_err("gma3600 SGX: retaining pages after failed WB restoration\n");
++#else
+     IMG_INT32 i;
+ 
+     for(i = 0; i < (IMG_INT32)ui32NumPages; i++)
+@@ -1035,6 +1071,7 @@
+ #endif
+ 
+     (IMG_VOID) OSFreeMem(0, sizeof(*ppsPageList) * ui32NumPages, ppsPageList, hBlockPageList);
++#endif
+ }
+ 
+ 
+--- a/Makefile
++++ b/Makefile
+@@ -24,7 +24,7 @@
+ # - SGX version (530, 540, 544)
+ # - SGX revision
+ 
+-MODULE := gma3600_sgx_core_check
++MODULE := gma3600_sgx_services
+ 
+ # make either $(MODULE)-y or $(MODULE)-m as defined by TARGET_TYPE
+ TARGET := $(MODULE)-$(TARGET_TYPE)
+@@ -154,7 +154,7 @@
+ 
+ # Add rewritten driver components here for now
+ ifeq ($(SOC_VENDOR),intel)
+-$(TARGET) += gma3600_sgx_adapter.o
++$(TARGET) += gma3600_sgx_adapter.o gma3600_sgx_memory.o
+ else
+ $(TARGET) += ../../pvr-drv.o
+ endif
+@@ -268,7 +268,7 @@
+ 
+ ifeq ($(SOC_VENDOR),intel)
+ # Offscreen SGX services only. gma3600 retains PCI and KMS ownership.
+-ccflags-y += -DGMA3600_SGX_HYBRID -DPVR_LINUX_MEM_AREA_USE_VMAP
++ccflags-y += -DGMA3600_SGX_HYBRID -DGMA3600_SGX_PREPARE_ONLY -DGMA3600_SGX_HOST -DPVR_LINUX_MEM_AREA_USE_VMAP
+ 
+ else
+ ccflags-y += -DPVR_DRI_DRM_PLATFORM_DEV

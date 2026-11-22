@@ -8,6 +8,9 @@ preserving the prior display behavior. The next implementation adds parent-owned
 interrupt routing, verified with host tests but not hardware SGX interrupt delivery.
 Hardware rendering is not enabled. See the
 [implementation and Atom test instructions](../experimental/sgx545/README.md).
+The next [CPU-side services preparation checkpoint](SGX545-SERVICES-TESTING.md)
+now has a module that borrows parent resources, prepares real DDK contexts, and
+reports allocation/cleanup counters while blocking legacy register accesses.
 The Intel i386 userspace artifact has been archive-verified and statically audited;
 see [the artifact record](../research/sgx545/README.md). The normal display build
 remains version 1.0.4, with SGX host support excluded by default.
@@ -168,7 +171,9 @@ payload translation, services activation, power/IRQ/memory ownership, and hardwa
 rendering remain unfinished. The identification checkpoint has now passed on
 the Atom. Its [recorded result](../research/sgx545/d2500hn-sgx-identification.json)
 does not validate the newer interrupt API or services initialization. The next
-runtime milestone is services attachment and initialization through the parent.
+runtime milestone is validating services preparation and cleanup through the
+parent, using the preparation test above. Device DMA and the inner i386 bridge
+remain unvalidated; no private rendering interface is exposed yet.
 
 ## Inspected source references
 
