@@ -77,7 +77,7 @@
 #define DRIVER_DATE		"20261121"
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
-#define DRIVER_PATCHLEVEL	1
+#define DRIVER_PATCHLEVEL	2
 
 /* ================================================================
  * Compile-time constants
@@ -141,6 +141,7 @@ struct gma3600_gtt {
 	resource_size_t  gtt_phys;	   /* Physical addr of GTT           */
 	void __iomem    *gtt_map;	   /* ioremapped GTT PTE array        */
 	u32		 saved_pgetbl_ctl;
+	u16		 saved_gmch_ctrl;
 	u32		 gtt_total_entries;/* Total PTE count                 */
 	u32		 stolen_base;	   /* Physical base of stolen memory  */
 	u32		 stolen_size;	   /* Bytes of stolen memory           */

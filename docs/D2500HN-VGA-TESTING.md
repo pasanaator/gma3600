@@ -105,7 +105,7 @@ cat /proc/fb
 sudo modetest -M gma3600 -c -p
 ```
 
-Expected: running module version `1.0.1`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
+Expected: running module version `1.0.2`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
 console when fbdev emulation is enabled, and VGA connector modes matching the
 monitor. Seeing the module in `lsmod` alone does not establish display ownership.
 
@@ -136,6 +136,42 @@ from mode programming; use it only for one boot and still collect the logs.
 Then start the desktop with `sudo systemctl start display-manager`.
 An existing desktop does not automatically migrate to a newly loaded DRM device;
 start it after binding. Under X11, save `xrandr --verbose` from the desktop session.
+
+## Blank screen with a detected signal
+
+On the reported 1.0.1 test, EDID detection succeeded (Dell P2417H, 12 modes),
+the PLL locked at 148.5 MHz, Pipe A enabled at 1920x1080/60, and fbdev registered.
+Those results establish mode setup progress, but do not prove that pixels are
+being fetched or that the console contains visible content.
+
+Before changing the installed boot driver, stop the display manager over SSH
+and use the connector/CRTC IDs from your own modetest output. In the supplied
+log they were 43 and 36:
+
+```sh
+sudo systemctl stop display-manager
+sudo modetest -M gma3600 -s 43@36:1024x768-60
+```
+
+Report whether the pattern is visible, stays black, or causes a timing error.
+Exit with Enter. If modetest fails, send its exact error; do not assume the
+pattern was displayed. A visible pattern isolates the problem to console or
+desktop content; a black pattern at a valid mode points to scanout/data delivery.
+This stops the desktop session, so save work beforehand.
+
+Version 1.0.2 adds the missing IGD PCI GMCH enable step used by Linux gma500,
+with readback and restoration of the previous control word. It logs
+`GTT: GMCH ... -> ...`, plane pitch/surface/linear offset, the first GTT PTE,
+and scanout register snapshots. The previous logs did not include GMCH control,
+so whether this omission caused that board's black image remains unconfirmed.
+After a clean manual-load test of 1.0.2, collect:
+
+```sh
+cat /sys/module/gma3600/version
+cat /proc/fb
+sudo dmesg | grep -Ei 'gma3600|drm|VGA|PLL|GTT|Plane'
+sudo modetest -M gma3600 -c -p
+```
 
 ## 4. Install only after the late-load test passes
 
@@ -169,7 +205,7 @@ sudo update-initramfs -u -k "$(uname -r)"
 
 Reboot normally and repeat binding, console, and mode checks. Test the boot once
 with the default reference selection as well. Verify
-`cat /sys/module/gma3600/version` reports `1.0.1`; an older version or a missing
+`cat /sys/module/gma3600/version` reports `1.0.2`; an older version or a missing
 version file means you are still testing an older module, possibly in initramfs. Do not overwrite an existing Xorg
 profile just to test binding; the modesetting driver normally detects KMS.
 

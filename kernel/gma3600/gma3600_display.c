@@ -117,6 +117,10 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 
 	/* Writing DSPSURF latches all plane registers on next VBlank */
 	gma3600_write_post(gdev, DSPSURF(pipe), start_addr & PAGE_MASK);
+	dev_info_once(gdev->drm.dev,
+		 "Plane %c: fb=%u %ux%u pitch=%u GTT=%08x first PTE=%08x\n",
+		 'A' + pipe, fb->base.id, fb->width, fb->height, fb->pitches[0],
+		 obj->gtt_offset, ioread32(gdev->gtt.gtt_map + (obj->gtt_offset >> 12) * 4));
 }
 
 static void gma3600_plane_atomic_disable(struct drm_plane *plane,

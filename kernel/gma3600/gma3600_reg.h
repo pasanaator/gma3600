@@ -25,6 +25,7 @@
 
 /* Host bridge (device 0, function 0) */
 #define GMA3600_GMCH_CTRL		0x52
+#define GMA3600_GMCH_ENABLED		(1 << 2)
 #define   GMCH_GMS_MASK			0x00F0
 #define   GMCH_GMS_SHIFT		4
 /*

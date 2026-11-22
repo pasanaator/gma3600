@@ -21,6 +21,11 @@ void gma3600_dump_display(struct gma3600_device *gdev, const char *reason)
 		 reason, gma3600_read(gdev, DPLL_A), gma3600_read(gdev, PIPEACONF),
 		 gma3600_read(gdev, ADPA), gma3600_read(gdev, VGACNTRL));
 	dev_info(gdev->drm.dev,
+		 "%s: DSPCNTR=%08x STRIDE=%08x SURF=%08x LINOFF=%08x PGETBL=%08x PIPESTAT=%08x\n",
+		 reason, gma3600_read(gdev, DSPACNTR), gma3600_read(gdev, DSPASTRIDE),
+		 gma3600_read(gdev, DSPASURF), gma3600_read(gdev, DSPALINOFF),
+		 gma3600_read(gdev, PGETBL_CTL), gma3600_read(gdev, PIPEASTAT));
+	dev_info(gdev->drm.dev,
 		 "%s: HTOTAL=%08x HBLANK=%08x HSYNC=%08x VTOTAL=%08x VBLANK=%08x VSYNC=%08x\n",
 		 reason, gma3600_read(gdev, HTOTAL_A), gma3600_read(gdev, HBLANK_A),
 		 gma3600_read(gdev, HSYNC_A), gma3600_read(gdev, VTOTAL_A),

@@ -34,9 +34,19 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 {
 	struct gma3600_gtt *gtt = &gdev->gtt;
 	u32 i;
+	u16 gmch_ctrl;
+	int ret;
 	size_t bitmap_size;
 
 	mutex_init(&gtt->lock);
+
+	/* This is the IGD's PCI control word, not the host bridge's GMS.
+	 * Cedarview needs both GMCH and PGETBL enabled for display fetches.
+	 */
+	ret = pci_read_config_word(gdev->pdev, GMA3600_GMCH_CTRL,
+				   &gtt->saved_gmch_ctrl);
+	if (ret)
+		return pcibios_err_to_errno(ret);
 
 	/* Cedarview's GTT is at the physical address in PGETBL_CTL,
 	 * not a guessed offset inside the display-register BAR. BAR 3 can
@@ -79,11 +89,32 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 	/* Flush write to PCIe */
 	(void)ioread32(gtt->gtt_map);
 
-	/* Enable Page Table in hardware */
+	ret = pci_write_config_word(gdev->pdev, GMA3600_GMCH_CTRL,
+				    gtt->saved_gmch_ctrl | GMA3600_GMCH_ENABLED);
+	if (ret) {
+		ret = pcibios_err_to_errno(ret);
+		goto err_free;
+	}
+	ret = pci_read_config_word(gdev->pdev, GMA3600_GMCH_CTRL, &gmch_ctrl);
+	if (ret || !(gmch_ctrl & GMA3600_GMCH_ENABLED)) {
+		ret = ret ? pcibios_err_to_errno(ret) : -EIO;
+		pci_write_config_word(gdev->pdev, GMA3600_GMCH_CTRL, gtt->saved_gmch_ctrl);
+		goto err_free;
+	}
 	gma3600_write_post(gdev, PGETBL_CTL,
 			    gtt->saved_pgetbl_ctl | PGETBL_ENABLED);
+	dev_info(&gdev->pdev->dev,
+		 "GTT: GMCH %04x -> %04x, PGETBL=%08x, table=%pa\n",
+		 gtt->saved_gmch_ctrl, gmch_ctrl, gma3600_read(gdev, PGETBL_CTL),
+		 &gtt->gtt_phys);
 
 	return 0;
+err_free:
+	kfree(gtt->gtt_free_bitmap);
+	gtt->gtt_free_bitmap = NULL;
+	iounmap(gtt->gtt_map);
+	gtt->gtt_map = NULL;
+	return ret;
 }
 
 void gma3600_gtt_fini(struct gma3600_device *gdev)
@@ -102,6 +133,7 @@ void gma3600_gtt_fini(struct gma3600_device *gdev)
 		gma3600_gtt_clear_pte(gdev, i);
 
 	(void)ioread32(gtt->gtt_map);
+	pci_write_config_word(gdev->pdev, GMA3600_GMCH_CTRL, gtt->saved_gmch_ctrl);
 
 	kfree(gtt->gtt_free_bitmap);
 	gtt->gtt_free_bitmap = NULL;
