@@ -3,9 +3,14 @@
 Development status: version 1.0.4 has user-confirmed visible VGA test patterns at
 1024x768/60 and 1920x1080/60 on an Intel D2500HN with Debian 13 / Linux 6.12.117.
 TTY text renders correctly; stale contents after late driver takeover clear with
-Ctrl+L or `clear`. Desktop operation, automatic boot-time takeover, suspend, and
-other outputs remain unverified. See [the staged hardware test guide](docs/D2500HN-VGA-TESTING.md)
+Ctrl+L or `clear`. The user also confirmed that X and the desktop render correctly
+using llvmpipe. Automatic boot-time takeover, suspend, and other outputs remain unverified. See [the staged hardware test guide](docs/D2500HN-VGA-TESTING.md)
 before installing.
+
+Hardware 3D acceleration is the next investigation: see the
+[SGX545 legacy compatibility assessment](docs/SGX545-ACCELERATION.md) and run
+`python3 tools/sgx545_inventory.py --glxinfo` on the Atom. Version 1.0.4 provides
+display support; the inventory tool does not enable hardware rendering.
 
 Run host clock regression tests with `bash tests/run.sh`. Build validation currently
 targets Debian Linux 6.12.117; compatibility with other kernel APIs requires separate testing.
@@ -30,9 +35,9 @@ Historically, GMA 3600 systems were plagued by two major issues:
 ### 1.3 The Modern Solution
 This driver (`gma3600`) implements a modern DRM/KMS driver that:
 * Conforms to the modern Linux **Atomic Modesetting API** (`drm_atomic_helper_*`).
-* Exposes standard GEM dumb buffers (`DRM_IOCTL_MODE_CREATE_DUMB`) and standard DRM device nodes (`/dev/dri/card0`, `/dev/dri/renderD128`).
+* Exposes standard GEM dumb buffers (`DRM_IOCTL_MODE_CREATE_DUMB`) through a DRM display node (`/dev/dri/cardN`). There is no SGX submission API or accelerated render-node support yet.
 * Integrates directly with the modern X.Org Server's built-in **`modesetting` DDX driver** (`xf86-video-modesetting`), completely eliminating the need for obsolete proprietary DDX drivers.
-* Leverages Mesa's modern multi-threaded software rasterizer (**llvmpipe** / **softpipe**) through X11 **Glamor** for full 2D/3D OpenGL acceleration, or **ShadowFB** for low-power Netbook operation.
+* Supports CPU rendering with Mesa **llvmpipe** / **softpipe** and a standard modesetting desktop. This is software OpenGL, not SGX545 hardware 3D acceleration. X11 **ShadowFB** is another software display option.
 
 ---
 
@@ -208,7 +213,7 @@ Once installed, verify driver operation with the following commands:
    ```bash
    ls -la /dev/dri/
    ```
-   *Verifies `/dev/dri/card0` (modesetting) and `/dev/dri/renderD128` (unprivileged GEM).*
+   *Verify the gma3600 display node; its card number can vary. The current driver does not advertise accelerated render-node support.*
 
 3. **Display Outputs and EDID**:
    ```bash

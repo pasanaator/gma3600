@@ -213,8 +213,10 @@ On Intel D2500HN, Debian 13 / Linux 6.12.117, connected by VGA to a Dell P2417H:
 * No ongoing TTY corruption was reported after clearing. This observation is
   consistent with stale console contents during late takeover, rather than
   evidence of persistent pixel-format or stride corruption.
-* Desktop operation, automatic boot-time takeover, suspend/resume, and other
-  outputs remain unverified. Keep 1.0.4 as the current hardware test revision.
+* The user subsequently confirmed that the X desktop renders correctly using
+  llvmpipe. This is software OpenGL, not SGX545 hardware acceleration.
+* Automatic boot-time takeover, suspend/resume, and other outputs remain
+  unverified. Keep 1.0.4 as the current hardware test revision.
 
 After exiting modetest, clear the physical console if needed and test the desktop:
 
@@ -223,8 +225,8 @@ sudo systemctl start display-manager
 ```
 
 Starting the display manager does not reboot or reinstall the driver. Report
-whether its login screen and desktop render correctly before treating desktop
-support as validated. Follow the installation and recovery steps below to test
+whether its login screen and desktop render correctly on any additional setup;
+this has been confirmed on the user's test machine. Follow the installation and recovery steps below to test
 boot-time loading separately.
 
 ## 4. Install only after the late-load test passes
