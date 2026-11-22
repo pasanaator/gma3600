@@ -2,7 +2,6 @@
 /*
  * Intel GMA 3600 (Cedar Trail) DRM/KMS Driver — Main Entry Point
  *
- * Copyright (C) 2026 Antigravity Project
  */
 
 #include <linux/module.h>
@@ -241,7 +240,7 @@ static struct pci_driver gma3600_pci_driver = {
 
 module_pci_driver(gma3600_pci_driver);
 
-MODULE_AUTHOR("Antigravity Project");
+MODULE_AUTHOR("Henri Proos");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
 MODULE_VERSION("1.0.4");
