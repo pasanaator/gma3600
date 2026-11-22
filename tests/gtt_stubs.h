@@ -18,6 +18,7 @@ typedef uint64_t resource_size_t;
 #define lower_32_bits(n) ((u32)(n))
 #define dev_info(...) ((void)0)
 #define dev_err(...) ((void)0)
+#define dev_warn(...) ((void)0)
 struct mutex { int unused; };
 static inline void mutex_init(struct mutex *m) { (void)m; }
 static inline void mutex_lock(struct mutex *m) { (void)m; }

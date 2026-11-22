@@ -45,8 +45,10 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 	 */
 	ret = pci_read_config_word(gdev->pdev, GMA3600_GMCH_CTRL,
 				   &gtt->saved_gmch_ctrl);
-	if (ret)
+	if (ret) {
+		dev_err(&gdev->pdev->dev, "GTT: PCI GMCH read failed (%d)\n", ret);
 		return pcibios_err_to_errno(ret);
+	}
 
 	/* Cedarview's GTT is at the physical address in PGETBL_CTL,
 	 * not a guessed offset inside the display-register BAR. BAR 3 can
@@ -92,14 +94,23 @@ int gma3600_gtt_init(struct gma3600_device *gdev)
 	ret = pci_write_config_word(gdev->pdev, GMA3600_GMCH_CTRL,
 				    gtt->saved_gmch_ctrl | GMA3600_GMCH_ENABLED);
 	if (ret) {
+		dev_err(&gdev->pdev->dev, "GTT: PCI GMCH write failed (%d)\n", ret);
 		ret = pcibios_err_to_errno(ret);
 		goto err_free;
 	}
 	ret = pci_read_config_word(gdev->pdev, GMA3600_GMCH_CTRL, &gmch_ctrl);
-	if (ret || !(gmch_ctrl & GMA3600_GMCH_ENABLED)) {
-		ret = ret ? pcibios_err_to_errno(ret) : -EIO;
-		pci_write_config_word(gdev->pdev, GMA3600_GMCH_CTRL, gtt->saved_gmch_ctrl);
-		goto err_free;
+	/* Linux gma500 checks PCI write status, not whether this legacy
+	 * bit reads back set. A strict readback test rejected the D2500HN.
+	 * Keep readback diagnostic; a successful PCI write is sufficient.
+	 */
+	if (ret) {
+		dev_warn(&gdev->pdev->dev,
+			 "GTT: GMCH readback unavailable (%d); PCI write succeeded\n", ret);
+		gmch_ctrl = gtt->saved_gmch_ctrl;
+	} else if (!(gmch_ctrl & GMA3600_GMCH_ENABLED)) {
+		dev_warn(&gdev->pdev->dev,
+			 "GTT: GMCH enable bit reads clear (%04x -> %04x); continuing as gma500 does\n",
+			 gtt->saved_gmch_ctrl, gmch_ctrl);
 	}
 	gma3600_write_post(gdev, PGETBL_CTL,
 			    gtt->saved_pgetbl_ctl | PGETBL_ENABLED);

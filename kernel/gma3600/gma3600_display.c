@@ -14,6 +14,7 @@
 #include <drm/drm_fourcc.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_modeset_helper_vtables.h>
+#include <drm/drm_modeset_helper.h>
 #include <drm/drm_probe_helper.h>
 #include <drm/drm_vblank.h>
 #include "gma3600_drv.h"
@@ -76,6 +77,8 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 		return;
 
 	gcrtc = to_gma3600_crtc(new_state->crtc);
+	if (!gcrtc->active)
+		return;
 	pipe = gcrtc->pipe;
 	obj = to_gma3600_gem(drm_gem_fb_get_obj(fb, 0));
 
@@ -117,6 +120,8 @@ static void gma3600_plane_atomic_update(struct drm_plane *plane,
 
 	/* Writing DSPSURF latches all plane registers on next VBlank */
 	gma3600_write_post(gdev, DSPSURF(pipe), start_addr & PAGE_MASK);
+	if (drm_atomic_crtc_needs_modeset(new_state->crtc->state))
+		gma3600_dump_display(gdev, "scanout latched");
 	dev_info_once(gdev->drm.dev,
 		 "Plane %c: fb=%u %ux%u pitch=%u GTT=%08x first PTE=%08x\n",
 		 'A' + pipe, fb->base.id, fb->width, fb->height, fb->pitches[0],
@@ -525,6 +530,14 @@ static const struct drm_crtc_funcs gma3600_crtc_funcs = {
  * Mode Config Setup
  * ================================================================ */
 
+/* Plane control and SURF must be latched with pipe clocks running.
+ * The default tail writes planes before CRTC enable, while this ordering
+ * matches Cedarview's pipe-enable -> plane/base programming sequence.
+ */
+static const struct drm_mode_config_helper_funcs gma3600_mode_config_helpers = {
+	.atomic_commit_tail = drm_atomic_helper_commit_tail_rpm,
+};
+
 static const struct drm_mode_config_funcs gma3600_mode_config_funcs = {
 	.fb_create     = gma3600_fb_create,
 	.atomic_check  = drm_atomic_helper_check,
@@ -546,6 +559,7 @@ int gma3600_display_init(struct gma3600_device *gdev)
 	dev->mode_config.max_width  = 2048;
 	dev->mode_config.max_height = 2048;
 	dev->mode_config.funcs      = &gma3600_mode_config_funcs;
+	dev->mode_config.helper_private = &gma3600_mode_config_helpers;
 
 	/* Initialize VBlank for both Pipe A and Pipe B */
 	ret = drm_vblank_init(dev, GMA3600_MAX_PIPES);

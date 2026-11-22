@@ -105,7 +105,7 @@ cat /proc/fb
 sudo modetest -M gma3600 -c -p
 ```
 
-Expected: running module version `1.0.2`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
+Expected: running module version `1.0.3`, `Kernel driver in use: gma3600`, a gma3600 PCI driver link, a DRM fbdev
 console when fbdev emulation is enabled, and VGA connector modes matching the
 monitor. Seeing the module in `lsmod` alone does not establish display ownership.
 
@@ -159,12 +159,26 @@ pattern was displayed. A visible pattern isolates the problem to console or
 desktop content; a black pattern at a valid mode points to scanout/data delivery.
 This stops the desktop session, so save work beforehand.
 
-Version 1.0.2 adds the missing IGD PCI GMCH enable step used by Linux gma500,
-with readback and restoration of the previous control word. It logs
-`GTT: GMCH ... -> ...`, plane pitch/surface/linear offset, the first GTT PTE,
-and scanout register snapshots. The previous logs did not include GMCH control,
-so whether this omission caused that board's black image remains unconfirmed.
-After a clean manual-load test of 1.0.2, collect:
+Version 1.0.2 added a fatal GMCH enable-bit readback check. On the D2500HN,
+probe then failed with -EIO before DRM registration. Version 1.0.3 removes that
+strict requirement: like Linux gma500, it checks the PCI write result, while
+readback is diagnostic. Actual PCI access errors still fail with an explicit
+operation-specific message. Regression tests cover a non-sticking bit and a
+failed optional readback, as well as real PCI access failures.
+
+The 1.0.1 modetest pattern was also black, so the blank image was not limited to
+console content. Version 1.0.3 uses the DRM enable-before-planes commit helper:
+first program and enable the pipe clocks, then latch plane control and SURF.
+Previously the default helper programmed the plane before PLL/pipe enable.
+This follows the ordering of Cedarview's pipe setup and base programming, but
+whether it resolves the board's black scanout still needs a hardware test.
+
+It logs `GTT: GMCH ... -> ...`, plane pitch/surface/linear offset, the first
+GTT PTE, and a `scanout latched` snapshot after the plane update. The `VGA enabled`
+snapshot now precedes plane programming; use `scanout latched` for the final
+plane register values. A valid image is the pass condition; successful modetest
+return or a software framebuffer binding alone does not prove working scanout.
+After a clean manual-load test of 1.0.3, collect:
 
 ```sh
 cat /sys/module/gma3600/version
@@ -205,7 +219,7 @@ sudo update-initramfs -u -k "$(uname -r)"
 
 Reboot normally and repeat binding, console, and mode checks. Test the boot once
 with the default reference selection as well. Verify
-`cat /sys/module/gma3600/version` reports `1.0.2`; an older version or a missing
+`cat /sys/module/gma3600/version` reports `1.0.3`; an older version or a missing
 version file means you are still testing an older module, possibly in initramfs. Do not overwrite an existing Xorg
 profile just to test binding; the modesetting driver normally detects KMS.
 

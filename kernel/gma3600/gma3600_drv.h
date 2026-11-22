@@ -77,7 +77,7 @@
 #define DRIVER_DATE		"20261121"
 #define DRIVER_MAJOR		1
 #define DRIVER_MINOR		0
-#define DRIVER_PATCHLEVEL	2
+#define DRIVER_PATCHLEVEL	3
 
 /* ================================================================
  * Compile-time constants

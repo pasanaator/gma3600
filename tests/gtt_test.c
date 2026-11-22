@@ -67,11 +67,17 @@ int main(void)
     assert(!dev.gtt.gtt_map && !dev.gtt.gtt_free_bitmap);
     fail_write = false;
     fail_read_at = reads + 2; /* Fail the enable readback, after a successful write. */
-    assert(gma3600_gtt_init(&dev) == -EIO);
+    assert(!gma3600_gtt_init(&dev));
+    assert(mappings == 1 && pci.gmch == 0x1204);
+    gma3600_gtt_fini(&dev);
     assert(!mappings && pci.gmch == 0x1200);
     fail_read_at = 0;
     ignore_write = true; /* PCI write succeeds but the enable bit does not stick. */
-    assert(gma3600_gtt_init(&dev) == -EIO);
+    /* Regression: ignored legacy enable bit must not fail device probe. */
+    assert(!gma3600_gtt_init(&dev));
+    assert(mappings == 1 && pci.gmch == 0x1200);
+    assert(dev.pgetbl == 0x12345001);
+    gma3600_gtt_fini(&dev);
     assert(!mappings && pci.gmch == 0x1200);
     puts("GTT regression tests passed: GMCH enable/restore, PTE mappings, PCI failure cleanup");
     return 0;
