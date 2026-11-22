@@ -272,6 +272,9 @@ struct gma3600_device {
 	struct drm_device drm;
 	struct pci_dev	 *pdev;
 	struct pci_dev	 *bridge;	/* Host bridge PCI 0:0.0        */
+#ifdef GMA3600_SGX_HOST
+	struct gma3600_sgx_device *sgx;
+#endif
 
 	/* MMIO (BAR 0) */
 	void __iomem	 *mmio;

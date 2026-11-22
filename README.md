@@ -7,10 +7,12 @@ Ctrl+L or `clear`. The user also confirmed that X and the desktop render correct
 using llvmpipe. Automatic boot-time takeover, suspend, and other outputs remain unverified. See [the staged hardware test guide](docs/D2500HN-VGA-TESTING.md)
 before installing.
 
-Hardware 3D acceleration is the next investigation: see the
-[SGX545 legacy compatibility assessment](docs/SGX545-ACCELERATION.md) and run
-`python3 tools/sgx545_inventory.py --glxinfo` on the Atom. Version 1.0.4 provides
-display support; the inventory tool does not enable hardware rendering.
+The **SGX545 hybrid port for Debian 13 amd64** has started: see the
+[experimental build and hardware identification test](experimental/sgx545/README.md).
+The separated legacy SGX core now builds against 6.12.117; runtime rendering,
+the complete i386 compat bridge, and presentation remain unfinished. The normal
+1.0.4 display build stays the default. See also the
+[legacy compatibility assessment](docs/SGX545-ACCELERATION.md).
 
 Run host clock regression tests with `bash tests/run.sh`. Build validation currently
 targets Debian Linux 6.12.117; compatibility with other kernel APIs requires separate testing.

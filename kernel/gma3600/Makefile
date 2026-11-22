@@ -26,6 +26,15 @@ gma3600-y := gma3600_drv.o \
 
 ccflags-y := -I$(src) -Wall -Wextra
 
+# Experimental SGX companion bus. The normal display build omits it entirely.
+ifeq ($(SGX_HOST),1)
+ifeq ($(CONFIG_AUXILIARY_BUS),)
+$(error SGX_HOST=1 requires CONFIG_AUXILIARY_BUS)
+endif
+gma3600-y += gma3600_sgx_host.o
+ccflags-y += -DGMA3600_SGX_HOST
+endif
+
 else
 
 KDIR ?= /lib/modules/$(shell uname -r)/build

@@ -1,0 +1,96 @@
+--- a/services4/srvkm/env/linux/mm.c
++++ b/services4/srvkm/env/linux/mm.c
+@@ -508,33 +508,6 @@
+     return IMG_TRUE;
+ }
+ 
+-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0))
+-#else
+-/* provide pre-5.8 __vmalloc() with 3 parameters */
+-
+-#include <linux/kallsyms.h>
+-
+-static void *__old_vmalloc_node(unsigned long size, unsigned long align,
+-			    gfp_t gfp_mask, pgprot_t prot,
+-			    int node, const void *caller)
+-{
+-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6,10,0))
+-/* we need to add EXPORT_SYMBOL(__vmalloc_node_range); to vmalloc.c */
+-	return __vmalloc_node_range(size, align, VMALLOC_START, VMALLOC_END,
+-				    gfp_mask, prot, 0, node, caller);
+-#else
+-/* we need to add EXPORT_SYMBOL(__vmalloc_node_range_noprof); to vmalloc.c */
+-	return __vmalloc_node_range_noprof(size, align, VMALLOC_START, VMALLOC_END,
+-				    gfp_mask, prot, 0, node, caller);
+-#endif
+-}
+-
+-static void *__old_vmalloc(unsigned long size, gfp_t gfp_mask, pgprot_t prot)
+-{
+-	return __old_vmalloc_node(size, 1, gfp_mask, prot, NUMA_NO_NODE,
+-				__builtin_return_address(0));
+-}
+-#endif
+ 
+ IMG_VOID *
+ _VMallocWrapper(IMG_SIZE_T uiBytes,
+@@ -542,33 +515,15 @@
+                 IMG_CHAR *pszFileName,
+                 IMG_UINT32 ui32Line)
+ {
+-    pgprot_t PGProtFlags;
+     IMG_VOID *pvRet;
+-	gfp_t gfp_mask; 
+-    
+-    if (!AllocFlagsToPGProt(&PGProtFlags, ui32AllocFlags))
+-    {
+-            return NULL;
+-    }
+-
+-	gfp_mask = GFP_KERNEL;
+-
+-#if defined(PVR_USE_DMA32_FOR_DEVMEM_ALLOCS)
+-#ifdef CONFIG_ZONE_DMA32
+-	gfp_mask |= __GFP_DMA32;
+-#else
+-	gfp_mask |= __GFP_DMA;
+-#endif
+-#else
+-	gfp_mask |= __GFP_HIGHMEM;
+-#endif
+-
+-	/* Allocate virtually contiguous pages */
+-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,8,0))
+-    pvRet = __vmalloc(uiBytes, gfp_mask, PGProtFlags);
+-#else
+-    pvRet = __old_vmalloc(uiBytes, gfp_mask, PGProtFlags);
+-#endif
++
++    /* Modern __vmalloc supports normal cached kernel memory only. Device
++     * allocations use AllocPages/vmap; never silently turn WC into WB.
++     */
++    if ((ui32AllocFlags & PVRSRV_HAP_CACHETYPE_MASK) != PVRSRV_HAP_CACHED)
++        return NULL;
++    /* Cached metadata need not be DMA-addressable. vmalloc rejects DMA32. */
++    pvRet = __vmalloc(uiBytes, GFP_KERNEL);
+     
+ #if defined(DEBUG_LINUX_MEMORY_ALLOCATIONS)
+     if (pvRet)
+@@ -624,7 +579,7 @@
+             return NULL;
+     }
+ 
+-    pvRet = vmap(ppsPageList, ui32NumPages, GFP_KERNEL | __GFP_HIGHMEM, PGProtFlags);
++    pvRet = vmap(ppsPageList, ui32NumPages, VM_MAP, PGProtFlags);
+ 
+ #if defined(DEBUG_LINUX_MEMORY_ALLOCATIONS)
+     if (pvRet)
+@@ -1110,6 +1065,8 @@
+     }
+ 
+     pvCpuVAddr = VMapWrapper(ppsPageList, ui32NumPages, ui32AreaFlags);
++    if (!pvCpuVAddr)
++        goto failed;
+ #else	/* defined(PVR_LINUX_MEM_AREA_USE_VMAP) */
+     pvCpuVAddr = VMallocWrapper(uBytes, ui32AreaFlags);
+     if (!pvCpuVAddr)

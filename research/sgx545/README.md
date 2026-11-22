@@ -1,7 +1,11 @@
 # Verified Intel SGX545 legacy artifacts
 
-The selected route is legacy compatibility research. The production gma3600
-kernel module remains version **1.0.4**. These tools do not implement acceleration.
+The selected route is a hybrid SGX port for Debian 13 amd64. The normal gma3600
+kernel module remains version **1.0.4**. These research tools do not enable
+acceleration. The [first implementation and hardware test](../../experimental/sgx545/README.md)
+now separate the services core from its old display driver and produce a
+6.12.117 link-check module. The unmodified-build failure below is retained as
+the baseline, not the result of the patched hybrid build.
 
 ## Retrieved artifact and provenance
 

@@ -1,0 +1,42 @@
+--- a/Makefile
++++ b/Makefile
+@@ -24,7 +24,7 @@
+ # - SGX version (530, 540, 544)
+ # - SGX revision
+ 
+-MODULE := pvrsrvkm_$(SOC)_$(SGX)_$(SGX_REV)
++MODULE := gma3600_sgx_core_check
+ 
+ # make either $(MODULE)-y or $(MODULE)-m as defined by TARGET_TYPE
+ TARGET := $(MODULE)-$(TARGET_TYPE)
+@@ -154,7 +154,7 @@
+ 
+ # Add rewritten driver components here for now
+ ifeq ($(SOC_VENDOR),intel)
+-$(TARGET) += services4/srvkm/env/linux/pvr_drm.o
++$(TARGET) += gma3600_sgx_adapter.o
+ else
+ $(TARGET) += ../../pvr-drv.o
+ endif
+@@ -267,18 +267,9 @@
+ $(TARGET) += services4/srvkm/common/deviceclass.o
+ 
+ ifeq ($(SOC_VENDOR),intel)
+-ccflags-y += \
+-	-I$(src)/services4/3rdparty/dc_poulsbo \
+-	-DDISPLAY_CONTROLLER=dc_poulsbo \
+-	-DSUPPORT_DRM_MODESET \
+-	-DSUPPORT_DRM_DUMB_BUFFERS \
+-	-DPVR_DISPLAY_CONTROLLER_DRM_IOCTL
+-$(TARGET) += \
+-	services4/3rdparty/dc_poulsbo/poulsbo_displayclass.o \
+-	services4/3rdparty/dc_poulsbo/poulsbo_linux.o \
+-	services4/3rdparty/dc_poulsbo/poulsbo_linux_sdvo.o \
+-	services4/3rdparty/dc_poulsbo/poulsbo_linux_lvds.o \
+-	services4/3rdparty/dc_poulsbo/poulsbo_linux_crt.o
++# Offscreen SGX services only. gma3600 retains PCI and KMS ownership.
++ccflags-y += -DGMA3600_SGX_HYBRID -DPVR_LINUX_MEM_AREA_USE_VMAP
++
+ else
+ ccflags-y += -DPVR_DRI_DRM_PLATFORM_DEV
+ # new for ddk 1.14 tree

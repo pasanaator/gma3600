@@ -21,6 +21,7 @@
 
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
+#include "gma3600_sgx.h"
 
 /*
  * PCI Device Identification Table
@@ -168,6 +169,10 @@ static int gma3600_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 		dev_warn(&pdev->dev, "gma3600_fbdev_init failed: %d (continuing)\n", ret);
 
 	dev_info(&pdev->dev, "Intel GMA 3600 (Cedar Trail) initialized successfully\n");
+	/* SGX discovery is optional; its failure must not tear down working KMS. */
+	ret = gma3600_sgx_host_init(gdev);
+	if (ret)
+		dev_warn(&pdev->dev, "SGX companion unavailable: %d\n", ret);
 	return 0;
 
 err_uninstall_irq:
@@ -194,6 +199,8 @@ static void gma3600_pci_remove(struct pci_dev *pdev)
 	if (!gdev)
 		return;
 
+	/* Unbind the child before releasing any of its parent's resources. */
+	gma3600_sgx_host_fini(gdev);
 	drm_kms_helper_poll_fini(&gdev->drm);
 	drm_dev_unregister(&gdev->drm);
 	gma3600_backlight_fini(gdev);
@@ -243,7 +250,11 @@ module_pci_driver(gma3600_pci_driver);
 MODULE_AUTHOR("Henri Proos");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
+#ifdef GMA3600_SGX_HOST
+MODULE_VERSION("1.0.4-sgx-host1");
+#else
 MODULE_VERSION("1.0.4");
+#endif
 
 #ifdef MODULE_IMPORT_NS
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 13, 0)

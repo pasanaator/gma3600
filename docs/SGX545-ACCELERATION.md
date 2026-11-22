@@ -1,11 +1,13 @@
 # SGX545 hardware acceleration: legacy compatibility investigation
 
-Status: the Intel i386 userspace package has been retrieved, archive-verified,
-and statically audited. A reproducible SGX kernel candidate compile fails in
-legacy display APIs. This is not an accelerated driver. See the
-[artifact audit and build instructions](../research/sgx545/README.md).
-The user selected the legacy compatibility route on 2026-11-22. Keep the working
-1.0.4 display kernel module while investigating a separate rendering stack.
+Status: the selected **hybrid port for Debian 13 amd64** has its first implementation.
+The separated legacy services core builds against stock 6.12.117 headers, and an
+opt-in auxiliary child provides SGX545 identification without a second PCI owner.
+Hardware rendering is not enabled. See the
+[implementation and Atom test instructions](../experimental/sgx545/README.md).
+The Intel i386 userspace artifact has been archive-verified and statically audited;
+see [the artifact record](../research/sgx545/README.md). The normal display build
+remains version 1.0.4, with SGX host support excluded by default.
 
 ## What is established
 
@@ -51,9 +53,10 @@ been retrieved from Ubuntu's historical archive and verified against its signed
 Precise-updates package index. It contains ELF32/i386 DDK 1.7.862890 libraries.
 This confirms a candidate artifact, not kernel/runtime compatibility.
 
-No external driver was installed, no proprietary library was executed or copied
-into this repository, and no claim is made that the inspected SGX tree builds
-or works on Linux 6.12.117.
+No external driver was installed, and no proprietary library was executed or
+copied into this repository. The unmodified candidate fails to build; the
+experimental patches now produce a services link-check module. That module
+deliberately rejects initialization, and runtime compatibility remains unproven.
 
 ## Collect the Atom's compatibility inventory
 
@@ -153,12 +156,14 @@ and dynamically loaded window-system components.
    path does not supply that integration. Then test EGL/GLES presentation,
    X integration where available, and boot/suspend/regression cases.
 
-Gate 1 now has an authenticated historical Intel userspace artifact, a static
-library/dependency audit, and an actual kernel compile probe. Runtime compatibility
-and the required bridge integration remain unproven. The current milestone
-supplies reproducible research tools and records, not hardware 3D.
-If suitable legacy artifacts cannot be obtained, the alternatives are a new
-open SGX userspace stack/compiler or retaining software rendering.
+Gate 1 has an authenticated historical Intel userspace artifact and a static
+library/dependency audit. Gate 3 has started: services/display build separation,
+an opt-in parent-owned auxiliary interface, a hardware identification probe, and
+an outer i386 bridge-envelope decoder. The kernel build checks the pinned DDK's
+48-byte native envelope against the separate 28-byte i386 wire layout. Nested
+payload translation, services activation, power/IRQ/memory ownership, and hardware
+rendering remain unfinished. The next hardware checkpoint is the identification
+snapshot described in the implementation guide.
 
 ## Inspected source references
 

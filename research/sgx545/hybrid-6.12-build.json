@@ -1,0 +1,49 @@
+{
+  "source_repository": "https://github.com/openpvrsgx-devgroup/linux_openpvrsgx",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "source_subpath": "drivers/gpu/drm/pvrsgx/1.17.4948957/eurasia_km",
+  "kernel_headers": "Debian 6.12.117+deb13-amd64",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "builder": "tools/sgx545_hybrid_build.py",
+  "scope": "Opt-in host, identification-only auxiliary driver, and separated services core link check. No install or load.",
+  "patches": [
+    "experimental/sgx545/patches/0001-separate-services-from-legacy-display.patch",
+    "experimental/sgx545/patches/0002-use-exported-memory-APIs.patch"
+  ],
+  "result": "passed",
+  "make_exit_codes": [
+    0,
+    0,
+    0
+  ],
+  "modules": [
+    "gma3600.ko (1.0.4-sgx-host1)",
+    "gma3600_sgx_probe.ko (0.1.0)",
+    "gma3600_sgx_core_check.ko (0.1.0, initialization returns EOPNOTSUPP)"
+  ],
+  "unverified_compile_profile": {
+    "SGX": "sgx545",
+    "SGX_REV": "10141",
+    "DDK_ABI": "1.7.862890",
+    "parameter_buffers": "per-context",
+    "ioctl_alias": 18,
+    "hardware_performance": true,
+    "hardware_recovery": true
+  },
+  "kernel_patches_required": false,
+  "compiler_warnings": 0,
+  "abi_checks": {
+    "native_DDK_envelope_size": 48,
+    "i386_envelope_size": 28,
+    "native_DDK_output_pointer_offset": 24,
+    "i386_output_pointer_offset": 16,
+    "nested_compat_translation_complete": false,
+    "i386_layout_cross_compiled": true
+  },
+  "default_display_build": "Passed separately; module remains 1.0.4 and excludes SGX host support.",
+  "host_tests": "Passed: clock, mocked MMIO, GTT, memory, SGX i386 envelope; ten Python tests.",
+  "runtime_tested": false,
+  "sgx_runtime_enabled": false,
+  "hardware_next_step": "Load opt-in host and identification probe on the D2500HN via SSH using experimental/sgx545/README.md. Report raw ID/revision and VGA behavior.",
+  "core_compiled_source_objects": 47
+}

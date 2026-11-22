@@ -1,0 +1,2 @@
+# Patch context/removal lines must preserve the pinned upstream whitespace.
+experimental/sgx545/patches/*.patch -whitespace
