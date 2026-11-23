@@ -44,10 +44,12 @@ def main():
     subprocess.run([os.environ.get("CC", "cc"), "-m32", "-ffreestanding", "-std=c11",
                     "-Wall", "-Wextra", "-Werror", "-DLINUX", "-DUSE_CODE",
                     "-DTRANSFER_QUEUE", "-DPVR_SECURE_HANDLES", "-DPVR_ABI_COMPAT=1,7,862890",
-                    "-DSGX545", "-DSGX_CORE_REV=10131", "-I", str(includes),
+                    "-DSGX545", "-DSGX_CORE_REV=10131", "-DSUPPORT_PERCONTEXT_PB",
+                    "-I", str(includes),
                     "-I", str(core / "include4"), "-I", str(core / "services4/include"),
                     "-I", str(core / "services4/system/cedarview_linux"),
                     "-I", str(core / "services4/srvkm/hwdefs"),
+                    "-I", str(core / "services4/srvkm/devices/sgx"),
                     "-I", str(root / "experimental/sgx545/abi"), "-c",
                     str(root / "tests/sgx545_ddk_i386_layout.c"),
                     "-o", str(output / "ddk-i386-layout.o")], check=True)

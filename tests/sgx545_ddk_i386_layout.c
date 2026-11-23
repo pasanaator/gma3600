@@ -2,6 +2,7 @@
 /* Compile-only against actual pinned public DDK headers, in real -m32 mode. */
 #include "pvr_bridge.h"
 #include "sgx_bridge.h"
+#include "sgxconfig.h"
 #define SGX545_FREESTANDING
 #include "sgx545_abi.h"
 
@@ -25,3 +26,5 @@ FIELD(ui32XTileStride, tile_stride);
 _Static_assert(PVRSRV_BRIDGE_INITSRV_CONNECT == SGX545_COMMAND(SGX545_CMD_INIT_CONNECT), "init connect command");
 _Static_assert(PVRSRV_BRIDGE_INITSRV_DISCONNECT == SGX545_COMMAND(SGX545_CMD_INIT_DISCONNECT), "init disconnect command");
 _Static_assert(PVRSRV_BRIDGE_SGXINFO_FOR_SRVINIT == SGX545_COMMAND(SGX545_CMD_INIT_INFO), "init info command");
+_Static_assert(SGX_SHARED_3DPARAMETERS_HEAP_SIZE == 0, "per-context profile disables shared PB");
+_Static_assert(SGX_PERCONTEXT_3DPARAMETERS_HEAP_SIZE > 0, "per-context PB remains active");

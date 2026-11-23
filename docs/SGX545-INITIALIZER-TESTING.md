@@ -17,6 +17,41 @@ SGX interrupt enablement or device DMA test occurs. The existing KMS parent and
 llvmpipe desktop remain the display stack. This remains a diagnostic misc
 transport, not the complete DRM interface required by the proprietary libraries.
 
+## Retry after `FAIL: invalid heap range (result=9)`
+
+The initial client incorrectly rejected a defined heap with size zero. With
+per-context parameter buffers, the DDK deliberately retains the disabled shared
+PB heap (`0x07000009`) with zero size and no handle. The corrected client accepts
+and prints that record as `disabled`; it still rejects address overflow or a
+zero-size heap with a nonzero handle. These cases now have regression coverage,
+including compile-time checks of the pinned DDK's per-context configuration.
+
+The supplied hardware transcript stopped at this client check. It established
+initializer ownership, metadata retrieval, and automatic cleanup after client
+exit; repeated queries and explicit abort still need the corrected run.
+The existing services **0.5.0** modules can be reused. Rebuild only the client:
+
+```sh
+git pull --ff-only
+probe_build=$(mktemp -d /tmp/gma3600-client.XXXXXX)
+bash tools/sgx545_compat_probe_build.sh "$probe_build/sgx545-compat-probe"
+"$probe_build/sgx545-compat-probe" --selftest
+sgx_build="$HOME/Desktop/gma3600-sgx-init1"
+sudo insmod "$sgx_build/core/gma3600_sgx_services.ko" prepare=1 bridge=1
+sudo "$probe_build/sgx545-compat-probe" --init-info
+cat /sys/bus/auxiliary/devices/gma3600.sgx.*/services
+sudo rmmod gma3600_sgx_services
+sudo dmesg | grep -Ei 'SGX bridge|services|blocked hardware|BUG:|Oops' | tail -40
+```
+
+This assumes the previous child was unloaded, as in the supplied transcript.
+The new selftest includes `disabled_heap=accepted`. If this run passes and cleanup
+is clean, repeat with a fresh child load and `--init-close` using this same
+`$probe_build/sgx545-compat-probe` executable. The success/status criteria below
+apply to both corrected-client tests. The deliberate invalid-device-index test
+can log `PVRSRVAcquireDeviceDataKM: requested device is not present`; that message
+is expected when the client subsequently reports the real SGX device.
+
 ## Build
 
 In the repository root, using the pinned source checkout from the previous test:
@@ -30,7 +65,7 @@ python3 tools/sgx545_hybrid_build.py \
   --source "$HOME/.cache/gma3600/openpvrsgx" \
   --sgx-rev 10131 \
   --output "$sgx_build"
-modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
+sudo modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
 "$sgx_build/sgx545-compat-probe" --selftest
 ```
 

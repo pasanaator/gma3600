@@ -43,4 +43,7 @@ trap 'rm -f "$test_binary"' EXIT
 "$test_binary"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_bridge_lifetime_test.py
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+    -Iexperimental/sgx545/abi -Itools tests/sgx545_heap_test.c -o "$test_binary"
+"$test_binary"
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_sgx545_*.py' -v

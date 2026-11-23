@@ -4,6 +4,7 @@
  */
 #define SGX545_FREESTANDING
 #include "sgx545_abi.h"
+#include "sgx545_heap_validate.h"
 
 _Static_assert(sizeof(void *) == 4, "Build this client with -m32");
 _Static_assert(sizeof(struct sgx545_bridge32) == 28, "i386 envelope");
@@ -136,15 +137,17 @@ static void initializer_test(int fd, unsigned services, unsigned device,
 				fail("undefined heap contains data", i);
 			continue;
 		}
-		n++;
-		if (!h->size || (__u64)h->base + h->size > (1ULL << 32)) fail("invalid heap range", i);
+		if (!sgx545_heap_valid(h)) fail("invalid heap range", i);
+		if (h->size) n++;
 		if (h->handle) {
 			handles++;
 			if (h->handle == services || h->handle == device) fail("heap token collision", i);
 		}
 		say("heap id=0x"); hex(h->id); say(" handle=0x"); hex(h->handle);
 		say(" base=0x"); hex(h->base); say(" size=0x"); hex(h->size);
-		say(" attributes=0x"); hex(h->attributes); say(" tile_stride=0x"); hex(h->tile_stride); say("\n");
+		say(" attributes=0x"); hex(h->attributes); say(" tile_stride=0x"); hex(h->tile_stride);
+		if (!h->size) say(" disabled");
+		say("\n");
 	}
 	if (!n || !handles) fail("missing initializer heaps or shared handles", n);
 	w.param_out = ptr(&again);
@@ -187,7 +190,11 @@ int probe_main(unsigned *initial_stack)
 	int init_mode = 0;
 
 	if (argc > 1 && same(argv[1], "--selftest")) {
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776\n");
+		struct sgx545_heap32 disabled = {0x07000009, 0, 0xd2000000, 0, 0x02024200, 0};
+		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
+		disabled.handle = 1;
+		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 disabled_heap=accepted\n");
 		return 0;
 	}
 	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | device-path]\n"); return 2; }

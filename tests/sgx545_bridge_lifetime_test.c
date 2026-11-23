@@ -199,6 +199,7 @@ static void initializer_lifetime(void)
     native_info.asHeapInfo[1] = (PVRSRV_HEAP_INFO){2, NULL, {0x6000000}, 0x1000000, 1, 0};
     native_info.asHeapInfo[2] = (PVRSRV_HEAP_INFO){3, &fake_heap, {0x7000000}, 0x1000000, 3, 0};
     native_info.asHeapInfo[3] = (PVRSRV_HEAP_INFO){4, &fake_heap2, {0x8000000}, 0x1000000, 3, 4096};
+    native_info.asHeapInfo[4] = (PVRSRV_HEAP_INFO){0x07000009, NULL, {0xd2000000}, 0, 0x02024200, 0};
 
     b = start(&dev); f = open_(b, &file); other = open_(b, &second);
     assert(!backend_connect(f, &token) && !backend_connect(other, &token));
@@ -223,7 +224,9 @@ static void initializer_lifetime(void)
     assert(out.heaps[3].handle && out.heaps[3].handle != out.heaps[0].handle);
     assert(!out.heaps[1].handle && out.heaps[1].size == 0x1000000);
     assert(out.heaps[3].tile_stride == 4096);
-    for (i = 4; i < 32; i++) {
+    assert(out.heaps[4].id == 0x07000009 && out.heaps[4].base == 0xd2000000);
+    assert(!out.heaps[4].size && !out.heaps[4].handle && out.heaps[4].attributes == 0x02024200);
+    for (i = 5; i < 32; i++) {
         assert(out.heaps[i].id == UINT32_MAX && !out.heaps[i].handle && !out.heaps[i].base);
     }
     assert(f->heap_count == 2 && b->stats.heap_handles == 2 && f->handles->count == 4);

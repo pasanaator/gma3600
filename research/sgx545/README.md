@@ -37,6 +37,11 @@ GPU-execution block and is still a diagnostic transport rather than a complete
 legacy DRM services interface.
 See the [initializer build/test record](initializer-info-6.12-build.json) for the
 two compile profiles, actual i386 header assertions and mocked lifetime checks.
+The [first initializer hardware attempt](d2500hn-initializer-attempt.json) retrieved
+metadata but stopped at an overly strict client check for a disabled zero-size
+PB heap. Cleanup remained clean. The corrected client accepts that DDK record;
+the [test guide](../../docs/SGX545-INITIALIZER-TESTING.md#retry-after-fail-invalid-heap-range-result9)
+has a client-only rebuild/retest procedure with the existing 0.5.0 module.
 
 ## Retrieved artifact and provenance
 

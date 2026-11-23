@@ -1,0 +1,109 @@
+{
+  "source": "User-supplied SSH transcript and kernel-log excerpt",
+  "checkpoint_commit": "4b09704",
+  "services_version_from_modinfo": "0.5.0",
+  "compile_profile": "10131",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, Linux 6.12.117+deb13-amd64, VGA",
+  "local_regression_tests": "passed on user hardware",
+  "local_module_build": "passed on user hardware",
+  "client_selftest": "passed; initial client predates disabled-heap fix",
+  "page_directory_from_reply": "0x2d0a8000",
+  "heap_records_actually_printed": [
+    {
+      "id": "0x07000000",
+      "handle": "0x00000000",
+      "base": "0x10000000",
+      "size": "0xc1fff000",
+      "attributes": "0x02014200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000001",
+      "handle": "0x00000000",
+      "base": "0xe2000000",
+      "size": "0x0cfff000",
+      "attributes": "0x02024200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000002",
+      "handle": "0x0000000c",
+      "base": "0xf2000000",
+      "size": "0x0007f000",
+      "attributes": "0x02024200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000003",
+      "handle": "0x0000000d",
+      "base": "0xf4000000",
+      "size": "0x04fff000",
+      "attributes": "0x02024200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000004",
+      "handle": "0x00000000",
+      "base": "0xf9000000",
+      "size": "0x004ff000",
+      "attributes": "0x02014200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000005",
+      "handle": "0x00000000",
+      "base": "0xfe000000",
+      "size": "0x001ff000",
+      "attributes": "0x02014200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000006",
+      "handle": "0x00000000",
+      "base": "0xf0000000",
+      "size": "0x01fff000",
+      "attributes": "0x02014200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000007",
+      "handle": "0x00000000",
+      "base": "0xf2400000",
+      "size": "0x01bff000",
+      "attributes": "0x02014200",
+      "tile_stride": "0x00000000"
+    },
+    {
+      "id": "0x07000008",
+      "handle": "0x0000000e",
+      "base": "0xef000000",
+      "size": "0x00fff000",
+      "attributes": "0x02024200",
+      "tile_stride": "0x00000000"
+    }
+  ],
+  "client_failure": "FAIL: invalid heap range (result=9)",
+  "cause": "Client required every defined heap to have nonzero size. The pinned DDK deliberately retains a zero-size shared PB heap under SUPPORT_PERCONTEXT_PB.",
+  "expected_slot_9_from_source_not_printed_by_failed_client": {
+    "id": "0x07000009",
+    "size": 0,
+    "handle": 0
+  },
+  "source_evidence": [
+    "services4/srvkm/devices/sgx/sgxconfig.h defines SGX_SHARED_3DPARAMETERS_HEAP_SIZE=0 with SUPPORT_PERCONTEXT_PB",
+    "services4/srvkm/devices/sgx/sgxinit.c still includes both shared and per-context PB records"
+  ],
+  "status_after_failed_client": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1",
+  "bridge_cleanup": "files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1",
+  "services_cleanup": "result=0 pages_live=0 blocked_hw_accesses=0",
+  "automatic_cleanup_after_client_exit": "confirmed by supplied status and unload counters",
+  "expected_negative_test_log": "PVRSRVAcquireDeviceDataKM: requested device is not present (client deliberately requests an invalid index)",
+  "still_pending": [
+    "Corrected client reaching all heap records, repeat-query and explicit abort checks",
+    "Complete --init-close mode",
+    "GPU execution, firmware, device DMA, rendering and presentation"
+  ],
+  "fix_scope": "Diagnostic client validation and regression tests; services/kernel code unchanged",
+  "corrected_client_hardware_tested": false,
+  "retest_guide": "docs/SGX545-INITIALIZER-TESTING.md"
+}
