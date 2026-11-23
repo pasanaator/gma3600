@@ -43,6 +43,15 @@ PB heap. Cleanup remained clean. The corrected client accepts that DDK record;
 the [test guide](../../docs/SGX545-INITIALIZER-TESTING.md#retry-after-fail-invalid-heap-range-result9)
 has a client-only rebuild/retest procedure with the existing 0.5.0 module.
 
+The corrected [explicit and automatic initializer tests have now passed](d2500hn-initializer-passed.json)
+with all handles/pages released. The next
+[shared-buffer checkpoint](../../docs/SGX545-BUFFER-TESTING.md) adds bounded
+allocation/free/map-info commands and CPU mmap with independent VMA lifetimes.
+The backing allocator and mmap provider are rewritten rather than exposing the
+old DDK resource manager or mmap registry. Hardware DMA/rendering remains disabled.
+The [shared-buffer build/test record](shared-buffers-6.12-build.json) records both
+compile profiles, the i386 layouts and mocked VMA/cache-lifetime verification.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

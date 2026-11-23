@@ -13,6 +13,12 @@ _Static_assert(sizeof(struct sgx545_enumerate_out) == 200, "i386 ENUMERATE");
 _Static_assert(sizeof(struct sgx545_handle_out) == 8, "i386 ACQUIRE/DISCONNECT");
 _Static_assert(sizeof(struct sgx545_heap32) == 24, "i386 heap");
 _Static_assert(sizeof(struct sgx545_init_info_out) == 776, "i386 initializer info");
+_Static_assert(sizeof(struct sgx545_client_mem32) == 48, "i386 client memory");
+_Static_assert(sizeof(struct sgx545_alloc_shared_out) == 56, "i386 shared allocation");
+_Static_assert(sizeof(struct sgx545_map_info_out) == 20, "i386 mmap metadata");
+
+/* mmap2 needs all six i386 syscall registers, including saved EBP. */
+extern unsigned probe_mmap2(unsigned fd, unsigned size, unsigned prot, unsigned flags, unsigned offset);
 
 static int sys3(unsigned nr, unsigned a, unsigned b, unsigned c)
 {
@@ -176,6 +182,117 @@ static void initializer_test(int fd, unsigned services, unsigned device,
 	say(close_owner ? "automatic close abort\n" : "explicit abort\n");
 }
 
+static void check_words(volatile unsigned *address, unsigned size, unsigned seed)
+{
+	unsigned i;
+	for (i = 0; i < size / 4; i++)
+		if (address[i] != (seed ^ i)) fail("mapped buffer pattern mismatch", i);
+}
+static volatile unsigned *map_buffer(int fd, unsigned size, unsigned token)
+{
+	unsigned address = probe_mmap2(fd, size, 3, 1, token);
+	if (address >= 0xfffff001U) fail("mmap2 buffer", address);
+	return (volatile unsigned *)address;
+}
+
+static void buffer_test(int fd, unsigned services, const char *path, int close_only)
+{
+	struct sgx545_handle_out result = {0};
+	struct sgx545_alloc_shared_out allocation = {0};
+	struct sgx545_map_info_out mapping = {0};
+	struct sgx545_buffer_check check;
+	struct { unsigned flags, token; struct sgx545_client_mem32 mem; } free_in = {0};
+	struct sgx545_bridge32 w;
+	unsigned in[3] = {0, SGX545_BUFFER_WC, 3 * 4096 + 17};
+	unsigned token, other, size, i, vector[4] = {0};
+	volatile unsigned *first, *second;
+	int fd2, child, status;
+
+	w = package(63, services, in, 12, &allocation, 56);
+	expect("allocation requires initializer", call(fd, &w), -13);
+	w = package(67, services, 0, 0, &result, 8);
+	expect("buffer initializer CONNECT ioctl", call(fd, &w), 0);
+	expect("buffer initializer CONNECT payload (reload services for a fresh attempt)", result.error, 0);
+	w = package(63, services, in, 12, &allocation, 56);
+	in[1] = 0;
+	expect("unsupported buffer cache flags", call(fd, &w), -95);
+	in[1] = SGX545_BUFFER_WC; in[2] = 0;
+	expect("zero buffer allocation", call(fd, &w), -22);
+	in[2] = SGX545_BUFFER_MAX_BYTES + 1;
+	expect("oversized buffer allocation", call(fd, &w), -22);
+	in[2] = 3 * 4096 + 17; w.param_out = 1;
+	expect("buffer allocation copyout rollback", call(fd, &w), -14);
+	w.param_out = ptr(&allocation);
+	expect("shared buffer allocation ioctl", call(fd, &w), 0);
+	expect("shared buffer allocation payload", allocation.error, 0);
+	token = allocation.kernel_mem;
+	if (!token || allocation.mem.kernel_mem != token || allocation.mem.mapping != token ||
+	    allocation.mem.alloc_size != in[2] || allocation.mem.flags != (SGX545_BUFFER_WC | SGX545_BUFFER_MULTI) ||
+	    allocation.mem.linear || allocation.mem.kernel_linear || allocation.mem.device_address ||
+	    allocation.mem.physical_address || allocation.mem.client_flags || allocation.mem.sync_info || allocation.mem.resource || allocation.mem.next)
+		fail("shared buffer reply", token);
+	in[1] = token;
+	w = package(11, services, in, 8, &mapping, 20);
+	expect("buffer map metadata ioctl", call(fd, &w), 0);
+	if (mapping.error || mapping.offset != token || mapping.byte_offset || mapping.user_address || mapping.real_size != 4 * 4096)
+		fail("buffer map metadata payload", mapping.error);
+	size = mapping.real_size;
+	expect("private mapping rejected", probe_mmap2(fd, size, 3, 2, token), -13);
+	expect("executable mapping rejected", probe_mmap2(fd, size, 5, 1, token), -13);
+	expect("wrong mapping length rejected", probe_mmap2(fd, size + 4096, 3, 1, token), -22);
+	expect("unknown mapping token rejected", probe_mmap2(fd, size, 3, 1, token + 1000), -2);
+	fd2 = open_bridge(path); other = connect_bridge(fd2);
+	w.services = other;
+	expect("cross-file map-info token rejected", call(fd2, &w), -2);
+	expect("cross-file mmap token rejected", probe_mmap2(fd2, size, 3, 1, token), -2);
+	disconnect_bridge(fd2, other); expect("close second buffer file", sys3(6, fd2, 0, 0), 0);
+	first = map_buffer(fd, size, token); second = map_buffer(fd, size, token);
+	for (i = 0; i < size / 4; i++) {
+		if (first[i] || second[i]) fail("buffer or padding not zeroed", i);
+		first[i] = 0x13579bdfU ^ i;
+	}
+	__asm__ volatile("sfence" ::: "memory");
+	check_words(second, size, 0x13579bdfU);
+	check = (struct sgx545_buffer_check){services, token, 0, 0};
+	expect("kernel rejects incorrect expected pattern", sys3(54, fd, SGX545_IOCTL_BUFFER_CHECK, ptr(&check)), -5);
+	check.expected = 0x13579bdfU; check.fill = 0x2468ace0U;
+	expect("kernel WC mapping roundtrip", sys3(54, fd, SGX545_IOCTL_BUFFER_CHECK, ptr(&check)), 0);
+	check_words(first, size, check.fill); check_words(second, size, check.fill);
+	expect("split VMA with read-only middle page", sys3(125, ptr((const void *)first) + 4096, 4096, 1), 0);
+	expect("mprotect cannot enable execution", sys3(125, ptr((const void *)first), 4096, 5), -13);
+	check.expected = check.fill; check.fill = 0xabcdef01U;
+	expect("kernel roundtrip across split VMAs", sys3(54, fd, SGX545_IOCTL_BUFFER_CHECK, ptr(&check)), 0);
+	check_words(first, size, check.fill); check_words(second, size, check.fill);
+	child = sys3(2, 0, 0, 0);
+	if (child < 0) fail("buffer fork", child);
+	if (!child) {
+		/* VM_DONTCOPY must leave no mapping in the child. */
+		sys3(1, sys3(218, ptr((const void *)first), size, ptr(vector)) == -12 ? 0 : 1, 0, 0);
+		return;
+	}
+	expect("buffer fork waitpid", sys3(7, child, ptr(&status), 0), child);
+	expect("buffer mapping is not inherited by fork", status, 0);
+	if (!close_only) {
+		free_in.token = token; free_in.mem = allocation.mem;
+		w = package(64, services, &free_in, sizeof(free_in), &result.error, 4);
+		expect("free buffer while mapped ioctl", call(fd, &w), 0);
+		expect("free buffer while mapped payload", result.error, 0);
+		expect("stale buffer free rejected", call(fd, &w), -2);
+		w = package(11, services, in, 8, &mapping, 20);
+		expect("freed buffer map-info rejected", call(fd, &w), -2);
+		expect("freed buffer mmap rejected", probe_mmap2(fd, size, 3, 1, token), -2);
+		disconnect_bridge(fd, services);
+	}
+	expect("close fd while mapped", sys3(6, fd, 0, 0), 0);
+	check_words(first, size, check.fill); check_words(second, size, check.fill);
+	expect("unmap first buffer including split VMAs", sys3(91, ptr((const void *)first), size, 0), 0);
+	check_words(second, size, check.fill);
+	expect("unmap last buffer VMA", sys3(91, ptr((const void *)second), size, 0), 0);
+	say("PASS: i386 shared buffers, zeroed padding, user/kernel WC roundtrip, map isolation, VMA splits and ");
+	say(close_only ? "deferred close cleanup\n" : "free/disconnect with live mappings\n");
+	say("Check sysfs: buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 files=0 connections=0 init_running=0\n");
+}
+
 int probe_main(unsigned *initial_stack)
 {
 	unsigned argc = initial_stack[0];
@@ -191,16 +308,27 @@ int probe_main(unsigned *initial_stack)
 
 	if (argc > 1 && same(argv[1], "--selftest")) {
 		struct sgx545_heap32 disabled = {0x07000009, 0, 0xd2000000, 0, 0x02024200, 0};
+		unsigned mapped = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+		volatile unsigned *memory;
+
+		if (mapped >= 0xfffff001U) fail("selftest mmap2 syscall", mapped);
+		memory = (volatile unsigned *)mapped;
+		if (memory[0] || memory[1023]) fail("selftest anonymous page zeroing", mapped);
+		memory[1023] = 0x12345678;
+		if (memory[1023] != 0x12345678) fail("selftest mmap2 write", mapped);
+		expect("selftest munmap syscall", sys3(91, mapped, 4096, 0), 0);
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
+		else if (same(argv[1], "--buffers")) init_mode = 3;
+		else if (same(argv[1], "--buffers-close")) init_mode = 4;
 		else path = argv[1];
 	}
 	fd = open_bridge(path);
@@ -262,6 +390,10 @@ int probe_main(unsigned *initial_stack)
 		fail("second file device handle", acquired.error);
 	expect("close implicitly disconnects second file", sys3(6, fd2, 0, 0), 0);
 	if (init_mode) {
+		if (init_mode >= 3) {
+			buffer_test(fd, services, path, init_mode == 4);
+			return 0;
+		}
 		initializer_test(fd, services, device, path, init_mode == 2);
 		if (init_mode == 2) {
 			say("Check sysfs: files=0 connections=0 heap_handles=0 init_running=0 init_ran=1 bridge_errors=0 blocked_hw_accesses=0\n");
@@ -285,4 +417,9 @@ int probe_main(unsigned *initial_stack)
 
 __asm__(".text\n.global _start\n_start:\n"
 	"mov %esp,%eax\nand $-16,%esp\nsub $12,%esp\npush %eax\n"
-	"call probe_main\nmov %eax,%ebx\nmov $1,%eax\nint $0x80\n");
+	"call probe_main\nmov %eax,%ebx\nmov $1,%eax\nint $0x80\n"
+	".global probe_mmap2\n.type probe_mmap2,@function\nprobe_mmap2:\n"
+	"push %ebp\npush %edi\npush %esi\npush %ebx\n"
+	"mov $192,%eax\nxor %ebx,%ebx\nmov 24(%esp),%ecx\nmov 28(%esp),%edx\n"
+	"mov 32(%esp),%esi\nmov 20(%esp),%edi\nmov 36(%esp),%ebp\nint $0x80\n"
+	"pop %ebx\npop %esi\npop %edi\npop %ebp\nret\n");

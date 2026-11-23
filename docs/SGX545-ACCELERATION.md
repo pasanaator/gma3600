@@ -12,8 +12,10 @@ The [CPU-side services checkpoint](SGX545-SERVICES-TESTING.md) passed on the Ato
 including zero tracked pages after cleanup and zero blocked register accesses.
 The [i386 bridge test](SGX545-BRIDGE-TESTING.md) also passed on the Atom, including
 the real compat ioctl path, file-owned handles and clean teardown. The next
-[initializer test](SGX545-INITIALIZER-TESTING.md) checks exclusive ownership,
-read-only page-directory/heap metadata and abort handling.
+[initializer tests](SGX545-INITIALIZER-TESTING.md) passed for exclusive ownership,
+read-only heap metadata and both abort paths. The next
+[shared-buffer test](SGX545-BUFFER-TESTING.md) exercises bounded WC allocations and
+CPU mmap lifetime while keeping GPU execution disabled.
 The Intel i386 userspace artifact has been archive-verified and statically audited;
 see [the artifact record](../research/sgx545/README.md). The normal display build
 remains version 1.0.4, with SGX host support excluded by default.
@@ -174,9 +176,11 @@ services activation and cleanup have now passed on the Atom; see the
 [hardware result](../research/sgx545/d2500hn-services-preparation.json).
 Connect/enumerate/acquire/disconnect translation has also passed on the Atom,
 including CONNECT's differently aligned 64-bit handle field. Initializer
-ownership and the 776-byte i386 heap-info reply are implemented for the next
-test. Initializer memory payloads, device DMA, power/IRQ integration and rendering
-remain unfinished. No DRM rendering interface is exposed yet.
+ownership and the 776-byte i386 heap-info reply have passed on hardware.
+Shared system-memory buffers now have translated allocation/free/map-info layouts
+and a rewritten backing/mmap lifetime for the next test. Device-heap allocation,
+remaining mapping APIs, DMA, power/IRQ integration and rendering remain unfinished.
+No DRM rendering interface is exposed yet.
 
 ## Inspected source references
 

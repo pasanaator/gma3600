@@ -1,0 +1,65 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "services_module_version": "0.6.0",
+  "host_interface_abi": 2,
+  "activation": "prepare=1 bridge=1",
+  "profile_builds": [
+    {"profile": "10131", "host_probe_services_client": "passed", "source_and_i386_layout_tests": "passed"},
+    {"profile": "10141", "host_probe_services_client": "passed", "source_and_i386_layout_tests": "passed"}
+  ],
+  "services_compiler_warnings": 0,
+  "host_c_suites": 11,
+  "python_unittests": 10,
+  "public_i386_layout_assertions_added": [
+    "48-byte PVRSRV_CLIENT_MEM_INFO and all twelve field offsets",
+    "56-byte shared allocation output and free input",
+    "4-byte shared free output and 20-byte map metadata output",
+    "Full command encodings for allocation 63, free 64 and map-info 11"
+  ],
+  "implementation": "Ported shared system-memory allocation/free/map-info semantics with rewritten page backing and VMA lifetime; not the vendor allocator, resource manager or mmap registry",
+  "cache_and_ownership": [
+    "Zeroed DMA32 physical pages with direct-map, kernel-vmap and user WC attributes",
+    "Opaque file-owned IDs; no physical/kernel/device pointers in memory replies",
+    "Free/disconnect revokes handle lookup; existing VMAs retain independent page references",
+    "Auxiliary stop can destroy native DDK state while mapped CPU buffers survive",
+    "Final VMA release frees pages only after cache aliases are removed",
+    "Cache-restoration failures retain allocations and report buffer_errors"
+  ],
+  "limits": {"bytes_per_buffer": 1048576, "owned_per_file": 16, "live_buffers": 64, "live_pages": 4096},
+  "provider_tests_against_actual_C_source_with_mock_kernel_apis": [
+    "Metadata/page/vmap allocation failures and rollback",
+    "Zeroed rounded padding and CPU pattern check/write",
+    "File ownership, token lookup and stale handles",
+    "Shared non-executable exact-size mappings and VMA flags",
+    "Split-VMA fault indices and out-of-range SIGBUS",
+    "Free while mapped, live detach, final close and pool reference lifetime",
+    "Per-file/count/page quotas; freed mapped pages remain charged",
+    "Failed WB restoration retains pages and metadata"
+  ],
+  "protocol_tests_added": [
+    "Initializer-only allocation, flags and size validation",
+    "Allocation copyout rollback",
+    "Pointer-free memory/map reply fields",
+    "Free ignores untrusted trailing client pointers and commits before output copy"
+  ],
+  "sanitizers": ["UndefinedBehaviorSanitizer", "AddressSanitizer for provider and bridge lifetimes"],
+  "client_selftest_under_QEMU_i386_10_0_13": "passed for both profile outputs, including real mmap2 register calling convention with anonymous RAM",
+  "client_hardware_modes_pending": ["--buffers", "--buffers-close"],
+  "diagnostic_pattern_ioctl": "Separate project command SGX545_IOCTL_BUFFER_CHECK, not an Intel command",
+  "previous_hardware_result": "d2500hn-initializer-passed.json",
+  "gpu_execution_enabled": false,
+  "new_shared_buffers_dma_or_gpu_mapped": false,
+  "real_hardware_shared_mmap_tested": false,
+  "real_hardware_detach_with_live_vmas_tested": false,
+  "proprietary_libraries_executed": false,
+  "display_parent_changed": false,
+  "remaining": [
+    "Hardware WC/mmap acceptance",
+    "Device-heap/MMU allocation, remaining legacy mapping APIs and DRM transport",
+    "DMA ownership, firmware/profile matching, bounded power/reset/recovery and SGX IRQ delivery",
+    "Hardware rendering and presentation"
+  ],
+  "hardware_test_guide": "docs/SGX545-BUFFER-TESTING.md"
+}

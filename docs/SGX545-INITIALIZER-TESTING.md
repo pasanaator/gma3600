@@ -1,5 +1,9 @@
 # Test initializer ownership and heap metadata on the Atom
 
+Both corrected-client modes [passed on the Atom](../research/sgx545/d2500hn-initializer-passed.json).
+The next [shared-buffer allocation and mapping test](SGX545-BUFFER-TESTING.md)
+uses services 0.6.0 and checks CPU mappings with GPU execution still disabled.
+
 The [restricted i386 bridge passed](../research/sgx545/d2500hn-i386-bridge.json)
 on the D2500HN: the real 32-bit client completed its tests and all file, handle,
 error and tracked-page counts returned to zero after cleanup.

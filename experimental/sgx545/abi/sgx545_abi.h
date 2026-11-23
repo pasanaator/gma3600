@@ -47,15 +47,24 @@ struct sgx545_bridge_request {
 #define SGX545_COMMAND(number)      (SGX545_COMMAND_BASE | (number))
 #define SGX545_CMD_ENUMERATE        0U
 #define SGX545_CMD_ACQUIRE          1U
+#define SGX545_CMD_MAP_INFO         11U
 #define SGX545_CMD_CONNECT          12U
 #define SGX545_CMD_DISCONNECT       13U
 #define SGX545_CMD_INIT_CONNECT     67U
+#define SGX545_CMD_ALLOC_SHARED     63U
+#define SGX545_CMD_FREE_SHARED      64U
 #define SGX545_CMD_INIT_DISCONNECT  68U
 #define SGX545_CMD_INIT_INFO        98U
 #define SGX545_MAX_DEVICES          16U
 #define SGX545_DEVICE_TYPE          7U
 #define SGX545_MAX_HEAPS            32U
 #define SGX545_UNDEFINED_HEAP       0xffffffffU
+#define SGX545_BUFFER_WC            0x00004000U
+#define SGX545_BUFFER_MULTI         0x00020000U
+#define SGX545_BUFFER_MAX_BYTES     0x00100000U
+/* Project diagnostic ioctl, separate from the Intel services command space. */
+#define SGX545_IOCTL_BUFFER_CHECK   0xc0104701U
+struct sgx545_buffer_check { __u32 services, handle, expected, fill; };
 
 struct sgx545_connect_out { __u32 error, services_lo, services_hi; };
 struct sgx545_device_id { __u32 type, device_class, index; };
@@ -69,6 +78,16 @@ struct sgx545_init_info_out {
 	__u32 error, page_directory;
 	struct sgx545_heap32 heaps[SGX545_MAX_HEAPS];
 };
+struct sgx545_client_mem32 {
+	__u32 linear, kernel_linear, device_address, physical_address;
+	__u32 flags, client_flags, alloc_size, sync_info;
+	__u32 mapping, kernel_mem, resource, next;
+};
+struct sgx545_alloc_shared_out {
+	__u32 error, kernel_mem;
+	struct sgx545_client_mem32 mem;
+};
+struct sgx545_map_info_out { __u32 error, offset, byte_offset, real_size, user_address; };
 
 /* Diagnostic subset, scoped to an open file. Backend objects never cross ABI. */
 struct sgx545_session {
@@ -87,6 +106,10 @@ struct sgx545_bridge_ops {
 	int (*init_abort)(void *ctx, int rollback);
 	int (*init_info)(void *ctx, struct sgx545_init_info_out *out);
 	int (*release_init_info)(void *ctx);
+	int (*alloc_shared)(void *ctx, __u32 flags, __u32 bytes,
+		struct sgx545_alloc_shared_out *out);
+	int (*free_shared)(void *ctx, __u32 token);
+	int (*map_info)(void *ctx, __u32 token, struct sgx545_map_info_out *out);
 };
 
 /* Backend: zero=success, positive=DDK error, negative=Linux errno.

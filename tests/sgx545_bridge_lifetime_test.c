@@ -13,6 +13,7 @@ typedef uint32_t u32;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
 struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran; };
+struct gma_sgx_buffers { int unused; };
 typedef struct { u32 uiAddr; } IMG_DEV_PHYADDR;
 typedef struct {
     u32 ui32HeapID;
@@ -95,6 +96,11 @@ static void *kzalloc(size_t size, int flags)
     return p;
 }
 static void kfree(void *p);
+static struct gma_sgx_buffers *gma_sgx_buffers_create(void)
+{ return kzalloc(sizeof(struct gma_sgx_buffers), 0); }
+static void gma_sgx_buffers_release_owner(struct gma_sgx_buffers *p, void *owner)
+{ assert(p && owner); }
+static void gma_sgx_buffers_stop(struct gma_sgx_buffers *p) { kfree(p); }
 static int nonseekable_open(struct inode *inode, struct file *file) { return 0; }
 static int misc_register(struct miscdevice *m)
 { if (fail_misc) return -ENOMEM; assert(!misc_live); misc_live = 1; return 0; }

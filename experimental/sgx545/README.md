@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has an **initializer ownership and heap-info checkpoint**. It builds
+The hybrid port now has a **shared-buffer allocation and mmap checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -11,8 +11,10 @@ on the Atom with the same display behavior as before. Rendering remains untested
 The [CPU-side services test](../../docs/SGX545-SERVICES-TESTING.md) has now passed:
 one device, four tracked pages, zero pages after cleanup and no blocked register
 accesses. The [i386 bridge also passed on the Atom](../../research/sgx545/d2500hn-i386-bridge.json),
-including the real compat path and clean teardown. The next
-[hardware test exercises initializer ownership and heap metadata](../../docs/SGX545-INITIALIZER-TESTING.md)
+including the real compat path and clean teardown.
+[Both initializer abort tests passed](../../research/sgx545/d2500hn-initializer-passed.json),
+including the disabled shared-PB heap. The next
+[hardware test exercises shared-buffer allocation and mmap](../../docs/SGX545-BUFFER-TESTING.md)
 without enabling GPU execution. It uses the already loaded host2 driver.
 
 ## D2500HN hardware result
@@ -81,12 +83,20 @@ now also been build-validated; that is not a hardware compatibility result.
   compile in i386 mode to assert the 776-byte reply and each heap field offset.
   Successful finalization remains rejected, and a completed attempt is one-shot
   per module load. The client adds `--init-info` and `--init-close` tests.
+* Bounded shared CPU buffers with audited Intel 1.7 i386 allocation/free/map-info
+  layouts. Their low-32-bit zeroed WC backing and VMA lifetime are rewritten,
+  separate from the original DDK mmap registry and resource manager. Opaque
+  file-owned handles never expose kernel pointers/PFNs. Mappings survive handle
+  release or child detach until the final VMA closes. Tests cover VMA splits,
+  owner isolation, quotas, rollback and failed cache restoration. The ELF32
+  client's `--buffers` and `--buffers-close` modes check zeroed padding and
+  user/kernel WC coherence on hardware. Device-heap allocation and DMA are pending.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
 DDK initialization part 1, then enumerates the SGX device. It borrows the parent's
-mapping, never acquires/enables PCI again, and omits legacy procfs, mmap and the
-original unrestricted dispatcher. The diagnostic bridge requires an additional
+mapping, never acquires/enables PCI again, and omits the original procfs, mmap
+registry and unrestricted dispatcher. The diagnostic bridge requires an additional
 `bridge=1` parameter. Legacy register reads/writes are blocked and counted; part 2 and
 system finalization reject execution. No firmware or SGX interrupt is enabled.
 Without `prepare=1`, module init still returns `-EOPNOTSUPP`.
@@ -191,10 +201,10 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Validate initializer ownership, heap metadata and explicit/automatic abort on
-   the Atom. CPU-side preparation and the restricted i386 bridge have passed.
-2. Extend explicit nested-payload translation to initializer memory-allocation
-   and mapping commands, retaining ownership, rollback and request validation.
+1. Validate shared-buffer allocation, CPU mapping coherence and VMA lifetime on
+   the Atom. Preparation, restricted bridge and initializer abort tests have passed.
+2. Extend explicit nested-payload translation to device-heap allocation and
+   remaining initializer mapping commands, retaining ownership and rollback.
    Add the necessary DRM transport after validating the diagnostic subset.
 3. Port device DMA ownership, match the initializer/microkernel build, and
    connect the legacy ISR through the parent's interrupt API. Design bounded

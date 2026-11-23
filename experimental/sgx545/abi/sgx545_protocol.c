@@ -30,8 +30,10 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		struct sgx545_enumerate_out enumerate;
 		struct sgx545_handle_out handle;
 		struct sgx545_init_info_out init_info;
+		struct sgx545_alloc_shared_out allocated;
+		struct sgx545_map_info_out mapped;
 	} out = {0};
-	__u32 in[3] = {0}, cmd, token = 0, out_size;
+	__u32 in[14] = {0}, cmd, token = 0, out_size;
 	int ret, copied, rollback = 0, created = 0;
 
 	if ((r->bridge_id & ~0xffU) != SGX545_COMMAND_BASE)
@@ -46,6 +48,21 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 	case SGX545_CMD_ACQUIRE:
 		out_size = sizeof(out.handle);
 		if (r->in_size != 12)
+			return -EINVAL;
+		break;
+	case SGX545_CMD_ALLOC_SHARED:
+		out_size = sizeof(out.allocated);
+		if (r->in_size != 12)
+			return -EINVAL;
+		break;
+	case SGX545_CMD_FREE_SHARED:
+		out_size = sizeof(__u32);
+		if (r->in_size != 8 + sizeof(struct sgx545_client_mem32))
+			return -EINVAL;
+		break;
+	case SGX545_CMD_MAP_INFO:
+		out_size = sizeof(out.mapped);
+		if (r->in_size != 8)
 			return -EINVAL;
 		break;
 	case SGX545_CMD_INIT_INFO:
@@ -168,6 +185,32 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		created = !ret && !s->init_info;
 		out.init_info.error = ret;
 		break;
+	case SGX545_CMD_ALLOC_SHARED:
+		if (!s->initializer)
+			return -EACCES;
+		if (in[1] != SGX545_BUFFER_WC)
+			return -EOPNOTSUPP;
+		if (!in[2] || in[2] > SGX545_BUFFER_MAX_BYTES)
+			return -EINVAL;
+		ret = ops->alloc_shared(ctx, in[1], in[2], &out.allocated);
+		if (ret < 0)
+			return ret;
+		out.allocated.error = ret;
+		created = !ret;
+		break;
+	case SGX545_CMD_FREE_SHARED:
+		/* The legacy trailing client record contains no trusted pointers. */
+		ret = ops->free_shared(ctx, in[1]);
+		if (ret < 0)
+			return ret;
+		out.handle.error = ret;
+		break;
+	case SGX545_CMD_MAP_INFO:
+		ret = ops->map_info(ctx, in[1], &out.mapped);
+		if (ret < 0)
+			return ret;
+		out.mapped.error = ret;
+		break;
 	}
 	copied = ops->copy_out(ctx, r->param_out, &out, out_size);
 	if (copied && created) {
@@ -177,6 +220,8 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			rollback = ops->release_device(ctx);
 		else if (cmd == SGX545_CMD_INIT_CONNECT)
 			rollback = ops->init_abort(ctx, 1);
+		else if (cmd == SGX545_CMD_ALLOC_SHARED)
+			rollback = ops->free_shared(ctx, out.allocated.kernel_mem);
 		else
 			rollback = ops->release_init_info(ctx);
 	}
@@ -190,7 +235,7 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			s->device_type = in[2];
 		} else if (cmd == SGX545_CMD_INIT_CONNECT)
 			s->initializer = 1;
-		else
+		else if (cmd == SGX545_CMD_INIT_INFO)
 			s->init_info = 1;
 	}
 	return copied;

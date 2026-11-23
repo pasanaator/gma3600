@@ -17,8 +17,9 @@ The [services preparation test](docs/SGX545-SERVICES-TESTING.md) passed on the A
 one device, four tracked pages, zero pages after cleanup, and no blocked register
 accesses. The [i386 diagnostic bridge test](docs/SGX545-BRIDGE-TESTING.md) also passed
 on the amd64 target, including handle validation, copyout rollback and cleanup.
-The next [initializer test](docs/SGX545-INITIALIZER-TESTING.md) adds exclusive
-ownership, read-only heap metadata and abort handling. GPU execution remains disabled.
+The [initializer tests](docs/SGX545-INITIALIZER-TESTING.md) passed for explicit and
+automatic abort. The next [shared-buffer test](docs/SGX545-BUFFER-TESTING.md) checks
+bounded allocations, i386 mmap, WC coherence and mapping lifetime. GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the

@@ -108,11 +108,12 @@ static ssize_t services_show(struct device *dev, struct device_attribute *attr,
 	if (ctx->bridge)
 		gma3600_sgx_bridge_stats(ctx->bridge, &stats);
 	return sysfs_emit(buf,
-		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled bridge=%s files=%u connections=%u bridge_errors=%u heap_handles=%u init_running=%u init_ran=%u\n",
+		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled bridge=%s files=%u connections=%u bridge_errors=%u heap_handles=%u init_running=%u init_ran=%u buffers=%u buffer_pages=%u buffer_maps=%u buffer_errors=%u\n",
 		ctx->ready ? "prepared" : "failed", ctx->devices,
 		gma3600_sgx_live_pages(), atomic_read(&blocked_io),
 		ctx->bridge ? "enabled" : "disabled", stats.files, stats.connections, stats.errors,
-		stats.heap_handles, stats.init_running, stats.init_ran);
+		stats.heap_handles, stats.init_running, stats.init_ran,
+		stats.buffers, stats.buffer_pages, stats.buffer_maps, stats.buffer_errors);
 }
 static DEVICE_ATTR_RO(services);
 static struct attribute *prepare_attrs[] = { &dev_attr_services.attr, NULL };
@@ -218,4 +219,4 @@ module_init(gma_sgx_init);
 module_exit(gma_sgx_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SGX545 CPU-side services preparation; GPU execution disabled");
-MODULE_VERSION("0.5.0");
+MODULE_VERSION("0.6.0");

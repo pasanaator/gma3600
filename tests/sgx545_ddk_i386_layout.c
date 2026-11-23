@@ -28,3 +28,25 @@ _Static_assert(PVRSRV_BRIDGE_INITSRV_DISCONNECT == SGX545_COMMAND(SGX545_CMD_INI
 _Static_assert(PVRSRV_BRIDGE_SGXINFO_FOR_SRVINIT == SGX545_COMMAND(SGX545_CMD_INIT_INFO), "init info command");
 _Static_assert(SGX_SHARED_3DPARAMETERS_HEAP_SIZE == 0, "per-context profile disables shared PB");
 _Static_assert(SGX_PERCONTEXT_3DPARAMETERS_HEAP_SIZE > 0, "per-context PB remains active");
+_Static_assert(sizeof(PVRSRV_CLIENT_MEM_INFO) == sizeof(struct sgx545_client_mem32), "client memory record");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_ALLOC_SHARED_SYS_MEM) == sizeof(struct sgx545_alloc_shared_out), "shared allocation reply");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_FREE_SHARED_SYS_MEM) == 56, "shared free request");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_FREE_SHARED_SYS_MEM) == 4, "shared free reply");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_MHANDLE_TO_MMAP_DATA) == sizeof(struct sgx545_map_info_out), "map metadata reply");
+_Static_assert(PVRSRV_BRIDGE_ALLOC_SHARED_SYS_MEM == SGX545_COMMAND(SGX545_CMD_ALLOC_SHARED), "shared alloc command");
+_Static_assert(PVRSRV_BRIDGE_FREE_SHARED_SYS_MEM == SGX545_COMMAND(SGX545_CMD_FREE_SHARED), "shared free command");
+_Static_assert(PVRSRV_BRIDGE_MHANDLE_TO_MMAP_DATA == SGX545_COMMAND(SGX545_CMD_MAP_INFO), "map metadata command");
+#define MEM_FIELD(ddk, wire) _Static_assert(__builtin_offsetof(PVRSRV_CLIENT_MEM_INFO, ddk) == \
+    __builtin_offsetof(struct sgx545_client_mem32, wire), "memory field " #ddk)
+MEM_FIELD(pvLinAddr, linear);
+MEM_FIELD(pvLinAddrKM, kernel_linear);
+MEM_FIELD(sDevVAddr, device_address);
+MEM_FIELD(sCpuPAddr, physical_address);
+MEM_FIELD(ui32Flags, flags);
+MEM_FIELD(ui32ClientFlags, client_flags);
+MEM_FIELD(uAllocSize, alloc_size);
+MEM_FIELD(psClientSyncInfo, sync_info);
+MEM_FIELD(hMappingInfo, mapping);
+MEM_FIELD(hKernelMemInfo, kernel_mem);
+MEM_FIELD(hResItem, resource);
+MEM_FIELD(psNext, next);

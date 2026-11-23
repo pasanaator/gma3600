@@ -23,6 +23,7 @@
 #include "power.h"
 #include "sgx545_abi.h"
 #include "gma3600_sgx_bridge.h"
+#include "gma3600_sgx_buffers.h"
 
 #if !defined(PVR_SECURE_HANDLES)
 #error The diagnostic bridge requires DDK secure handles
@@ -44,6 +45,11 @@ static_assert(sizeof(IMG_DEV_PHYADDR) == 4);
 static_assert(sizeof(PVRSRV_HEAP_INFO) == 32);
 static_assert(sizeof(struct sgx545_heap32) == 24);
 static_assert(sizeof(struct sgx545_init_info_out) == 776);
+static_assert(_IOC_NR(PVRSRV_BRIDGE_ALLOC_SHARED_SYS_MEM) == SGX545_CMD_ALLOC_SHARED);
+static_assert(_IOC_NR(PVRSRV_BRIDGE_FREE_SHARED_SYS_MEM) == SGX545_CMD_FREE_SHARED);
+static_assert(_IOC_NR(PVRSRV_BRIDGE_MHANDLE_TO_MMAP_DATA) == SGX545_CMD_MAP_INFO);
+static_assert(SGX545_BUFFER_WC == PVRSRV_HAP_WRITECOMBINE);
+static_assert(SGX545_BUFFER_MULTI == PVRSRV_HAP_MULTI_PROCESS);
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -52,6 +58,7 @@ struct gma_sgx_bridge {
 	struct list_head files;
 	struct gma_sgx_bridge_stats stats;
 	struct gma_sgx_file *init_owner;
+	struct gma_sgx_buffers *buffers;
 	u32 next_token;
 	bool online, registered;
 };
@@ -293,6 +300,7 @@ static int backend_disconnect(void *ctx)
 
 	if (f->bridge->init_owner == f)
 		backend_init_abort(f, 0);
+	gma_sgx_buffers_release_owner(f->bridge->buffers, f);
 	if (!f->handles)
 		return 0;
 	ret = PVRSRVFreeHandleBase(f->handles);
@@ -313,6 +321,32 @@ static int backend_disconnect(void *ctx)
 	return 0;
 }
 
+static int backend_alloc_shared(void *ctx, u32 flags, u32 bytes, struct sgx545_alloc_shared_out *out)
+{
+	struct gma_sgx_file *f = ctx;
+	u32 token;
+	int ret;
+
+	if (f->bridge->init_owner != f)
+		return -EACCES;
+	ret = new_token(f->bridge, &token);
+	if (ret)
+		return ret;
+	return gma_sgx_buffer_alloc(f->bridge->buffers, f, token, flags, bytes, out);
+}
+static int backend_free_shared(void *ctx, u32 token)
+{
+	struct gma_sgx_file *f = ctx;
+
+	return gma_sgx_buffer_free(f->bridge->buffers, f, token);
+}
+static int backend_map_info(void *ctx, u32 token, struct sgx545_map_info_out *out)
+{
+	struct gma_sgx_file *f = ctx;
+
+	return gma_sgx_buffer_map_info(f->bridge->buffers, f, token, out);
+}
+
 static int bridge_copy_in(void *ctx, void *dst, u64 src, u32 size)
 {
 	return copy_from_user(dst, u64_to_user_ptr(src), size) ? -EFAULT : 0;
@@ -329,6 +363,7 @@ static const struct sgx545_bridge_ops bridge_ops = {
 	.copy_in = bridge_copy_in, .copy_out = bridge_copy_out,
 	.init_connect = backend_init_connect, .init_abort = backend_init_abort,
 	.init_info = backend_init_info, .release_init_info = backend_release_init_info,
+	.alloc_shared = backend_alloc_shared, .free_shared = backend_free_shared, .map_info = backend_map_info,
 };
 
 static void bridge_free(struct kref *ref)
@@ -403,10 +438,24 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct sgx545_bridge_request request;
 	int ret;
 
-	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS)
+	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
+	    cmd != SGX545_IOCTL_BUFFER_CHECK)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
+	if (cmd == SGX545_IOCTL_BUFFER_CHECK) {
+		struct sgx545_buffer_check check;
+
+		if (copy_from_user(&check, (void __user *)arg, sizeof(check)))
+			return -EFAULT;
+		mutex_lock(&b->lock);
+		if (!b->online) ret = -ENODEV;
+		else if (!f->session.services || check.services != f->session.services) ret = -ENOENT;
+		else if (b->init_owner != f) ret = -EACCES;
+		else ret = gma_sgx_buffer_check(b->buffers, f, check.handle, check.expected, check.fill);
+		mutex_unlock(&b->lock);
+		return ret;
+	}
 	if (copy_from_user(&wire, (void __user *)arg, sizeof(wire)))
 		return -EFAULT;
 	ret = sgx545_bridge32_decode(&wire, sizeof(wire), &request);
@@ -424,6 +473,21 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
+static int bridge_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	struct gma_sgx_file *f = file->private_data;
+	struct gma_sgx_bridge *b = f->bridge;
+	int ret;
+
+	if (task_tgid(current) != f->owner)
+		return -EPERM;
+	mutex_lock(&b->lock);
+	if (!b->online) ret = -ENODEV;
+	else ret = gma_sgx_buffer_mmap(b->buffers, f, vma);
+	mutex_unlock(&b->lock);
+	return ret;
+}
+
 #ifdef CONFIG_COMPAT
 static long bridge_compat_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -433,6 +497,7 @@ static long bridge_compat_ioctl(struct file *file, unsigned int cmd, unsigned lo
 static const struct file_operations bridge_fops = {
 	.owner = THIS_MODULE, .open = bridge_open, .release = bridge_release,
 	.unlocked_ioctl = bridge_ioctl,
+	.mmap = bridge_mmap,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl = bridge_compat_ioctl,
 #endif
@@ -464,6 +529,7 @@ static void bridge_stop(void *data)
 		}
 	}
 	LinuxUnLockMutex(&gPVRSRVLock);
+	gma_sgx_buffers_stop(b->buffers);
 	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u\n",
 		b->stats.files, b->stats.connections, b->stats.errors,
 		b->stats.heap_handles, b->stats.init_running, b->stats.init_ran);
@@ -481,6 +547,11 @@ int gma3600_sgx_bridge_register(struct device *dev, struct gma_sgx_bridge **resu
 	kref_init(&b->ref);
 	mutex_init(&b->lock);
 	INIT_LIST_HEAD(&b->files);
+	b->buffers = gma_sgx_buffers_create();
+	if (!b->buffers) {
+		kfree(b);
+		return -ENOMEM;
+	}
 	b->misc.minor = MISC_DYNAMIC_MINOR;
 	b->misc.name = "gma3600-sgx-bridge";
 	b->misc.mode = 0600;
@@ -500,7 +571,14 @@ int gma3600_sgx_bridge_register(struct device *dev, struct gma_sgx_bridge **resu
 
 void gma3600_sgx_bridge_stats(struct gma_sgx_bridge *b, struct gma_sgx_bridge_stats *stats)
 {
+	struct gma_sgx_buffer_stats buffers;
+
 	mutex_lock(&b->lock);
 	*stats = b->stats;
+	gma_sgx_buffers_stats(b->buffers, &buffers);
+	stats->buffers = buffers.buffers;
+	stats->buffer_pages = buffers.pages;
+	stats->buffer_maps = buffers.maps;
+	stats->buffer_errors = buffers.errors;
 	mutex_unlock(&b->lock);
 }

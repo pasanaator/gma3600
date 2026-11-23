@@ -7,13 +7,14 @@
 #include "sgx545_abi.h"
 
 struct fake {
-	unsigned in[3];
+	unsigned in[14];
 	unsigned char out[776];
 	unsigned token, connects, acquires, releases, disconnects, enumerates;
 	int fail_in, fail_out, fail_connect, fail_acquire, fail_release, fail_disconnect;
 	unsigned count;
 	unsigned init_connects, init_aborts, infos, info_releases, rollbacks;
 	int fail_init, fail_abort, fail_info, fail_info_release;
+	unsigned buffers, buffer_frees;
 };
 static int connect_(void *ctx, unsigned *token)
 {
@@ -97,20 +98,46 @@ static int release_init_info(void *ctx)
 	f->info_releases++;
 	return f->fail_info_release;
 }
+static int alloc_shared(void *ctx, unsigned flags, unsigned bytes, struct sgx545_alloc_shared_out *out)
+{
+	struct fake *f = ctx;
+	assert(flags == SGX545_BUFFER_WC);
+	f->buffers++;
+	out->kernel_mem = out->mem.kernel_mem = out->mem.mapping = ++f->token;
+	out->mem.flags = flags | SGX545_BUFFER_MULTI;
+	out->mem.alloc_size = bytes;
+	return 0;
+}
+static int free_shared(void *ctx, unsigned token)
+{
+	struct fake *f = ctx;
+	if (token != f->token || !f->buffers) return -ENOENT;
+	f->buffers--; f->buffer_frees++;
+	return 0;
+}
+static int map_info(void *ctx, unsigned token, struct sgx545_map_info_out *out)
+{
+	struct fake *f = ctx;
+	if (token != f->token || !f->buffers) return -ENOENT;
+	out->offset = token;
+	out->real_size = 4096;
+	return 0;
+}
 static const struct sgx545_bridge_ops ops = {
 	.connect = connect_, .enumerate = enumerate, .acquire = acquire,
 	.release_device = release, .disconnect = disconnect,
 	.copy_in = copy_in, .copy_out = copy_out,
 	.init_connect = init_connect, .init_abort = init_abort,
 	.init_info = init_info, .release_init_info = release_init_info,
+	.alloc_shared = alloc_shared, .free_shared = free_shared, .map_info = map_info,
 };
 static struct sgx545_bridge_request request(unsigned cmd, unsigned service)
 {
 	return (struct sgx545_bridge_request) {
 		.param_in = 0x1234, .param_out = 0x5678,
 		.bridge_id = SGX545_COMMAND(cmd), .services = service,
-		.in_size = cmd == 12 || cmd == 68 || cmd == 98 ? 8 : cmd == 1 ? 12 : 0,
-		.out_size = cmd == 98 ? 776 : cmd == 12 ? 12 : cmd == 0 ? 200 : 8,
+		.in_size = cmd == 64 ? 56 : cmd == 12 || cmd == 68 || cmd == 98 || cmd == 11 ? 8 : cmd == 1 || cmd == 63 ? 12 : 0,
+		.out_size = cmd == 63 ? 56 : cmd == 64 ? 4 : cmd == 11 ? 20 : cmd == 98 ? 776 : cmd == 12 ? 12 : cmd == 0 ? 200 : 8,
 	};
 }
 static int run(struct sgx545_session *s, struct fake *f, unsigned cmd)
@@ -174,6 +201,39 @@ static void initializer_protocol(void)
 	assert(run(&s, &f, 98) == -EACCES);
 	assert(!sgx545_session_close(&s, &ops, &f) && !s.services && !s.init_info);
 }
+static void buffer_protocol(void)
+{
+	struct fake f = {0};
+	struct sgx545_session s = {0};
+	unsigned token;
+
+	assert(!run(&s, &f, 12));
+	f.in[1] = SGX545_BUFFER_WC; f.in[2] = 17;
+	assert(run(&s, &f, 63) == -EACCES && !f.buffers);
+	assert(!run(&s, &f, 67));
+	f.in[1] = 0;
+	assert(run(&s, &f, 63) == -EOPNOTSUPP);
+	f.in[1] = SGX545_BUFFER_WC; f.in[2] = 0;
+	assert(run(&s, &f, 63) == -EINVAL);
+	f.in[2] = SGX545_BUFFER_MAX_BYTES + 1;
+	assert(run(&s, &f, 63) == -EINVAL);
+	f.in[2] = 17; f.fail_out = 1;
+	assert(run(&s, &f, 63) == -EFAULT && !f.buffers && f.buffer_frees == 1);
+	f.fail_out = 0;
+	assert(!run(&s, &f, 63) && f.buffers == 1);
+	token = word(&f, 1);
+	assert(token && word(&f, 8) == 17 && word(&f, 11) == token);
+	assert(!word(&f, 2) && !word(&f, 3) && !word(&f, 4) && !word(&f, 5));
+	f.in[1] = token;
+	assert(!run(&s, &f, 11) && word(&f, 1) == token && word(&f, 3) == 4096);
+	f.in[1]++;
+	assert(run(&s, &f, 11) == -ENOENT);
+	f.in[1] = token; f.in[3] = 0xffffffff; /* never follow trailing legacy pointers */
+	f.fail_out = 1;
+	assert(run(&s, &f, 64) == -EFAULT && !f.buffers && f.buffer_frees == 2);
+	f.fail_out = 0;
+	assert(run(&s, &f, 64) == -ENOENT);
+}
 
 int main(void)
 {
@@ -184,7 +244,7 @@ int main(void)
 
 	assert(run(&s, &f, 0) == -ENOENT);
 	for (i = 0; i < 256; i++) {
-		if (i == 0 || i == 1 || i == 12 || i == 13 || i == 67 || i == 68 || i == 98)
+		if (i == 0 || i == 1 || i == 11 || i == 12 || i == 13 || i == 63 || i == 64 || i == 67 || i == 68 || i == 98)
 			continue;
 		assert(run(&s, &f, i) == -EOPNOTSUPP);
 	}
@@ -254,6 +314,7 @@ int main(void)
 	old = f.disconnects;
 	assert(!sgx545_session_close(&s, &ops, &f) && old == f.disconnects);
 	initializer_protocol();
+	buffer_protocol();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, read-only heap info and rollback");
 	return 0;
 }

@@ -6,6 +6,7 @@ struct device;
 struct gma_sgx_bridge;
 struct gma_sgx_bridge_stats {
 	u32 files, connections, errors, heap_handles, init_running, init_ran;
+	u32 buffers, buffer_pages, buffer_maps, buffer_errors;
 };
 int gma3600_sgx_bridge_register(struct device *dev, struct gma_sgx_bridge **result);
 void gma3600_sgx_bridge_stats(struct gma_sgx_bridge *bridge,
