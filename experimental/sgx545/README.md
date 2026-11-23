@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has a **restricted i386 diagnostic bridge checkpoint**. It builds
+The hybrid port now has an **initializer ownership and heap-info checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -10,7 +10,9 @@ now [confirmed the identification checkpoint](../../research/sgx545/d2500hn-sgx-
 on the Atom with the same display behavior as before. Rendering remains untested.
 The [CPU-side services test](../../docs/SGX545-SERVICES-TESTING.md) has now passed:
 one device, four tracked pages, zero pages after cleanup and no blocked register
-accesses. The next [hardware test exercises the i386 bridge](../../docs/SGX545-BRIDGE-TESTING.md)
+accesses. The [i386 bridge also passed on the Atom](../../research/sgx545/d2500hn-i386-bridge.json),
+including the real compat path and clean teardown. The next
+[hardware test exercises initializer ownership and heap metadata](../../docs/SGX545-INITIALIZER-TESTING.md)
 without enabling GPU execution. It uses the already loaded host2 driver.
 
 ## D2500HN hardware result
@@ -70,6 +72,15 @@ now also been build-validated; that is not a hardware compatibility result.
   payloads, unsupported commands, and allocation rollback after copyout faults.
   A freestanding ELF32 client tests the kernel compat path on the Atom. This is
   **not a complete legacy bridge** and is not exposed through DRM yet.
+* Initializer CONNECT with the real DDK privilege/state checks, exclusive
+  file ownership, abort-only DISCONNECT and automatic abort on close/detach.
+  SGX initializer INFO calls the DDK's read-only metadata function and explicitly
+  translates the page-directory address and 32 heap records. Shared heaps receive
+  file-owned opaque handles; repeated queries reuse them. Tests cover partial
+  allocation, cache/rollback failures and teardown. Actual DDK public headers
+  compile in i386 mode to assert the 776-byte reply and each heap field offset.
+  Successful finalization remains rejected, and a completed attempt is one-shot
+  per module load. The client adds `--init-info` and `--init-close` tests.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
@@ -180,10 +191,10 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Validate the restricted i386 bridge on the Atom using the new diagnostic
-   client. CPU-side preparation and zero-page cleanup passed at the prior checkpoint.
-2. Extend explicit nested-payload translation to initializer commands, retaining
-   file ownership, bounds checks, rollback and rejection of unsupported requests.
+1. Validate initializer ownership, heap metadata and explicit/automatic abort on
+   the Atom. CPU-side preparation and the restricted i386 bridge have passed.
+2. Extend explicit nested-payload translation to initializer memory-allocation
+   and mapping commands, retaining ownership, rollback and request validation.
    Add the necessary DRM transport after validating the diagnostic subset.
 3. Port device DMA ownership, match the initializer/microkernel build, and
    connect the legacy ISR through the parent's interrupt API. Design bounded

@@ -1,0 +1,58 @@
+{
+  "target": "Debian 13 amd64 / 6.12.117+deb13-amd64",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "services_module_version": "0.5.0",
+  "host_interface_abi": 2,
+  "activation": "prepare=1 bridge=1",
+  "profile_builds": [
+    {"profile": "10131", "host_probe_services_client": "passed", "source_function_and_public_header_tests": "passed"},
+    {"profile": "10141", "host_probe_services_client": "passed", "source_function_and_public_header_tests": "passed"}
+  ],
+  "services_compiler_warnings": 0,
+  "host_c_regression_suites": 9,
+  "python_unittests": 10,
+  "actual_DDK_public_headers_i386_compile_assertions": [
+    "28-byte outer package",
+    "12-byte CONNECT reply with 64-bit handle aligned at offset 4",
+    "8-byte initializer abort/info inputs",
+    "24-byte heap record and all six field offsets",
+    "32 heap records and 776-byte initializer info reply",
+    "Full i386 command encodings for commands 67, 68, 98"
+  ],
+  "implemented_commands": [
+    "INITSRV_CONNECT: native DDK capability and running/ran checks, one file owner",
+    "INITSRV_DISCONNECT: unsuccessful/abort only, one-shot native DDK state",
+    "SGXINFO_FOR_SRVINIT: native secure-device-handle lookup and real SGXGetInfoForSrvinitKM metadata query"
+  ],
+  "backend_fault_and_lifetime_tests": [
+    "Capability denial and competing initializer ownership",
+    "Wrong owner abort cannot change native state",
+    "Undelivered connect rollback does not consume the one-shot attempt",
+    "Partial heap-handle allocation rollback",
+    "Duplicate shared heap pointers reuse one owned native handle and wire ID",
+    "Repeated metadata queries reuse cached handles and records",
+    "Per-context heaps keep null handles and undefined slots are zeroed",
+    "Heap release failures retain tracked ownership and prevent partial metadata reuse",
+    "Explicit abort, implicit close abort and live auxiliary detach release ownership",
+    "Heap/file/page counters remain separate; no GPU allocation added"
+  ],
+  "host_sanitizers": ["UndefinedBehaviorSanitizer", "AddressSanitizer for bridge lifetimes"],
+  "client": {
+    "format": "Freestanding static ELF32 i386; no libc or interpreter",
+    "modes": ["--selftest", "plain previous bridge suite", "--init-info", "--init-close"],
+    "selftest_under_qemu_i386_10_0_13": "passed",
+    "initializer_modes_on_real_hardware": "pending"
+  },
+  "previous_hardware_checkpoint": "d2500hn-i386-bridge.json",
+  "gpu_execution_enabled": false,
+  "firmware_or_proprietary_libraries_executed": false,
+  "display_parent_code_changed": false,
+  "limitations": [
+    "Diagnostic misc transport only; no complete DRM services/per-process ABI",
+    "Initializer memory allocation and mmap translation remain incomplete",
+    "DMA ownership, firmware/profile matching, reset/power/recovery and SGX IRQ delivery unvalidated",
+    "No GPU rendering or presentation"
+  ],
+  "hardware_test_guide": "docs/SGX545-INITIALIZER-TESTING.md"
+}

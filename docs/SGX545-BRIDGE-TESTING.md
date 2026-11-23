@@ -1,5 +1,9 @@
 # Test the i386 diagnostic bridge on Debian 13 amd64
 
+This checkpoint [passed on the Atom](../research/sgx545/d2500hn-i386-bridge.json).
+The next [initializer ownership and heap-info test](SGX545-INITIALIZER-TESTING.md)
+extends the client with `--init-info` and `--init-close` modes.
+
 The previous services preparation test passed on the D2500HN: one SGX device,
 four tracked pages, zero blocked accesses, and zero pages after unloading.
 The [recorded hardware result](../research/sgx545/d2500hn-services-preparation.json)

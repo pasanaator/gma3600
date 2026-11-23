@@ -17,6 +17,8 @@ def main():
         code += source[start:source.index("\n};", start) + 3] + "\n"
     for signature in (
         "static int new_token(", "static int backend_connect(",
+        "static int backend_init_connect(", "static int backend_init_abort(",
+        "static int backend_release_init_info(", "static int backend_init_info(",
         "static int backend_disconnect(", "static void bridge_free(",
         "static void bridge_file_free(", "static int bridge_open(",
         "static int bridge_release(", "static void bridge_stop(",

@@ -11,8 +11,29 @@
 
 typedef uint32_t u32;
 typedef void *IMG_HANDLE;
-typedef int PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors; };
+typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran; };
+typedef struct { u32 uiAddr; } IMG_DEV_PHYADDR;
+typedef struct {
+    u32 ui32HeapID;
+    IMG_HANDLE hDevMemHeap;
+    IMG_DEV_PHYADDR sDevVAddrBase;
+    u32 ui32HeapByteSize, ui32Attribs, ui32XTileStride;
+} PVRSRV_HEAP_INFO;
+typedef struct { IMG_DEV_PHYADDR sPDDevPAddr; PVRSRV_HEAP_INFO asHeapInfo[32]; } SGX_BRIDGE_INFO_FOR_SRVINIT;
+enum {PVRSRV_INIT_SERVER_RUNNING, PVRSRV_INIT_SERVER_RAN, PVRSRV_INIT_SERVER_SUCCESSFUL};
+#define IMG_TRUE 1
+#define IMG_FALSE 0
+#define PVRSRV_ERROR_SRV_CONNECT_FAILED 31
+#define PVRSRV_ERROR_SRV_DISCONNECT_FAILED 32
+static bool init_state[3], privileged = true;
+static bool OSProcHasPrivSrvInit(void) { return privileged; }
+static bool PVRSRVGetInitServerState(unsigned which) { return init_state[which]; }
+static int PVRSRVSetInitServerState(unsigned which, bool state) { init_state[which] = state; return 0; }
+static SGX_BRIDGE_INFO_FOR_SRVINIT native_info;
+static int fake_device, fake_heap, fake_heap2, info_calls;
+static int SGXGetInfoForSrvinitKM(void *device, SGX_BRIDGE_INFO_FOR_SRVINIT *info)
+{ assert(device == &fake_device); *info = native_info; info_calls++; return 0; }
 struct list_head { struct list_head *next, *prev; };
 #define container_of(p, type, member) ((type *)((char *)(p) - offsetof(type, member)))
 #define INIT_LIST_HEAD(h) ((h)->next = (h)->prev = (h))
@@ -56,6 +77,7 @@ struct miscdevice {
 };
 static int bridge_fops, allocations, fail_alloc, fail_misc, fail_devm;
 static int fail_handle, fail_free, freed_bases, misc_live, ddk_alive = 1;
+static int handle_calls, fail_handle_at, fail_heap_release;
 static void *watched_bridge;
 #define GFP_KERNEL 0
 #define U32_MAX UINT32_MAX
@@ -84,12 +106,38 @@ static int devm_add_action_or_reset(struct device *d, void (*action)(void *), vo
     return 0;
 }
 #define PVRSRV_HANDLE_TYPE_PERPROC_DATA 1
+#define PVRSRV_HANDLE_TYPE_DEV_NODE 2
+#define PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP 3
 #define PVRSRV_HANDLE_ALLOC_FLAG_NONE 0
+#define PVRSRV_HANDLE_ALLOC_FLAG_SHARED 1
 static int PVRSRVAllocHandleBase(PVRSRV_HANDLE_BASE **base)
 { assert(ddk_alive); *base = kzalloc(sizeof(**base), 0); return *base ? 0 : 12; }
 static int PVRSRVAllocHandle(PVRSRV_HANDLE_BASE *base, IMG_HANDLE *handle,
                             void *data, int type, int flags)
-{ assert(ddk_alive && base); if (fail_handle) return 17; *handle = data; return 0; }
+{
+    unsigned i;
+    assert(ddk_alive && base);
+    handle_calls++;
+    if (fail_handle || handle_calls == fail_handle_at) return 17;
+    for (i = 0; i < 64; i++) if (!base->data[i]) break;
+    assert(i < 64); base->count++; base->data[i] = data; base->type[i] = type;
+    *handle = (void *)(uintptr_t)(i + 1); return 0;
+}
+static int PVRSRVLookupHandle(PVRSRV_HANDLE_BASE *base, void **data, void *handle, int type)
+{
+    uintptr_t n = (uintptr_t)handle;
+    assert(ddk_alive && base);
+    if (!n || n > 64 || !base->data[n - 1] || base->type[n - 1] != type) return 22;
+    *data = base->data[n - 1]; return 0;
+}
+static int PVRSRVReleaseHandle(PVRSRV_HANDLE_BASE *base, void *handle, int type)
+{
+    void *data;
+    uintptr_t n = (uintptr_t)handle;
+    if (fail_heap_release) { fail_heap_release--; return 23; }
+    assert(!PVRSRVLookupHandle(base, &data, handle, type));
+    base->data[n - 1] = NULL; base->count--; return 0;
+}
 static int PVRSRVFreeHandleBase(PVRSRV_HANDLE_BASE *base)
 {
     assert(ddk_alive && base);
@@ -111,6 +159,7 @@ static void kfree(void *p)
 static struct gma_sgx_bridge *start(struct device *dev)
 {
     struct gma_sgx_bridge *b = NULL;
+    memset(init_state, 0, sizeof(init_state));
     assert(!gma3600_sgx_bridge_register(dev, &b) && b);
     watched_bridge = b;
     assert(b->misc.mode == 0600 && misc_live);
@@ -126,6 +175,98 @@ static void stop(struct device *dev)
 { dev->action(dev->data); dev->action = NULL; dev->data = NULL; }
 static void empty(void)
 { assert(!allocations && !current_pid.refs && !misc_live && !watched_bridge); }
+
+static void attach_device(struct gma_sgx_file *f)
+{
+    assert(!PVRSRVAllocHandle(f->handles, &f->device_handle, &fake_device,
+                             PVRSRV_HANDLE_TYPE_DEV_NODE, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
+}
+static void initializer_lifetime(void)
+{
+    struct device dev = {0};
+    struct gma_sgx_bridge *b;
+    struct file file, second;
+    struct gma_sgx_file *f, *other;
+    struct sgx545_init_info_out out, again;
+    u32 token;
+    unsigned i, old_token;
+    int calls;
+
+    memset(&native_info, 0, sizeof(native_info));
+    native_info.sPDDevPAddr.uiAddr = 0x100000;
+    for (i = 0; i < 32; i++) native_info.asHeapInfo[i].ui32HeapID = UINT32_MAX;
+    native_info.asHeapInfo[0] = (PVRSRV_HEAP_INFO){1, &fake_heap, {0x4000000}, 0x2000000, 3, 0};
+    native_info.asHeapInfo[1] = (PVRSRV_HEAP_INFO){2, NULL, {0x6000000}, 0x1000000, 1, 0};
+    native_info.asHeapInfo[2] = (PVRSRV_HEAP_INFO){3, &fake_heap, {0x7000000}, 0x1000000, 3, 0};
+    native_info.asHeapInfo[3] = (PVRSRV_HEAP_INFO){4, &fake_heap2, {0x8000000}, 0x1000000, 3, 4096};
+
+    b = start(&dev); f = open_(b, &file); other = open_(b, &second);
+    assert(!backend_connect(f, &token) && !backend_connect(other, &token));
+    privileged = false;
+    assert(backend_init_connect(f) == -EPERM && !b->init_owner);
+    privileged = true;
+    assert(!backend_init_connect(f) && init_state[PVRSRV_INIT_SERVER_RUNNING]);
+    assert(backend_init_connect(other) == PVRSRV_ERROR_SRV_CONNECT_FAILED);
+    assert(backend_init_abort(other, 0) == PVRSRV_ERROR_SRV_DISCONNECT_FAILED && b->init_owner == f);
+    assert(!backend_init_abort(f, 1) && !b->init_owner && !init_state[PVRSRV_INIT_SERVER_RAN]);
+    assert(!backend_init_connect(f));
+    assert(backend_init_info(f, &out) == 22); /* no acquired device handle */
+    attach_device(f);
+
+    fail_handle_at = handle_calls + 2;
+    memset(&out, 0, sizeof(out));
+    assert(backend_init_info(f, &out) == 17 && !out.page_directory);
+    assert(!f->info_dirty && !f->heap_count && !b->stats.heap_handles && f->handles->count == 2);
+    fail_handle_at = 0;
+    assert(!backend_init_info(f, &out) && out.page_directory == 0x100000);
+    assert(out.heaps[0].handle && out.heaps[0].handle == out.heaps[2].handle);
+    assert(out.heaps[3].handle && out.heaps[3].handle != out.heaps[0].handle);
+    assert(!out.heaps[1].handle && out.heaps[1].size == 0x1000000);
+    assert(out.heaps[3].tile_stride == 4096);
+    for (i = 4; i < 32; i++) {
+        assert(out.heaps[i].id == UINT32_MAX && !out.heaps[i].handle && !out.heaps[i].base);
+    }
+    assert(f->heap_count == 2 && b->stats.heap_handles == 2 && f->handles->count == 4);
+    calls = info_calls; old_token = b->next_token;
+    assert(!backend_init_info(f, &again) && !memcmp(&out, &again, sizeof(out)));
+    assert(info_calls == calls && b->next_token == old_token);
+    assert(!backend_release_init_info(f) && !f->heap_count && !b->stats.heap_handles);
+
+    assert(!backend_init_info(f, &out));
+    fail_heap_release = 1;
+    assert(backend_release_init_info(f) == 23 && f->info_dirty && f->heap_count == 1);
+    assert(backend_init_info(f, &out) == -EIO);
+    assert(!backend_release_init_info(f) && !f->info_dirty && !b->stats.heap_handles);
+    fail_handle_at = handle_calls + 2; fail_heap_release = 1;
+    assert(backend_init_info(f, &out) == -EIO && f->info_dirty && f->heap_count == 1);
+    fail_handle_at = 0;
+    assert(!backend_release_init_info(f));
+    assert(!backend_init_info(f, &out));
+    assert(!backend_init_abort(f, 0));
+    assert(!b->stats.init_running && b->stats.init_ran && !init_state[PVRSRV_INIT_SERVER_SUCCESSFUL]);
+    assert(backend_init_info(f, &out) == -EACCES);
+    assert(backend_init_connect(other) == PVRSRV_ERROR_SRV_CONNECT_FAILED);
+    assert(!bridge_release(NULL, &file) && !b->stats.heap_handles);
+    assert(!bridge_release(NULL, &second));
+    stop(&dev); empty();
+
+    /* An owner that closes without an explicit abort cannot strand RUNNING. */
+    b = start(&dev); f = open_(b, &file);
+    assert(!backend_connect(f, &token)); attach_device(f);
+    assert(!backend_init_connect(f) && !backend_init_info(f, &out));
+    assert(!bridge_release(NULL, &file));
+    assert(!b->stats.init_running && b->stats.init_ran && !b->stats.heap_handles);
+    stop(&dev); empty();
+
+    b = start(&dev); f = open_(b, &file);
+    assert(!backend_connect(f, &token)); attach_device(f);
+    assert(!backend_init_connect(f) && !backend_init_info(f, &out));
+    stop(&dev);
+    assert(!b->stats.heap_handles && !b->stats.init_running && !f->handles);
+    ddk_alive = 0;
+    assert(!bridge_release(NULL, &file));
+    ddk_alive = 1; empty();
+}
 
 int main(void)
 {
@@ -200,6 +341,7 @@ int main(void)
     assert(!bridge_release(NULL, &file));
     stop(&dev); empty();
     assert(freed_bases == 5);
-    puts("SGX bridge lifetime tests passed: close, live detach, registration/cleanup faults, token exhaustion");
+    initializer_lifetime();
+    puts("SGX bridge lifetime tests passed: ownership, heap translation/deduplication/cache/rollback, close and detach");
     return 0;
 }

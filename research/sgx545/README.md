@@ -22,12 +22,21 @@ No proprietary libraries are needed or executed in this checkpoint.
 
 The user has now [passed services preparation and cleanup](d2500hn-services-preparation.json)
 on the Atom: one device, four tracked pages, zero after cleanup, and no blocked
-register accesses. The next [i386 diagnostic bridge test](../../docs/SGX545-BRIDGE-TESTING.md)
+register accesses. The [i386 diagnostic bridge test](../../docs/SGX545-BRIDGE-TESTING.md)
 adds a restricted root-only misc transport and an ELF32 client. Its connect,
 enumerate, acquire and disconnect commands operate on real CPU-side DDK objects;
 firmware, rendering and a complete legacy DRM interface remain unfinished.
 The [bridge build/test record](restricted-bridge-6.12-build.json) separates host
-and emulated-client checks from the pending real kernel compat test.
+and emulated-client checks from the subsequent real kernel compat test.
+
+That [real kernel compat test has now passed on the Atom](d2500hn-i386-bridge.json),
+including copyout rollback, fork/file isolation and zero-page cleanup. The next
+[initializer checkpoint](../../docs/SGX545-INITIALIZER-TESTING.md) adds exclusive
+ownership, real read-only DDK heap metadata and abort handling. It retains the
+GPU-execution block and is still a diagnostic transport rather than a complete
+legacy DRM services interface.
+See the [initializer build/test record](initializer-info-6.12-build.json) for the
+two compile profiles, actual i386 header assertions and mocked lifetime checks.
 
 ## Retrieved artifact and provenance
 

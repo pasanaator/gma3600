@@ -49,8 +49,13 @@ struct sgx545_bridge_request {
 #define SGX545_CMD_ACQUIRE          1U
 #define SGX545_CMD_CONNECT          12U
 #define SGX545_CMD_DISCONNECT       13U
+#define SGX545_CMD_INIT_CONNECT     67U
+#define SGX545_CMD_INIT_DISCONNECT  68U
+#define SGX545_CMD_INIT_INFO        98U
 #define SGX545_MAX_DEVICES          16U
 #define SGX545_DEVICE_TYPE          7U
+#define SGX545_MAX_HEAPS            32U
+#define SGX545_UNDEFINED_HEAP       0xffffffffU
 
 struct sgx545_connect_out { __u32 error, services_lo, services_hi; };
 struct sgx545_device_id { __u32 type, device_class, index; };
@@ -59,9 +64,17 @@ struct sgx545_enumerate_out {
 	struct sgx545_device_id devices[SGX545_MAX_DEVICES];
 };
 struct sgx545_handle_out { __u32 error, handle; };
+struct sgx545_heap32 { __u32 id, handle, base, size, attributes, tile_stride; };
+struct sgx545_init_info_out {
+	__u32 error, page_directory;
+	struct sgx545_heap32 heaps[SGX545_MAX_HEAPS];
+};
 
 /* Diagnostic subset, scoped to an open file. Backend objects never cross ABI. */
-struct sgx545_session { __u32 services, device, device_index, device_type; };
+struct sgx545_session {
+	__u32 services, device, device_index, device_type;
+	__u32 initializer, init_info;
+};
 struct sgx545_bridge_ops {
 	int (*connect)(void *ctx, __u32 *token);
 	int (*enumerate)(void *ctx, struct sgx545_enumerate_out *out);
@@ -70,11 +83,18 @@ struct sgx545_bridge_ops {
 	int (*disconnect)(void *ctx);
 	int (*copy_in)(void *ctx, void *dst, __u64 src, __u32 size);
 	int (*copy_out)(void *ctx, __u64 dst, const void *src, __u32 size);
+	int (*init_connect)(void *ctx);
+	int (*init_abort)(void *ctx, int rollback);
+	int (*init_info)(void *ctx, struct sgx545_init_info_out *out);
+	int (*release_init_info)(void *ctx);
 };
 
 /* Backend: zero=success, positive=DDK error, negative=Linux errno.
  * Caller serializes the session/backend. Newly created resources are rolled
  * back on a failed output copy. DISCONNECT commits before its output copy.
+ * init_abort(rollback=1) undoes an undelivered claim without ending an attempt;
+ * rollback=0 ends it. Initializer INFO is cached; release_init_info rolls back
+ * only a newly created batch. The backend owns partial failures until close.
  */
 int sgx545_bridge_execute(struct sgx545_session *session,
 	const struct sgx545_bridge_ops *ops, void *ctx,

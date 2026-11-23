@@ -16,6 +16,11 @@
 #include "lock.h"
 #include "handle.h"
 #include "pvr_bridge.h"
+#include "sgx_bridge.h"
+#include "sgxinfo.h"
+#include "sgxinfokm.h"
+#include "sgx_bridge_km.h"
+#include "power.h"
 #include "sgx545_abi.h"
 #include "gma3600_sgx_bridge.h"
 
@@ -31,6 +36,14 @@ static_assert(_IOC_NR(PVRSRV_BRIDGE_CONNECT_SERVICES) == SGX545_CMD_CONNECT);
 static_assert(_IOC_NR(PVRSRV_BRIDGE_DISCONNECT_SERVICES) == SGX545_CMD_DISCONNECT);
 static_assert(_IOC_NR(PVRSRV_BRIDGE_ENUM_DEVICES) == SGX545_CMD_ENUMERATE);
 static_assert(_IOC_NR(PVRSRV_BRIDGE_ACQUIRE_DEVICEINFO) == SGX545_CMD_ACQUIRE);
+static_assert(_IOC_NR(PVRSRV_BRIDGE_INITSRV_CONNECT) == SGX545_CMD_INIT_CONNECT);
+static_assert(_IOC_NR(PVRSRV_BRIDGE_INITSRV_DISCONNECT) == SGX545_CMD_INIT_DISCONNECT);
+static_assert(_IOC_NR(PVRSRV_BRIDGE_SGXINFO_FOR_SRVINIT) == SGX545_CMD_INIT_INFO);
+static_assert(PVRSRV_MAX_CLIENT_HEAPS == SGX545_MAX_HEAPS);
+static_assert(sizeof(IMG_DEV_PHYADDR) == 4);
+static_assert(sizeof(PVRSRV_HEAP_INFO) == 32);
+static_assert(sizeof(struct sgx545_heap32) == 24);
+static_assert(sizeof(struct sgx545_init_info_out) == 776);
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -38,6 +51,7 @@ struct gma_sgx_bridge {
 	struct mutex lock;
 	struct list_head files;
 	struct gma_sgx_bridge_stats stats;
+	struct gma_sgx_file *init_owner;
 	u32 next_token;
 	bool online, registered;
 };
@@ -50,6 +64,10 @@ struct gma_sgx_file {
 	PVRSRV_HANDLE_BASE *handles;
 	IMG_HANDLE service_handle, device_handle;
 	bool counted, closed;
+	IMG_HANDLE heap_handles[SGX545_MAX_HEAPS];
+	struct sgx545_init_info_out init_info;
+	u32 heap_count;
+	bool info_ready, info_dirty;
 };
 
 /* No native pointer/handle is exposed. Wire IDs never repeat in this lifetime. */
@@ -140,11 +158,141 @@ static int backend_release_device(void *ctx)
 	return ret;
 }
 
+static int backend_init_connect(void *ctx)
+{
+	struct gma_sgx_file *f = ctx;
+	struct gma_sgx_bridge *b = f->bridge;
+
+	if (!OSProcHasPrivSrvInit())
+		return -EPERM;
+	if (!f->handles || b->init_owner ||
+	    PVRSRVGetInitServerState(PVRSRV_INIT_SERVER_RUNNING) ||
+	    PVRSRVGetInitServerState(PVRSRV_INIT_SERVER_RAN))
+		return PVRSRV_ERROR_SRV_CONNECT_FAILED;
+	PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_RUNNING, IMG_TRUE);
+	b->init_owner = f;
+	b->stats.init_running = 1;
+	return 0;
+}
+
+static int backend_init_abort(void *ctx, int rollback)
+{
+	struct gma_sgx_file *f = ctx;
+	struct gma_sgx_bridge *b = f->bridge;
+
+	if (b->init_owner != f)
+		return PVRSRV_ERROR_SRV_DISCONNECT_FAILED;
+	/* No SysFinalise/power/firmware path. A delivered attempt is one-shot. */
+	PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_RUNNING, IMG_FALSE);
+	if (!rollback) {
+		PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_RAN, IMG_TRUE);
+		PVRSRVSetInitServerState(PVRSRV_INIT_SERVER_SUCCESSFUL, IMG_FALSE);
+		b->stats.init_ran = 1;
+	}
+	b->stats.init_running = 0;
+	b->init_owner = NULL;
+	return 0;
+}
+
+static int backend_release_init_info(void *ctx)
+{
+	struct gma_sgx_file *f = ctx;
+	unsigned int i;
+	int ret, error = 0;
+
+	for (i = 0; i < SGX545_MAX_HEAPS; i++) {
+		if (!f->heap_handles[i])
+			continue;
+		ret = PVRSRVReleaseHandle(f->handles, f->heap_handles[i],
+					 PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP);
+		if (ret) {
+			f->bridge->stats.errors++;
+			error = ret;
+			continue;
+		}
+		f->heap_handles[i] = NULL;
+		f->heap_count--;
+		f->bridge->stats.heap_handles--;
+	}
+	f->info_ready = false;
+	f->info_dirty = !!error;
+	if (!error)
+		memset(&f->init_info, 0, sizeof(f->init_info));
+	return error;
+}
+
+static int backend_init_info(void *ctx, struct sgx545_init_info_out *out)
+{
+	struct gma_sgx_file *f = ctx;
+	SGX_BRIDGE_INFO_FOR_SRVINIT info = {0};
+	IMG_HANDLE device;
+	unsigned int i, j;
+	int ret;
+
+	if (f->bridge->init_owner != f)
+		return -EACCES;
+	if (f->info_dirty)
+		return -EIO;
+	if (f->info_ready) {
+		*out = f->init_info;
+		return 0;
+	}
+	ret = PVRSRVLookupHandle(f->handles, &device, f->device_handle,
+				 PVRSRV_HANDLE_TYPE_DEV_NODE);
+	if (ret)
+		return ret;
+	ret = SGXGetInfoForSrvinitKM(device, &info);
+	if (ret)
+		return ret;
+	f->init_info.page_directory = info.sPDDevPAddr.uiAddr;
+	for (i = 0; i < SGX545_MAX_HEAPS; i++) {
+		const PVRSRV_HEAP_INFO *heap = &info.asHeapInfo[i];
+		struct sgx545_heap32 *wire = &f->init_info.heaps[i];
+
+		wire->id = heap->ui32HeapID;
+		if (wire->id == SGX545_UNDEFINED_HEAP)
+			continue;
+		wire->base = heap->sDevVAddrBase.uiAddr;
+		wire->size = heap->ui32HeapByteSize;
+		wire->attributes = heap->ui32Attribs;
+		wire->tile_stride = heap->ui32XTileStride;
+		if (!heap->hDevMemHeap)
+			continue;
+		/* Shared native heaps get one owned handle and one opaque wire ID. */
+		for (j = 0; j < i; j++)
+			if (info.asHeapInfo[j].ui32HeapID != SGX545_UNDEFINED_HEAP &&
+			    info.asHeapInfo[j].hDevMemHeap == heap->hDevMemHeap)
+				break;
+		if (j < i) {
+			wire->handle = f->init_info.heaps[j].handle;
+			continue;
+		}
+		ret = new_token(f->bridge, &wire->handle);
+		if (ret)
+			goto fail;
+		ret = PVRSRVAllocHandle(f->handles, &f->heap_handles[i], heap->hDevMemHeap,
+					PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED);
+		if (ret)
+			goto fail;
+		f->heap_count++;
+		f->bridge->stats.heap_handles++;
+	}
+	f->info_ready = true;
+	*out = f->init_info;
+	return 0;
+fail:
+	if (backend_release_init_info(f))
+		return -EIO;
+	return ret;
+}
+
 static int backend_disconnect(void *ctx)
 {
 	struct gma_sgx_file *f = ctx;
 	int ret;
 
+	if (f->bridge->init_owner == f)
+		backend_init_abort(f, 0);
 	if (!f->handles)
 		return 0;
 	ret = PVRSRVFreeHandleBase(f->handles);
@@ -157,6 +305,11 @@ static int backend_disconnect(void *ctx)
 	if (f->counted)
 		f->bridge->stats.connections--;
 	f->counted = false;
+	f->bridge->stats.heap_handles -= f->heap_count;
+	f->heap_count = 0;
+	memset(f->heap_handles, 0, sizeof(f->heap_handles));
+	memset(&f->init_info, 0, sizeof(f->init_info));
+	f->info_ready = f->info_dirty = false;
 	return 0;
 }
 
@@ -174,6 +327,8 @@ static const struct sgx545_bridge_ops bridge_ops = {
 	.acquire = backend_acquire, .release_device = backend_release_device,
 	.disconnect = backend_disconnect,
 	.copy_in = bridge_copy_in, .copy_out = bridge_copy_out,
+	.init_connect = backend_init_connect, .init_abort = backend_init_abort,
+	.init_info = backend_init_info, .release_init_info = backend_release_init_info,
 };
 
 static void bridge_free(struct kref *ref)
@@ -309,8 +464,9 @@ static void bridge_stop(void *data)
 		}
 	}
 	LinuxUnLockMutex(&gPVRSRVLock);
-	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u\n",
-		b->stats.files, b->stats.connections, b->stats.errors);
+	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u\n",
+		b->stats.files, b->stats.connections, b->stats.errors,
+		b->stats.heap_handles, b->stats.init_running, b->stats.init_ran);
 	mutex_unlock(&b->lock);
 	kref_put(&b->ref, bridge_free);
 }

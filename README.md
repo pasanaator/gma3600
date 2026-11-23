@@ -15,9 +15,10 @@ now has host tests, including concurrent callback teardown; it is not yet wired
 to the legacy services runtime.
 The [services preparation test](docs/SGX545-SERVICES-TESTING.md) passed on the Atom:
 one device, four tracked pages, zero pages after cleanup, and no blocked register
-accesses. The next [i386 diagnostic bridge test](docs/SGX545-BRIDGE-TESTING.md)
-adds real DDK connection/device handles and a freestanding 32-bit client.
-GPU execution remains disabled.
+accesses. The [i386 diagnostic bridge test](docs/SGX545-BRIDGE-TESTING.md) also passed
+on the amd64 target, including handle validation, copyout rollback and cleanup.
+The next [initializer test](docs/SGX545-INITIALIZER-TESTING.md) adds exclusive
+ownership, read-only heap metadata and abort handling. GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the

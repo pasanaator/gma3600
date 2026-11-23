@@ -1,0 +1,21 @@
+{
+  "source": "User-supplied SSH transcript after the 68ff2ae bridge checkpoint",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, 6.12.117+deb13-amd64, VGA",
+  "activation": "prepare=1 bridge=1",
+  "client_selftest": "PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8",
+  "client_results": [
+    "PASS: real DDK device index=0 type=SGX",
+    "PASS: i386 compat bridge, handles, validation, copyout rollback, fork isolation and close cleanup"
+  ],
+  "status": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0",
+  "bridge_cleanup": "[663.567030] gma3600 SGX bridge stopped: files=0 connections=0 errors=0",
+  "services_cleanup": "[663.579955] services cleanup: result=0 pages_live=0 blocked_hw_accesses=0",
+  "result": "passed for supplied client/status/unload sequence",
+  "real_i386_on_amd64_kernel_compat_path_tested": true,
+  "display_observation_in_this_transcript": "not explicitly supplied",
+  "not_tested": [
+    "Initializer ownership or heap-info commands (introduced after this result)",
+    "Device DMA, SGX IRQ delivery, firmware matching or GPU execution",
+    "Hardware rendering, presentation, reset/recovery or suspend"
+  ]
+}
