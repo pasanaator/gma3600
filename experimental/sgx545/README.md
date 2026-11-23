@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has a **CPU-side services preparation checkpoint**. It builds
+The hybrid port now has a **restricted i386 diagnostic bridge checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -8,8 +8,10 @@ The [build validation record](../../research/sgx545/hybrid-6.12-build.json)
 records the first three successful module builds and ABI checks. The user has
 now [confirmed the identification checkpoint](../../research/sgx545/d2500hn-sgx-identification.json)
 on the Atom with the same display behavior as before. Rendering remains untested.
-The next [hardware test initializes and tears down real DDK services](../../docs/SGX545-SERVICES-TESTING.md)
-without enabling GPU execution. It can use the already loaded host2 driver.
+The [CPU-side services test](../../docs/SGX545-SERVICES-TESTING.md) has now passed:
+one device, four tracked pages, zero pages after cleanup and no blocked register
+accesses. The next [hardware test exercises the i386 bridge](../../docs/SGX545-BRIDGE-TESTING.md)
+without enabling GPU execution. It uses the already loaded host2 driver.
 
 ## D2500HN hardware result
 
@@ -59,16 +61,22 @@ now also been build-validated; that is not a hardware compatibility result.
 * Correct reset-buffer physical addresses for noncontiguous RAM, and cleanup
   of partially initialized SGX contexts/heaps. Mocked tests compile the actual
   patched DDK functions to check reset addresses and blocked register accesses.
-* A fixed-width Intel 1.7 i386 bridge-envelope decoder with bounds/overflow
-  tests. The core build checks the actual pinned native DDK envelope is 48 bytes;
-  the legacy i386 envelope is 28. This is the outer envelope only, **not a complete
-  compat ioctl implementation**. No private ioctls are exposed.
+* Explicit Intel 1.7 i386 layouts for the outer envelope and restricted
+  connect/enumerate/acquire/disconnect payloads. The native envelope is 48 bytes
+  versus 28 on the wire; CONNECT's output is 16 native bytes versus 12 on i386.
+  With `prepare=1 bridge=1`, a root-only diagnostic misc device translates these
+  commands to real DDK enumeration/device and secure-handle functions. Handles
+  are file-owned opaque IDs, never native pointers. Tests cover malformed
+  payloads, unsupported commands, and allocation rollback after copyout faults.
+  A freestanding ELF32 client tests the kernel compat path on the Atom. This is
+  **not a complete legacy bridge** and is not exposed through DRM yet.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
 DDK initialization part 1, then enumerates the SGX device. It borrows the parent's
-mapping, never acquires/enables PCI again, and omits legacy procfs, mmap and ioctl
-entry points. Legacy register reads/writes are blocked and counted; part 2 and
+mapping, never acquires/enables PCI again, and omits legacy procfs, mmap and the
+original unrestricted dispatcher. The diagnostic bridge requires an additional
+`bridge=1` parameter. Legacy register reads/writes are blocked and counted; part 2 and
 system finalization reject execution. No firmware or SGX interrupt is enabled.
 Without `prepare=1`, module init still returns `-EOPNOTSUPP`.
 
@@ -172,11 +180,11 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Validate CPU-side preparation and zero-page cleanup on the Atom with the
-   current services module. PCI/display ownership stays in the existing parent.
-2. Translate the i386 service commands and nested structures explicitly. Begin
-   with connect/enumerate/acquire/init, reject unsupported commands, and check
-   handle ownership and user-buffer sizes before exposing a private bridge.
+1. Validate the restricted i386 bridge on the Atom using the new diagnostic
+   client. CPU-side preparation and zero-page cleanup passed at the prior checkpoint.
+2. Extend explicit nested-payload translation to initializer commands, retaining
+   file ownership, bounds checks, rollback and rejection of unsupported requests.
+   Add the necessary DRM transport after validating the diagnostic subset.
 3. Port device DMA ownership, match the initializer/microkernel build, and
    connect the legacy ISR through the parent's interrupt API. Design bounded
    power/reset/recovery before allowing GPU execution.

@@ -1,0 +1,11 @@
+--- a/Makefile
++++ b/Makefile
+@@ -154,7 +154,7 @@
+ 
+ # Add rewritten driver components here for now
+ ifeq ($(SOC_VENDOR),intel)
+-$(TARGET) += gma3600_sgx_adapter.o gma3600_sgx_memory.o
++$(TARGET) += gma3600_sgx_adapter.o gma3600_sgx_memory.o gma3600_sgx_bridge.o
+ else
+ $(TARGET) += ../../pvr-drv.o
+ endif

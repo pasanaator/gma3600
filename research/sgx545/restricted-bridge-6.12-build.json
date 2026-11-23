@@ -1,0 +1,57 @@
+{
+  "target": "Debian 13 amd64 / 6.12.117+deb13-amd64",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "builder": "tools/sgx545_hybrid_build.py",
+  "module": "core/gma3600_sgx_services.ko",
+  "services_module_version": "0.4.0",
+  "activation": "prepare=1 bridge=1; prepare=1 alone preserves preparation-only behavior",
+  "host_interface_abi": 2,
+  "profile_builds": [
+    {"profile": "10131", "module_builds": "host, identity probe, services", "status": "passed", "source_tests_exit_code": 0},
+    {"profile": "10141", "module_builds": "host, identity probe, services", "status": "passed", "source_tests_exit_code": 0}
+  ],
+  "services_compiler_warnings": 0,
+  "host_c_regression_suites": 9,
+  "python_unittests": 10,
+  "protocol_tests": [
+    "Strict i386 command encoding and 28/12/200/8-byte layouts",
+    "Unsupported commands and flags rejected before backend dispatch",
+    "Device type, session and stale-handle validation",
+    "Output initialization and no padding disclosure",
+    "Positive DDK error payloads and negative Linux errors",
+    "Allocation rollback on copyout faults; ownership retained if rollback fails",
+    "Repeat connect/acquire and disconnect-before-copyout semantics"
+  ],
+  "actual_bridge_lifetime_functions_with_mock_kernel_and_DDK": [
+    "Registration allocation, devm and misc failure cleanup",
+    "Close releases native handle base and file/PID/bridge references",
+    "Auxiliary detach drains live files; late closes do not call destroyed DDK state",
+    "Failed close cleanup remains owned for teardown retry",
+    "Failed partial connect cleanup retains native handle-base ownership without counter underflow",
+    "Persistent detach cleanup errors retain CPU metadata without late DDK access",
+    "Wire token exhaustion rejects allocation without reuse"
+  ],
+  "lifetime_sanitizers": ["AddressSanitizer", "UndefinedBehaviorSanitizer"],
+  "diagnostic_client": {
+    "source": "tools/sgx545_compat_probe.c",
+    "format": "ELF32 little-endian Intel 80386, static, no interpreter or libc",
+    "selftest": "passed under QEMU i386 10.0.13 user-mode emulation",
+    "missing_device_error_path": "correctly reports Linux -ENOENT and exits 1",
+    "native_cloud_i386_execution_available": false,
+    "real_amd64_kernel_compat_ioctl_tested": false
+  },
+  "transport": "Root-only diagnostic misc device /dev/gma3600-sgx-bridge; not a DRM renderer",
+  "backend": "Real DDK device enumeration/acquisition and native secure-handle bases; wire IDs separate from native handles",
+  "not_implemented": [
+    "Complete legacy per-process services/initializer ABI",
+    "DRM transport usable by proprietary userspace libraries",
+    "Device DMA ownership and bounded reset/power/recovery",
+    "Initializer/microkernel matching, SGX IRQ enablement and submission",
+    "Hardware rendering or presentation"
+  ],
+  "gpu_execution_enabled": false,
+  "real_hardware_bridge_tested": false,
+  "previous_hardware_preparation_result": "d2500hn-services-preparation.json",
+  "next_hardware_guide": "docs/SGX545-BRIDGE-TESTING.md"
+}

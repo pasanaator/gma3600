@@ -121,7 +121,7 @@ def main():
             for item in (ROOT / "experimental/sgx545/abi").iterdir():
                 shutil.copy2(item, core)
             with (core / "Makefile").open("a") as stream:
-                stream.write("\n$(TARGET) += sgx545_abi.o\n")
+                stream.write("\n$(TARGET) += sgx545_abi.o sgx545_protocol.o\n")
             run_logged([sys.executable, str(ROOT / "tests/sgx545_source_test.py"),
                         str(core), str(output / "source-tests")],
                        output, output / "source-tests.log", report)
@@ -134,6 +134,13 @@ def main():
                        "AM_VERSION=0", f"-j{args.jobs}", "modules"],
                        output, output / "core.log", report)
             record_module(report, "services_prepare_only", core / "gma3600_sgx_services.ko")
+            client = output / "sgx545-compat-probe"
+            run_logged(["bash", str(ROOT / "tools/sgx545_compat_probe_build.sh"), str(client)],
+                       output, output / "compat-client.log", report)
+            header = client.read_bytes()[:20]
+            if header[:6] != b"\x7fELF\x01\x01" or int.from_bytes(header[18:20], "little") != 3:
+                raise RuntimeError("Expected an ELF32 i386 diagnostic client")
+            report["compat_diagnostic_client"] = str(client)
         report["status"] = "passed"
     except (OSError, subprocess.CalledProcessError, RuntimeError) as error:
         report["status"] = "failed"

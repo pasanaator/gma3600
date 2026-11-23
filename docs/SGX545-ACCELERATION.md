@@ -4,13 +4,14 @@ Status: the selected **hybrid port for Debian 13 amd64** has its first implement
 The separated legacy services core builds against stock 6.12.117 headers, and an
 opt-in auxiliary child provides SGX545 identification without a second PCI owner.
 The user confirmed raw ID `01150000` and revision `0001000d` (1.0.13) while
-preserving the prior display behavior. The next implementation adds parent-owned
+preserving the prior display behavior. The implementation includes parent-owned
 interrupt routing, verified with host tests but not hardware SGX interrupt delivery.
 Hardware rendering is not enabled. See the
 [implementation and Atom test instructions](../experimental/sgx545/README.md).
-The next [CPU-side services preparation checkpoint](SGX545-SERVICES-TESTING.md)
-now has a module that borrows parent resources, prepares real DDK contexts, and
-reports allocation/cleanup counters while blocking legacy register accesses.
+The [CPU-side services checkpoint](SGX545-SERVICES-TESTING.md) passed on the Atom,
+including zero tracked pages after cleanup and zero blocked register accesses.
+The next [i386 bridge test](SGX545-BRIDGE-TESTING.md) uses explicit nested layouts
+for four commands, real DDK secure handles, and a freestanding 32-bit client.
 The Intel i386 userspace artifact has been archive-verified and statically audited;
 see [the artifact record](../research/sgx545/README.md). The normal display build
 remains version 1.0.4, with SGX host support excluded by default.
@@ -166,14 +167,13 @@ Gate 1 has an authenticated historical Intel userspace artifact and a static
 library/dependency audit. Gate 3 has started: services/display build separation,
 an opt-in parent-owned auxiliary interface, a hardware identification probe, and
 an outer i386 bridge-envelope decoder. The kernel build checks the pinned DDK's
-48-byte native envelope against the separate 28-byte i386 wire layout. Nested
-payload translation, services activation, power/IRQ/memory ownership, and hardware
-rendering remain unfinished. The identification checkpoint has now passed on
-the Atom. Its [recorded result](../research/sgx545/d2500hn-sgx-identification.json)
-does not validate the newer interrupt API or services initialization. The next
-runtime milestone is validating services preparation and cleanup through the
-parent, using the preparation test above. Device DMA and the inner i386 bridge
-remain unvalidated; no private rendering interface is exposed yet.
+48-byte native envelope against the separate 28-byte i386 wire layout. CPU-side
+services activation and cleanup have now passed on the Atom; see the
+[hardware result](../research/sgx545/d2500hn-services-preparation.json).
+Connect/enumerate/acquire/disconnect translation is implemented for the next
+diagnostic test, including CONNECT's differently aligned 64-bit handle field.
+Initializer payloads, device DMA, power/IRQ integration and rendering remain
+unfinished. No DRM rendering interface is exposed yet.
 
 ## Inspected source references
 

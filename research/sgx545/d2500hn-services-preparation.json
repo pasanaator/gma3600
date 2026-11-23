@@ -1,0 +1,24 @@
+{
+  "source": "User-supplied SSH transcript (Pasted text.txt)",
+  "tested_commit": "fa91f91",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, 6.12.117+deb13-amd64, VGA",
+  "services_module": "gma3600_sgx_services",
+  "parameters": "prepare=1",
+  "status": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled",
+  "preparation_log": "[366.370842] services prepared: devices=1 pages_live=4; GPU execution disabled",
+  "cleanup_log": "[386.336147] services cleanup: result=0 pages_live=0 blocked_hw_accesses=0",
+  "result": "passed for the supplied load/status/unload sequence",
+  "display_evidence": "Parent log shows 1920x1080 VGA scanout; no new explicit display observation accompanied this transcript.",
+  "earlier_resolved_load_error": "i2c_bit_add_bus unknown symbol before the successful parent load; supplied by i2c_algo_bit dependency",
+  "proven": [
+    "Real CPU-side DDK services initialization and SGX enumeration on amd64 target",
+    "Four tracked SGX pages allocated and released",
+    "No legacy register access attempted in tested preparation/cleanup"
+  ],
+  "not_tested": [
+    "i386 diagnostic bridge (introduced after this result)",
+    "Device DMA or SGX interrupt delivery",
+    "Firmware/build-option compatibility or GPU execution",
+    "Hardware OpenGL/GLES acceleration"
+  ]
+}

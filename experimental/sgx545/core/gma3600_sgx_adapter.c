@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* CPU-side services preparation. No firmware, private ioctls or GPU execution. */
+/* CPU-side services and an opt-in diagnostic bridge. No GPU execution. */
 #include <linux/atomic.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -20,6 +20,7 @@
 #include "gma3600_sgx.h"
 #include "gma3600_sgx_memory.h"
 #include "gma3600_sgx_prepare.h"
+#include "gma3600_sgx_bridge.h"
 
 static_assert(sizeof(PVRSRV_BRIDGE_PACKAGE) == 48);
 static_assert(offsetof(PVRSRV_BRIDGE_PACKAGE, hParamOut) == 24);
@@ -30,14 +31,18 @@ static_assert(EUR_CR_CORE_REVISION == GMA3600_SGX_CORE_REV);
 struct pci_dev *gpsPVRLDMDev;
 struct drm_device *gpsPVRDRMDev;
 static bool prepare;
+static bool bridge;
 module_param(prepare, bool, 0444);
+module_param(bridge, bool, 0444);
 MODULE_PARM_DESC(prepare, "Prepare CPU-side SGX services only; GPU execution stays disabled");
+MODULE_PARM_DESC(bridge, "Expose the restricted i386 bridge diagnostic device (requires prepare=1)");
 
 struct gma_sgx_prepared {
 	struct device *dev;
 	struct gma3600_sgx_device *sgx;
 	bool os_ready, mm_ready, sys_ready, ready;
 	unsigned int devices;
+	struct gma_sgx_bridge *bridge;
 };
 
 static DEFINE_MUTEX(prepare_lock);
@@ -98,11 +103,15 @@ static ssize_t services_show(struct device *dev, struct device_attribute *attr,
 			      char *buf)
 {
 	struct gma_sgx_prepared *ctx = dev_get_drvdata(dev);
+	struct gma_sgx_bridge_stats stats = {0};
 
+	if (ctx->bridge)
+		gma3600_sgx_bridge_stats(ctx->bridge, &stats);
 	return sysfs_emit(buf,
-		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled\n",
+		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled bridge=%s files=%u connections=%u bridge_errors=%u\n",
 		ctx->ready ? "prepared" : "failed", ctx->devices,
-		gma3600_sgx_live_pages(), atomic_read(&blocked_io));
+		gma3600_sgx_live_pages(), atomic_read(&blocked_io),
+		ctx->bridge ? "enabled" : "disabled", stats.files, stats.connections, stats.errors);
 }
 static DEVICE_ATTR_RO(services);
 static struct attribute *prepare_attrs[] = { &dev_attr_services.attr, NULL };
@@ -166,6 +175,13 @@ static int gma_sgx_prepare_probe(struct auxiliary_device *adev,
 	    devices[0].eDeviceType != PVRSRV_DEVICE_TYPE_SGX ||
 	    gma3600_sgx_live_pages() < 4 || atomic_read(&blocked_io))
 		goto fail;
+	if (bridge) {
+		ret = gma3600_sgx_bridge_register(&adev->dev, &ctx->bridge);
+		if (ret) {
+			dev_err(&adev->dev, "bridge registration failed: %d\n", ret);
+			goto fail;
+		}
+	}
 	ctx->ready = true;
 	dev_info(&adev->dev, "services prepared: devices=%u pages_live=%lu; GPU execution disabled\n",
 		 ctx->devices, gma3600_sgx_live_pages());
@@ -201,4 +217,4 @@ module_init(gma_sgx_init);
 module_exit(gma_sgx_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SGX545 CPU-side services preparation; GPU execution disabled");
-MODULE_VERSION("0.3.0");
+MODULE_VERSION("0.4.0");

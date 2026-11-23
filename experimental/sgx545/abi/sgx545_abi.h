@@ -2,7 +2,12 @@
 #ifndef GMA_SGX545_ABI_H
 #define GMA_SGX545_ABI_H
 
+#ifdef SGX545_FREESTANDING
+typedef __UINT32_TYPE__ __u32;
+typedef __UINT64_TYPE__ __u64;
+#else
 #include <linux/types.h>
+#endif
 
 /* Intel DDK 1.7.862890 i386 PVRSRV_BRIDGE_PACKAGE. Never cast this to the
  * native DDK structure: sizeof(native) is 48 on amd64, versus 28 here.
@@ -32,6 +37,50 @@ struct sgx545_bridge_request {
 
 #define SGX545_BRIDGE32_SIZE 28
 #define SGX545_BRIDGE_BUFFER_MAX 0x1000
+
+/* Intel 1.7 i386 ioctl and payload layouts. All members are 32-bit words,
+ * including the two halves of CONNECT's 64-bit handle (aligned to 4 on i386).
+ */
+#define SGX545_IOCTL_SERVICES       0xc01c6440U
+#define SGX545_IOCTL_SERVICES_ALIAS 0xc01c6452U
+#define SGX545_COMMAND_BASE         0xc01c6700U
+#define SGX545_COMMAND(number)      (SGX545_COMMAND_BASE | (number))
+#define SGX545_CMD_ENUMERATE        0U
+#define SGX545_CMD_ACQUIRE          1U
+#define SGX545_CMD_CONNECT          12U
+#define SGX545_CMD_DISCONNECT       13U
+#define SGX545_MAX_DEVICES          16U
+#define SGX545_DEVICE_TYPE          7U
+
+struct sgx545_connect_out { __u32 error, services_lo, services_hi; };
+struct sgx545_device_id { __u32 type, device_class, index; };
+struct sgx545_enumerate_out {
+	__u32 error, count;
+	struct sgx545_device_id devices[SGX545_MAX_DEVICES];
+};
+struct sgx545_handle_out { __u32 error, handle; };
+
+/* Diagnostic subset, scoped to an open file. Backend objects never cross ABI. */
+struct sgx545_session { __u32 services, device, device_index, device_type; };
+struct sgx545_bridge_ops {
+	int (*connect)(void *ctx, __u32 *token);
+	int (*enumerate)(void *ctx, struct sgx545_enumerate_out *out);
+	int (*acquire)(void *ctx, __u32 index, __u32 type, __u32 *token);
+	int (*release_device)(void *ctx);
+	int (*disconnect)(void *ctx);
+	int (*copy_in)(void *ctx, void *dst, __u64 src, __u32 size);
+	int (*copy_out)(void *ctx, __u64 dst, const void *src, __u32 size);
+};
+
+/* Backend: zero=success, positive=DDK error, negative=Linux errno.
+ * Caller serializes the session/backend. Newly created resources are rolled
+ * back on a failed output copy. DISCONNECT commits before its output copy.
+ */
+int sgx545_bridge_execute(struct sgx545_session *session,
+	const struct sgx545_bridge_ops *ops, void *ctx,
+	const struct sgx545_bridge_request *request);
+int sgx545_session_close(struct sgx545_session *session,
+	const struct sgx545_bridge_ops *ops, void *ctx);
 
 /* Accepts a copied, naturally aligned envelope, never a userspace pointer.
  * On failure the output is zeroed. Does not dereference param_in/param_out;

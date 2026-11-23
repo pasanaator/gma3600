@@ -1,9 +1,13 @@
 # SGX545 services preparation on Debian 13 amd64
 
+This checkpoint [passed on the D2500HN](../research/sgx545/d2500hn-services-preparation.json).
+For the next hardware test, follow the [i386 diagnostic bridge guide](SGX545-BRIDGE-TESTING.md).
+The procedure below still exercises preparation alone; leave `bridge=1` unset.
+
 This checkpoint initializes the real DDK's CPU-side services, registers its SGX
 device, and allocates the kernel MMU context and reset buffers. It then enumerates
 the device through the DDK. It exposes no rendering, private ioctl, mmap, or legacy
-procfs interface. Firmware loading, GPU reset, command submission, and SGX IRQ
+procfs interface with `prepare=1` alone. Firmware loading, GPU reset, command submission, and SGX IRQ
 enablement stay disabled. The desktop continues to use llvmpipe.
 
 The services module borrows the existing auxiliary device and register mapping;

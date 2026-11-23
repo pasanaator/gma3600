@@ -20,6 +20,15 @@ partial-init cleanup, and noncontiguous reset-page addresses. Its build/test
 evidence is in [services-prepare-6.12-build.json](services-prepare-6.12-build.json).
 No proprietary libraries are needed or executed in this checkpoint.
 
+The user has now [passed services preparation and cleanup](d2500hn-services-preparation.json)
+on the Atom: one device, four tracked pages, zero after cleanup, and no blocked
+register accesses. The next [i386 diagnostic bridge test](../../docs/SGX545-BRIDGE-TESTING.md)
+adds a restricted root-only misc transport and an ELF32 client. Its connect,
+enumerate, acquire and disconnect commands operate on real CPU-side DDK objects;
+firmware, rendering and a complete legacy DRM interface remain unfinished.
+The [bridge build/test record](restricted-bridge-6.12-build.json) separates host
+and emulated-client checks from the pending real kernel compat test.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version
