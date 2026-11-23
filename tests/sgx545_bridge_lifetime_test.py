@@ -12,7 +12,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     source = (root / "experimental/sgx545/core/gma3600_sgx_bridge.c").read_text()
     code = ""
-    for name in ("gma_sgx_bridge", "gma_sgx_file"):
+    for name in ("gma_sgx_bridge", "gma_sgx_file", "mmu_visit_context"):
         start = source.index(f"struct {name} {{")
         code += source[start:source.index("\n};", start) + 3] + "\n"
     for signature in (
@@ -23,6 +23,7 @@ def main():
         "static void bridge_file_free(", "static int bridge_open(",
         "static int bridge_release(", "static void bridge_stop(",
         "int gma3600_sgx_bridge_register(",
+        "static int bridge_mmu_visit(", "static int bridge_mmu_check(",
     ):
         code += extract_function(source, signature)
     with tempfile.TemporaryDirectory(prefix="sgx-bridge-lifetime-") as directory:

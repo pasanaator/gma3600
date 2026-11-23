@@ -1,5 +1,9 @@
 # Test shared initializer buffers on Debian 13 amd64
 
+Both modes [passed on the Atom](../research/sgx545/d2500hn-shared-buffers.json).
+The next [offline native MMU test](SGX545-MMU-TESTING.md) checks temporary device
+addresses and page tables in RAM while GPU execution remains disabled.
+
 Initializer ownership, heap translation, explicit abort and automatic close abort
 have [passed on the D2500HN](../research/sgx545/d2500hn-initializer-passed.json).
 This checkpoint is services **0.6.0**, with shared CPU-buffer allocation and mmap.

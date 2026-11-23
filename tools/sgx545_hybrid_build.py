@@ -115,7 +115,7 @@ def main():
                 run_logged(["patch", "--batch", "--fuzz=0", "-p1", "-i", str(patch)],
                            core, output / (patch.stem + ".log"), report)
             for item in (ROOT / "experimental/sgx545/core").iterdir():
-                if item.suffix in (".c", ".h"):
+                if item.suffix in (".c", ".h", ".inc"):
                     shutil.copy2(item, core)
             shutil.copy2(ROOT / "kernel/gma3600/gma3600_sgx.h", core)
             for item in (ROOT / "experimental/sgx545/abi").iterdir():

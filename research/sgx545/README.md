@@ -52,6 +52,14 @@ old DDK resource manager or mmap registry. Hardware DMA/rendering remains disabl
 The [shared-buffer build/test record](shared-buffers-6.12-build.json) records both
 compile profiles, the i386 layouts and mocked VMA/cache-lifetime verification.
 
+Both [shared-buffer hardware modes passed](d2500hn-shared-buffers.json), including
+the real i386 WC mapping roundtrip and zero-page cleanup. The next
+[offline MMU checkpoint](../../docs/SGX545-MMU-TESTING.md) reuses native VA and
+scatter/PTE/free routines on RAM. It fixes total-PTE-capacity bookkeeping and
+checks partial PT rollback; it does not enable hardware MMU access or rendering.
+The [offline MMU build/test record](offline-mmu-6.12-build.json) lists the native
+functions exercised, failure cases and both successful kernel compile profiles.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

@@ -309,6 +309,21 @@ void gma_sgx_buffers_stats(struct gma_sgx_buffers *p, struct gma_sgx_buffer_stat
 	mutex_unlock(&p->lock);
 }
 
+int gma_sgx_buffer_visit(struct gma_sgx_buffers *p, void *owner, u32 token,
+	int (*visit)(void *, struct page **, u32), void *context)
+{
+	struct gma_sgx_buffer *b;
+	int ret;
+
+	mutex_lock(&p->lock);
+	b = buffer_find(p, owner, token);
+	if (!p->online) ret = -ENODEV;
+	else if (!b) ret = -ENOENT;
+	else ret = visit(context, b->allocation->pages, b->allocation->count);
+	mutex_unlock(&p->lock);
+	return ret;
+}
+
 void gma_sgx_buffers_stop(struct gma_sgx_buffers *p)
 {
 	struct gma_sgx_buffer *b, *next;

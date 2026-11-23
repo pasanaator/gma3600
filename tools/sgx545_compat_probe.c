@@ -16,6 +16,7 @@ _Static_assert(sizeof(struct sgx545_init_info_out) == 776, "i386 initializer inf
 _Static_assert(sizeof(struct sgx545_client_mem32) == 48, "i386 client memory");
 _Static_assert(sizeof(struct sgx545_alloc_shared_out) == 56, "i386 shared allocation");
 _Static_assert(sizeof(struct sgx545_map_info_out) == 20, "i386 mmap metadata");
+_Static_assert(sizeof(struct sgx545_mmu_check) == 40, "MMU diagnostic message");
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
 extern unsigned probe_mmap2(unsigned fd, unsigned size, unsigned prot, unsigned flags, unsigned offset);
@@ -195,7 +196,62 @@ static volatile unsigned *map_buffer(int fd, unsigned size, unsigned token)
 	return (volatile unsigned *)address;
 }
 
-static void buffer_test(int fd, unsigned services, const char *path, int close_only)
+static void mmu_test(int fd, unsigned services, unsigned device, unsigned buffer)
+{
+	struct sgx545_init_info_out info = {0};
+	struct sgx545_mmu_check check = {.services = services, .device = device, .buffer = buffer};
+	struct sgx545_bridge32 w;
+	unsigned in[2] = {0, device}, i, repeat, boundary, heaps = 0, crossings = 0, temporary;
+	volatile struct sgx545_mmu_check *readonly;
+
+	expect("MMU check requires delivered heap info", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, ptr(&check)), -13);
+	w = package(98, services, in, 8, &info, sizeof(info));
+	expect("MMU heap info ioctl", call(fd, &w), 0);
+	expect("MMU heap info payload", info.error, 0);
+	for (i = 0; i < SGX545_MAX_HEAPS; i++) if (info.heaps[i].handle) break;
+	if (i == SGX545_MAX_HEAPS) fail("no shared MMU heap", i);
+	check.heap = info.heaps[i].handle; check.device++;
+	expect("MMU bad device token", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, ptr(&check)), -2);
+	check.device--; check.heap = 0xffffffffU;
+	expect("MMU bad heap token", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, ptr(&check)), -2);
+	check.heap = info.heaps[i].handle; check.flags = 2;
+	expect("MMU unsupported flags", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, ptr(&check)), -22);
+	check.flags = 0; check.buffer++;
+	expect("MMU bad buffer token", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, ptr(&check)), -2);
+	check.buffer--;
+	temporary = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+	if (temporary >= 0xfffff001U) fail("MMU output-fault test mmap", temporary);
+	readonly = (volatile struct sgx545_mmu_check *)temporary;
+	*readonly = check;
+	expect("MMU output-fault mprotect", sys3(125, temporary, 4096, 1), 0);
+	expect("MMU output copy fault after cleanup", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, temporary), -14);
+	expect("MMU output-fault munmap", sys3(91, temporary, 4096, 0), 0);
+	for (i = 0; i < SGX545_MAX_HEAPS; i++) {
+		const struct sgx545_heap32 *h = &info.heaps[i];
+		if (!h->handle) continue;
+		heaps++;
+		for (boundary = 0; boundary <= 1; boundary++) {
+			if (boundary && (h->size < 0x800000 || (h->base & 0x3fffff))) continue;
+			for (repeat = 0; repeat < 2; repeat++) {
+				check.heap = h->handle; check.flags = boundary;
+				expect("offline MMU map/walk/free ioctl", sys3(54, fd, SGX545_IOCTL_MMU_CHECK, ptr(&check)), 0);
+				if (check.checked_pages != 4 || check.pt_after || check.pt_peak != (boundary ? 2U : 1U) ||
+				    check.scatter_breaks != 3 || (check.device_address & 4095) ||
+				    check.device_address < h->base || (__u64)check.device_address + 16384 > (__u64)h->base + h->size)
+					fail("offline MMU result", check.device_address);
+				if (boundary && (check.device_address >> 22) == ((check.device_address + 16383) >> 22))
+					fail("MMU allocation did not cross a PT boundary", check.device_address);
+				say("MMU heap=0x"); hex(h->id); say(" expired_va=0x"); hex(check.device_address);
+				say(" pages=4 pt_peak="); number(check.pt_peak); say(" pt_after=0 scatter_breaks=3\n");
+				crossings += boundary;
+			}
+		}
+	}
+	if (!heaps || !crossings) fail("MMU heap/boundary coverage missing", heaps);
+	say("PASS: native DDK offline MMU scatter mappings, PT boundary crossings, repeated free and zero remaining page tables\n");
+}
+
+static void buffer_test(int fd, unsigned services, unsigned device, const char *path, int close_only, int mmu_mode)
 {
 	struct sgx545_handle_out result = {0};
 	struct sgx545_alloc_shared_out allocation = {0};
@@ -258,6 +314,10 @@ static void buffer_test(int fd, unsigned services, const char *path, int close_o
 	check.expected = 0x13579bdfU; check.fill = 0x2468ace0U;
 	expect("kernel WC mapping roundtrip", sys3(54, fd, SGX545_IOCTL_BUFFER_CHECK, ptr(&check)), 0);
 	check_words(first, size, check.fill); check_words(second, size, check.fill);
+	if (mmu_mode) {
+		mmu_test(fd, services, device, token);
+		check_words(first, size, check.fill); check_words(second, size, check.fill);
+	}
 	expect("split VMA with read-only middle page", sys3(125, ptr((const void *)first) + 4096, 4096, 1), 0);
 	expect("mprotect cannot enable execution", sys3(125, ptr((const void *)first), 4096, 5), -13);
 	check.expected = check.fill; check.fill = 0xabcdef01U;
@@ -320,15 +380,16 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
 		else if (same(argv[1], "--buffers")) init_mode = 3;
 		else if (same(argv[1], "--buffers-close")) init_mode = 4;
+		else if (same(argv[1], "--mmu")) init_mode = 5;
 		else path = argv[1];
 	}
 	fd = open_bridge(path);
@@ -391,7 +452,7 @@ int probe_main(unsigned *initial_stack)
 	expect("close implicitly disconnects second file", sys3(6, fd2, 0, 0), 0);
 	if (init_mode) {
 		if (init_mode >= 3) {
-			buffer_test(fd, services, path, init_mode == 4);
+			buffer_test(fd, services, device, path, init_mode == 4, init_mode == 5);
 			return 0;
 		}
 		initializer_test(fd, services, device, path, init_mode == 2);

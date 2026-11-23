@@ -219,4 +219,4 @@ module_init(gma_sgx_init);
 module_exit(gma_sgx_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SGX545 CPU-side services preparation; GPU execution disabled");
-MODULE_VERSION("0.6.0");
+MODULE_VERSION("0.7.0");

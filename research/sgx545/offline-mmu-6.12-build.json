@@ -1,0 +1,60 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "services_module_version": "0.7.0",
+  "host_interface_abi": 2,
+  "activation": "prepare=1 bridge=1; diagnostic client --mmu",
+  "profile_builds": [
+    {"profile": "10131", "host_probe_services_client": "passed", "DDK_source_and_i386_layout_tests": "passed"},
+    {"profile": "10141", "host_probe_services_client": "passed", "DDK_source_and_i386_layout_tests": "passed"}
+  ],
+  "services_compiler_warnings": 0,
+  "base_host_c_suites": 11,
+  "python_unittests": 10,
+  "actual_DDK_MMU_functions_tested_with_mock_OS_and_RA": [
+    "MMU_Alloc",
+    "MMU_Free",
+    "MMU_MapPage",
+    "MMU_MapScatter",
+    "MMU_GetPhysPageAddr",
+    "MMU_UnmapPagesAndFreePTs",
+    "MMU_FreePageTables",
+    "_DeferredFreePageTable"
+  ],
+  "MMU_fixture_profiles": ["10131", "10141"],
+  "MMU_fixture_cases": [
+    "Four noncontiguous physical pages and valid encoded PTE readback",
+    "Single-PT and cross-4-MiB-boundary mappings",
+    "Free an adjacent VA reservation without losing still-live mappings",
+    "Repeated allocation/free with immutable total PTE capacity",
+    "Partial final page table in a 127-page heap",
+    "VA reservation failure",
+    "Page-table allocation failure after metadata and after an earlier PT succeeds",
+    "Zero remaining VA reservations, PT metadata and PT pages after each transaction"
+  ],
+  "pre_fix_capacity_regression": "Confirmed the new fixture fails against the original native free routine",
+  "bridge_validation_tests_added": [
+    "Initializer and delivered heap metadata required",
+    "File-scoped service/device/heap/buffer ownership",
+    "Unsupported flags and wrong page counts rejected",
+    "Reject physical addresses above 32 bits",
+    "Physical pages sorted into descending order before native scatter mapping",
+    "Borrowed page visitor remains serialized with provider teardown"
+  ],
+  "cache_ordering": "Explicit barriers before CPU PTE readback and before releasing native WC table backing",
+  "sanitizers": ["AddressSanitizer", "UndefinedBehaviorSanitizer"],
+  "client": {
+    "ioctl": "Project-only 40-byte SGX545_IOCTL_MMU_CHECK; not a legacy Intel command",
+    "selftest_under_QEMU_i386_10_0_13": "passed for both final build outputs",
+    "real_hardware_MMU_mode": "pending",
+    "expired_VA_semantics": "Device addresses are unmapped before ioctl returns"
+  },
+  "previous_hardware_result": "d2500hn-shared-buffers.json",
+  "gpu_context_bound_or_executed": false,
+  "GPU_DMA_or_hardware_page_walk_tested": false,
+  "persistent_device_allocations_implemented": false,
+  "display_parent_changed": false,
+  "proprietary_libraries_executed": false,
+  "hardware_test_guide": "docs/SGX545-MMU-TESTING.md"
+}

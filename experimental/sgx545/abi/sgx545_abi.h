@@ -65,6 +65,13 @@ struct sgx545_bridge_request {
 /* Project diagnostic ioctl, separate from the Intel services command space. */
 #define SGX545_IOCTL_BUFFER_CHECK   0xc0104701U
 struct sgx545_buffer_check { __u32 services, handle, expected, fill; };
+#define SGX545_IOCTL_MMU_CHECK      0xc0284702U
+#define SGX545_MMU_CROSS_BOUNDARY   1U
+struct sgx545_mmu_check {
+	__u32 services, device, heap, buffer, flags;
+	/* The reported device address has already been unmapped on return. */
+	__u32 device_address, checked_pages, pt_peak, pt_after, scatter_breaks;
+};
 
 struct sgx545_connect_out { __u32 error, services_lo, services_hi; };
 struct sgx545_device_id { __u32 type, device_class, index; };

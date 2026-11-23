@@ -35,6 +35,29 @@ static SGX_BRIDGE_INFO_FOR_SRVINIT native_info;
 static int fake_device, fake_heap, fake_heap2, info_calls;
 static int SGXGetInfoForSrvinitKM(void *device, SGX_BRIDGE_INFO_FOR_SRVINIT *info)
 { assert(device == &fake_device); *info = native_info; info_calls++; return 0; }
+typedef struct { void *pMMUHeap; } BM_HEAP;
+struct page { uint64_t physical; };
+static struct page mmu_pages[4] = {{0x1000}, {0x9000}, {0x3000}, {0x7000}};
+static struct page *mmu_page_list[4] = {&mmu_pages[0], &mmu_pages[1], &mmu_pages[2], &mmu_pages[3]};
+#define page_to_phys(page) ((page)->physical)
+#define upper_32_bits(value) ((value) >> 32)
+static void *mmu_buffer_owner;
+static unsigned mmu_page_count = 4, mmu_calls;
+static int gma_sgx_buffer_visit(struct gma_sgx_buffers *p, void *owner, u32 token,
+    int (*visit)(void *, struct page **, u32), void *context)
+{
+    assert(p);
+    if (owner != mmu_buffer_owner || token != 999) return -ENOENT;
+    return visit(context, mmu_page_list, mmu_page_count);
+}
+static int gma3600_sgx_mmu_exercise(void *heap, const __u32 *physical, __u32 count,
+    __u32 flags, struct sgx545_mmu_check *out)
+{
+    const u32 sorted[] = {0x9000, 0x7000, 0x3000, 0x1000};
+    assert(heap == &fake_device && count == 4 && flags <= 1);
+    assert(!memcmp(physical, sorted, sizeof(sorted)));
+    mmu_calls++; out->checked_pages = 4; return 0;
+}
 struct list_head { struct list_head *next, *prev; };
 #define container_of(p, type, member) ((type *)((char *)(p) - offsetof(type, member)))
 #define INIT_LIST_HEAD(h) ((h)->next = (h)->prev = (h))
@@ -276,6 +299,43 @@ static void initializer_lifetime(void)
     assert(!bridge_release(NULL, &file));
     ddk_alive = 1; empty();
 }
+static void mmu_bridge_validation(void)
+{
+    struct device dev = {0};
+    struct gma_sgx_bridge *b = start(&dev);
+    struct file file;
+    struct gma_sgx_file *f = open_(b, &file);
+    struct sgx545_mmu_check check = {.services = 1, .device = 2, .heap = 100, .buffer = 999};
+    BM_HEAP heap = {.pMMUHeap = &fake_device};
+    u32 token;
+
+    assert(!backend_connect(f, &token));
+    f->session.services = 1; f->session.device = 2;
+    assert(bridge_mmu_check(f, &check) == -EACCES);
+    assert(!backend_init_connect(f));
+    f->info_ready = true; mmu_buffer_owner = f;
+    f->init_info.heaps[0].handle = 100;
+    assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
+        PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
+    check.services++;
+    assert(bridge_mmu_check(f, &check) == -ENOENT);
+    check.services--; check.device++;
+    assert(bridge_mmu_check(f, &check) == -ENOENT);
+    check.device--; check.heap++;
+    assert(bridge_mmu_check(f, &check) == -ENOENT);
+    check.heap--; check.flags = 2;
+    assert(bridge_mmu_check(f, &check) == -EINVAL);
+    check.flags = 0; check.buffer++;
+    assert(bridge_mmu_check(f, &check) == -ENOENT);
+    check.buffer--; mmu_page_count = 3;
+    assert(bridge_mmu_check(f, &check) == -EINVAL);
+    mmu_page_count = 4; mmu_pages[0].physical = 1ULL << 32;
+    assert(bridge_mmu_check(f, &check) == -EOVERFLOW);
+    mmu_pages[0].physical = 0x1000;
+    assert(!mmu_calls);
+    assert(!bridge_mmu_check(f, &check) && check.checked_pages == 4 && mmu_calls == 1);
+    assert(!bridge_release(NULL, &file)); stop(&dev); empty();
+}
 
 int main(void)
 {
@@ -351,6 +411,7 @@ int main(void)
     stop(&dev); empty();
     assert(freed_bases == 5);
     initializer_lifetime();
+    mmu_bridge_validation();
     puts("SGX bridge lifetime tests passed: ownership, heap translation/deduplication/cache/rollback, close and detach");
     return 0;
 }

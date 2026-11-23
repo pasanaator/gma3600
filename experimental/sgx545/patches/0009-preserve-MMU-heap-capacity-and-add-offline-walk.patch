@@ -1,0 +1,62 @@
+--- a/services4/srvkm/devices/sgx/mmu.c
++++ b/services4/srvkm/devices/sgx/mmu.c
+@@ -967,6 +967,10 @@
+ static IMG_VOID
+ _FreePageTableMemory (MMU_HEAP *pMMUHeap, MMU_PT_INFO *psPTInfoList)
+ {
++#if defined(GMA3600_SGX_HYBRID)
++    /* Complete WC PTE/PDE writes before releasing table backing pages. */
++    OSWriteMemoryBarrier();
++#endif
+ 	/*
+ 		free the PT page:
+ 		depending on the specific system, pagetables are allocated from system memory
+@@ -1156,7 +1160,13 @@
+ 
+ 			/* clear the entries */
+ 			for(i=0;
+-				(i<pMMUHeap->ui32PTETotalUsable) && (i<pMMUHeap->ui32PTNumEntriesUsable);
++#if defined(GMA3600_SGX_HYBRID)
++                /* Capacity is immutable; limit the last PT by its index. */
++                (ui32PTIndex * pMMUHeap->ui32PTNumEntriesUsable + i < pMMUHeap->ui32PTETotalUsable) &&
++#else
++                (i<pMMUHeap->ui32PTETotalUsable) &&
++#endif
++                (i<pMMUHeap->ui32PTNumEntriesUsable);
+ 				 i++)
+ 			{
+ 				/* over-allocated PT entries for 4MB data page case should never be non-zero */
+@@ -1176,12 +1186,16 @@
+ 				decrement the PT Entry Count by the number
+ 				of entries we've cleared in this pass
+ 			*/
++#if !defined(GMA3600_SGX_HYBRID)
+ 			pMMUHeap->ui32PTETotalUsable -= i;
++#endif
+ 		}
+ 		else
+ 		{
+ 			/* decrement the PT Entry Count by a page's worth of entries  */
++#if !defined(GMA3600_SGX_HYBRID)
+ 			pMMUHeap->ui32PTETotalUsable -= pMMUHeap->ui32PTNumEntriesUsable;
++#endif
+ 		}
+ 
+ 		if(bOSFreePT)
+@@ -1197,7 +1211,9 @@
+ 	else
+ 	{
+ 		/* decrement the PT Entry Count by a page's worth of usable entries */
++#if !defined(GMA3600_SGX_HYBRID)
+ 		pMMUHeap->ui32PTETotalUsable -= pMMUHeap->ui32PTNumEntriesUsable;
++#endif
+ 	}
+ 
+ 	PDUMPCOMMENT("Finished free page table (page count == %08X)", pMMUHeap->ui32PageTableCount);
+@@ -4740,3 +4756,6 @@
+ ******************************************************************************/
+ 
+ 
++
++/* Offline SGX545 page-table validation; never enables a hardware context. */
++#include "gma3600_sgx_mmu_diag.inc"

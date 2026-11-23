@@ -1,0 +1,30 @@
+{
+  "source": "User-supplied SSH transcripts for --buffers and fresh-load --buffers-close",
+  "checkpoint": "b4e8fb0 / services 0.6.0",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, Linux 6.12.117+deb13-amd64, VGA",
+  "explicit_free_result": "PASS: i386 shared buffers, zeroed padding, user/kernel WC roundtrip, map isolation, VMA splits and free/disconnect with live mappings",
+  "explicit_free_repeated_successfully": true,
+  "deferred_close_result": "PASS: i386 shared buffers, zeroed padding, user/kernel WC roundtrip, map isolation, VMA splits and deferred close cleanup",
+  "status_after_successful_clients": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0",
+  "final_cleanup": {
+    "buffers": "[446.257689] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[446.257706] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1",
+    "services": "[446.271826] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "expected_rejection_observed": "An earlier --buffers-close immediately after --buffers returned DDK error 129 because the one-shot initializer attempt was already consumed. The fresh-load --buffers-close then passed.",
+  "established": [
+    "Real i386 mappings on the amd64 kernel",
+    "Zeroed shared allocation and rounded padding",
+    "User/user and user/kernel WC mapping coherence",
+    "File/token isolation, mprotect splits and non-executable/fork-excluded mappings",
+    "Existing mappings survive explicit handle release and services disconnect",
+    "FD close with live mappings defers final cleanup until unmap",
+    "All tracked pages released on services unload"
+  ],
+  "visual_desktop_observation_in_these_transcripts": "not explicitly supplied",
+  "not_validated": [
+    "Live auxiliary detach with outstanding VMAs on hardware",
+    "Offline SGX page-table exercise added in services 0.7.0",
+    "GPU DMA, active MMU walks, firmware, SGX interrupts, rendering or recovery"
+  ]
+}

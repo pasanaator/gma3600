@@ -128,6 +128,13 @@ static struct vm_area_struct area(u32 token, unsigned size)
         .vm_pgoff = token, .vm_flags = VM_SHARED | VM_MAYEXEC, .vm_page_prot = PAGE_KERNEL};
 }
 static void empty(void) { assert(!metadata && !pages_live && !mappings); }
+static int visit_pages(void *context, struct page **pages, u32 count)
+{
+    struct gma_sgx_buffer *b = context;
+    assert(pages == b->allocation->pages && count == b->allocation->count);
+    assert(b->pool->lock.locked && b->refs == 2);
+    return 17;
+}
 
 int main(void)
 {
@@ -170,6 +177,8 @@ int main(void)
     assert((vma.vm_flags & (VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP)) ==
         (VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP) && !(vma.vm_flags & VM_MAYEXEC));
     b = vma.vm_private_data; assert(b->refs == 2 && pages_live == 3);
+    assert(gma_sgx_buffer_visit(p, &other, 42, visit_pages, b) == -ENOENT);
+    assert(gma_sgx_buffer_visit(p, &owner, 42, visit_pages, b) == 17);
     data = b->linear;
     for (i = 0; i < 12288 / 4; i++) { assert(!data[i]); data[i] = 0x12345678U ^ i; }
     assert(gma_sgx_buffer_check(p, &owner, 42, 0, 0) == -EIO);

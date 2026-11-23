@@ -24,6 +24,8 @@
 #include "sgx545_abi.h"
 #include "gma3600_sgx_bridge.h"
 #include "gma3600_sgx_buffers.h"
+#include "gma3600_sgx_mmu.h"
+#include "buffer_manager.h"
 
 #if !defined(PVR_SECURE_HANDLES)
 #error The diagnostic bridge requires DDK secure handles
@@ -430,6 +432,58 @@ static int bridge_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+struct mmu_visit_context {
+	BM_HEAP *heap;
+	struct sgx545_mmu_check *check;
+};
+
+static int bridge_mmu_visit(void *context, struct page **pages, u32 count)
+{
+	struct mmu_visit_context *ctx = context;
+	u32 physical[4], i, j, swap;
+
+	if (count != 4)
+		return -EINVAL;
+	for (i = 0; i < count; i++) {
+		if (upper_32_bits(page_to_phys(pages[i])))
+			return -EOVERFLOW;
+		physical[i] = page_to_phys(pages[i]);
+	}
+	/* Descending pages exercise scatter mapping even on contiguous host RAM. */
+	for (i = 0; i < count; i++)
+		for (j = i + 1; j < count; j++)
+			if (physical[i] < physical[j]) {
+				swap = physical[i]; physical[i] = physical[j]; physical[j] = swap;
+			}
+	return gma3600_sgx_mmu_exercise(ctx->heap->pMMUHeap, physical, count,
+		ctx->check->flags, ctx->check);
+}
+
+static int bridge_mmu_check(struct gma_sgx_file *f, struct sgx545_mmu_check *check)
+{
+	struct mmu_visit_context context = {.check = check};
+	u32 i;
+	int ret;
+
+	if (f->bridge->init_owner != f || !f->info_ready)
+		return -EACCES;
+	if (!f->session.services || check->services != f->session.services ||
+	    !f->session.device || check->device != f->session.device)
+		return -ENOENT;
+	if (check->flags & ~SGX545_MMU_CROSS_BOUNDARY)
+		return -EINVAL;
+	for (i = 0; i < SGX545_MAX_HEAPS; i++)
+		if (f->init_info.heaps[i].handle && f->init_info.heaps[i].handle == check->heap)
+			break;
+	if (i == SGX545_MAX_HEAPS || !f->heap_handles[i])
+		return -ENOENT;
+	ret = PVRSRVLookupHandle(f->handles, (void **)&context.heap, f->heap_handles[i],
+		PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP);
+	if (ret)
+		return -EIO;
+	return gma_sgx_buffer_visit(f->bridge->buffers, f, check->buffer, bridge_mmu_visit, &context);
+}
+
 static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct gma_sgx_file *f = file->private_data;
@@ -439,10 +493,27 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	int ret;
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
-	    cmd != SGX545_IOCTL_BUFFER_CHECK)
+	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
+	if (cmd == SGX545_IOCTL_MMU_CHECK) {
+		struct sgx545_mmu_check check;
+
+		if (copy_from_user(&check, (void __user *)arg, sizeof(check)))
+			return -EFAULT;
+		mutex_lock(&b->lock);
+		if (!b->online) ret = -ENODEV;
+		else {
+			LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
+			ret = bridge_mmu_check(f, &check);
+			LinuxUnLockMutex(&gPVRSRVLock);
+		}
+		mutex_unlock(&b->lock);
+		if (!ret && copy_to_user((void __user *)arg, &check, sizeof(check)))
+			return -EFAULT;
+		return ret;
+	}
 	if (cmd == SGX545_IOCTL_BUFFER_CHECK) {
 		struct sgx545_buffer_check check;
 

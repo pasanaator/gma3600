@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has a **shared-buffer allocation and mmap checkpoint**. It builds
+The hybrid port now has an **offline native MMU checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -13,9 +13,11 @@ one device, four tracked pages, zero pages after cleanup and no blocked register
 accesses. The [i386 bridge also passed on the Atom](../../research/sgx545/d2500hn-i386-bridge.json),
 including the real compat path and clean teardown.
 [Both initializer abort tests passed](../../research/sgx545/d2500hn-initializer-passed.json),
-including the disabled shared-PB heap. The next
-[hardware test exercises shared-buffer allocation and mmap](../../docs/SGX545-BUFFER-TESTING.md)
-without enabling GPU execution. It uses the already loaded host2 driver.
+including the disabled shared-PB heap. The
+[shared-buffer tests also passed](../../research/sgx545/d2500hn-shared-buffers.json),
+including both free and deferred-close lifetimes. The next
+[Atom test exercises native MMU allocation and scatter page tables](../../docs/SGX545-MMU-TESTING.md)
+in RAM without enabling GPU execution. It uses the already loaded host2 driver.
 
 ## D2500HN hardware result
 
@@ -91,6 +93,14 @@ now also been build-validated; that is not a hardware compatibility result.
   owner isolation, quotas, rollback and failed cache restoration. The ELF32
   client's `--buffers` and `--buffers-close` modes check zeroed padding and
   user/kernel WC coherence on hardware. Device-heap allocation and DMA are pending.
+* A bounded native MMU exercise over four borrowed buffer pages and existing
+  shared initializer heaps. It reserves VA, maps scatter pages, checks valid PTEs
+  and translation readback, and releases all mappings before returning. It also
+  tests 4 MiB PT boundary crossings and repeated allocations. The patched native
+  free path preserves total heap PTE capacity and bounds clearing by PT index;
+  rollback trims empty metadata after partial page-table allocation failures.
+  Actual DDK functions run in host fixtures for both profiles. The `--mmu` client
+  checks this on the Atom; expired VA results are never usable by a GPU client.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
@@ -201,8 +211,8 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Validate shared-buffer allocation, CPU mapping coherence and VMA lifetime on
-   the Atom. Preparation, restricted bridge and initializer abort tests have passed.
+1. Validate the offline native MMU/scatter walk and repeat/boundary cleanup on
+   the Atom. Preparation, bridge, initializer and shared-buffer tests have passed.
 2. Extend explicit nested-payload translation to device-heap allocation and
    remaining initializer mapping commands, retaining ownership and rollback.
    Add the necessary DRM transport after validating the diagnostic subset.

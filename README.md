@@ -18,8 +18,10 @@ one device, four tracked pages, zero pages after cleanup, and no blocked registe
 accesses. The [i386 diagnostic bridge test](docs/SGX545-BRIDGE-TESTING.md) also passed
 on the amd64 target, including handle validation, copyout rollback and cleanup.
 The [initializer tests](docs/SGX545-INITIALIZER-TESTING.md) passed for explicit and
-automatic abort. The next [shared-buffer test](docs/SGX545-BUFFER-TESTING.md) checks
-bounded allocations, i386 mmap, WC coherence and mapping lifetime. GPU execution remains disabled.
+automatic abort. The [shared-buffer tests](docs/SGX545-BUFFER-TESTING.md) also passed
+on the Atom, including WC coherence and mapping lifetime. The next
+[offline MMU test](docs/SGX545-MMU-TESTING.md) exercises native device-address and
+page-table routines in RAM. GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the
