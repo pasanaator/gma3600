@@ -1,5 +1,11 @@
 # Test the native SGX MMU routines without GPU execution
 
+**Hardware result:** all ten 0.7.0 cases and cleanup passed on the D2500HN; see
+[the recorded transcript results](../research/sgx545/d2500hn-offline-mmu.json).
+The next test is [persistent device memory](SGX545-DEVICE-MEMORY-TESTING.md).
+These historical 0.7.0 instructions remain useful for that checkpoint; current
+builds report the newer services version.
+
 The [shared-buffer tests passed on the Atom](../research/sgx545/d2500hn-shared-buffers.json),
 including user/kernel WC coherence and both mapping cleanup paths. Services
 **0.7.0** adds a bounded **offline page-table test** using the real DDK allocator,

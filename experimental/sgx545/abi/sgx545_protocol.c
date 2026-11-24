@@ -32,6 +32,7 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		struct sgx545_init_info_out init_info;
 		struct sgx545_alloc_shared_out allocated;
 		struct sgx545_map_info_out mapped;
+		struct sgx545_alloc_device_out device;
 	} out = {0};
 	__u32 in[14] = {0}, cmd, token = 0, out_size;
 	int ret, copied, rollback = 0, created = 0;
@@ -47,6 +48,16 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		break;
 	case SGX545_CMD_ACQUIRE:
 		out_size = sizeof(out.handle);
+		if (r->in_size != 12)
+			return -EINVAL;
+		break;
+	case SGX545_CMD_ALLOC_DEVICE:
+		out_size = sizeof(out.device);
+		if (r->in_size != 24)
+			return -EINVAL;
+		break;
+	case SGX545_CMD_FREE_DEVICE:
+		out_size = sizeof(__u32);
 		if (r->in_size != 12)
 			return -EINVAL;
 		break;
@@ -211,6 +222,30 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			return ret;
 		out.mapped.error = ret;
 		break;
+	case SGX545_CMD_ALLOC_DEVICE:
+		if (!s->initializer || !s->init_info)
+			return -EACCES;
+		if (!s->device || in[1] != s->device)
+			return -ENOENT;
+		if ((in[3] & ~SGX545_RAM_BACKED) != SGX545_DEVICE_FLAGS)
+			return -EOPNOTSUPP;
+		if (!in[4] || in[4] > SGX545_BUFFER_MAX_BYTES ||
+		    (in[5] && (in[5] < 4096 || in[5] > SGX545_BUFFER_MAX_BYTES || (in[5] & (in[5] - 1)))))
+			return -EINVAL;
+		ret = ops->alloc_device(ctx, in[2], in[3], in[4], in[5] ? in[5] : 4096, &out.device);
+		if (ret < 0)
+			return ret;
+		out.device.error = ret;
+		created = !ret;
+		break;
+	case SGX545_CMD_FREE_DEVICE:
+		if (!s->device || in[1] != s->device)
+			return -ENOENT;
+		ret = ops->free_device(ctx, in[2]);
+		if (ret < 0)
+			return ret;
+		out.handle.error = ret;
+		break;
 	}
 	copied = ops->copy_out(ctx, r->param_out, &out, out_size);
 	if (copied && created) {
@@ -222,6 +257,8 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			rollback = ops->init_abort(ctx, 1);
 		else if (cmd == SGX545_CMD_ALLOC_SHARED)
 			rollback = ops->free_shared(ctx, out.allocated.kernel_mem);
+		else if (cmd == SGX545_CMD_ALLOC_DEVICE)
+			rollback = ops->free_device(ctx, out.device.kernel_mem);
 		else
 			rollback = ops->release_init_info(ctx);
 	}

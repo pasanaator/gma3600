@@ -1,0 +1,74 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "compiler": "gcc-14 (Debian 14.2.0-19)",
+  "services_module_version": "0.8.0",
+  "host_interface_abi": 2,
+  "activation": "prepare=1 bridge=1; diagnostic client --device or --device-close on separate fresh child loads",
+  "profile_builds": [
+    {
+      "profile": "10131",
+      "host_probe_services_client": "passed",
+      "DDK_source_and_i386_layout_tests": "passed",
+      "services_sha256": "c62c289f37ea7a2c4d3b428d3c774653fc51cc0350dbdccf9b01247572f03dd2"
+    },
+    {
+      "profile": "10141",
+      "host_probe_services_client": "passed",
+      "DDK_source_and_i386_layout_tests": "passed",
+      "services_sha256": "5ea90cb34bfe2afc945a82e9873efb2251d592c9142befb651d2114eb98ad04b"
+    }
+  ],
+  "services_compiler_warnings": 0,
+  "base_host_c_suites": 11,
+  "python_unittests": 10,
+  "native_MMU_tests_with_mock_OS_RA": [
+    "Live neighboring mappings in the same PT",
+    "CPU-order scatter PTE physical address verification",
+    "Freeing either neighbor preserves remaining mappings",
+    "Released VA can be allocated again without leaking capacity",
+    "Repeated cycles in full and partial-final-PT heaps",
+    "VA reservation and scatter allocation failures",
+    "New PT allocation failure preserves an existing live PT",
+    "Already-live binding cannot be overwritten",
+    "Double unbind cannot repeat RA_Free",
+    "256-page allocation at 1 MiB alignment and mismatched physical-page rejection",
+    "Injected post-free capacity corruption quarantines the binding and cannot repeat RA_Free"
+  ],
+  "bridge_provider_protocol_tests": [
+    "Intel 1.7 i386 ALLOC/FREE exact request, reply and field offsets against actual DDK headers",
+    "Initializer, heap metadata and file-owned device/heap tokens required",
+    "Only RW + WC + NO_SYNCOBJ flags, with optional RAM_BACKED, accepted",
+    "Size/alignment validation and zero sync/pointer fields",
+    "Failed allocation copyout rolls back the device allocation",
+    "Failed rollback remains owned for later cleanup",
+    "Native bind failure drops backing ownership and pin",
+    "CPU backing released only after native unmap",
+    "Failed unmap retains backing pin, mapping record and counters; further allocation rejected",
+    "Wrong-kind shared free and cross-file/stale device free rejected",
+    "Disconnect, close and auxiliary detach drain native mappings before handle teardown",
+    "Late file close after successful detach uses no DDK state",
+    "Independent buffer pin survives ownership release and provider detach"
+  ],
+  "hardware_test_modes": [
+    "--device",
+    "--device-close"
+  ],
+  "hardware_test_status": "pending",
+  "previous_hardware_result": "d2500hn-offline-mmu.json",
+  "device_allocation_limit_bytes": 1048576,
+  "owned_backing_limit_per_file": 16,
+  "live_backing_limit_global": 64,
+  "backing_byte_limit_global": 16777216,
+  "sanitizers": [
+    "AddressSanitizer",
+    "UndefinedBehaviorSanitizer"
+  ],
+  "diagnostic_client_selftest_QEMU_i386": "passed for both final build outputs",
+  "gpu_execution_enabled": false,
+  "gpu_DMA_or_hardware_page_walk_tested": false,
+  "legacy_memory_ABI_complete": false,
+  "display_parent_changed": false,
+  "proprietary_libraries_executed": false,
+  "hardware_test_guide": "docs/SGX545-DEVICE-MEMORY-TESTING.md"
+}

@@ -16,6 +16,8 @@ _Static_assert(sizeof(struct sgx545_init_info_out) == 776, "i386 initializer inf
 _Static_assert(sizeof(struct sgx545_client_mem32) == 48, "i386 client memory");
 _Static_assert(sizeof(struct sgx545_alloc_shared_out) == 56, "i386 shared allocation");
 _Static_assert(sizeof(struct sgx545_map_info_out) == 20, "i386 mmap metadata");
+_Static_assert(sizeof(struct sgx545_alloc_device_out) == 76, "i386 device allocation");
+_Static_assert(sizeof(struct sgx545_device_check) == 24, "device diagnostic message");
 _Static_assert(sizeof(struct sgx545_mmu_check) == 40, "MMU diagnostic message");
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
@@ -353,6 +355,165 @@ static void buffer_test(int fd, unsigned services, unsigned device, const char *
 	say("Check sysfs: buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 files=0 connections=0 init_running=0\n");
 }
 
+static void device_reply(const struct sgx545_alloc_device_out *allocation,
+	const struct sgx545_heap32 *heap, unsigned alignment)
+{
+	unsigned i;
+	const struct sgx545_client_mem32 *m = &allocation->mem;
+	if (allocation->error || !allocation->kernel_mem || m->kernel_mem != allocation->kernel_mem ||
+	    m->mapping != allocation->kernel_mem || m->alloc_size != 3 * 4096 + 17 ||
+	    m->flags != (SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI) ||
+	    m->linear || m->kernel_linear || m->physical_address || m->client_flags ||
+	    m->sync_info || m->resource || m->next || (m->device_address & (alignment - 1)) ||
+	    m->device_address < heap->base || (__u64)m->device_address + 16384 > (__u64)heap->base + heap->size)
+		fail("device allocation reply", allocation->error);
+	for (i = 0; i < 5; i++) if (allocation->sync[i]) fail("unexpected sync object", i);
+}
+static void device_walk(int fd, unsigned services, unsigned device,
+	const struct sgx545_alloc_device_out *allocation)
+{
+	struct sgx545_device_check check = {services, device, allocation->kernel_mem, 0, 0, 0};
+	expect("persistent device PTE readback", sys3(54, fd, SGX545_IOCTL_DEVICE_CHECK, ptr(&check)), 0);
+	if (check.address != allocation->mem.device_address || check.pages != 4 || !check.page_tables)
+		fail("persistent device mapping result", check.address);
+}
+static volatile unsigned *device_mapping(int fd, unsigned services,
+	const struct sgx545_alloc_device_out *allocation, unsigned seed)
+{
+	unsigned in[2] = {0, allocation->kernel_mem}, i;
+	struct sgx545_map_info_out mapping = {0};
+	struct sgx545_bridge32 w = package(11, services, in, 8, &mapping, 20);
+	struct sgx545_buffer_check check = {services, allocation->kernel_mem, seed, seed ^ 0xffffffffU};
+	volatile unsigned *memory;
+	expect("device map-info", call(fd, &w), 0);
+	if (mapping.error || mapping.offset != allocation->kernel_mem || mapping.real_size != 16384 ||
+	    mapping.byte_offset || mapping.user_address) fail("device map metadata", mapping.error);
+	memory = map_buffer(fd, 16384, allocation->kernel_mem);
+	for (i = 0; i < 4096; i++) {
+		if (memory[i]) fail("device buffer/padding zeroing", i);
+		memory[i] = seed ^ i;
+	}
+	__asm__ volatile("sfence" ::: "memory");
+	expect("device WC user/kernel roundtrip", sys3(54, fd, SGX545_IOCTL_BUFFER_CHECK, ptr(&check)), 0);
+	check_words(memory, 16384, check.fill);
+	return memory;
+}
+static void device_test(int fd, unsigned services, unsigned device, const char *path, int close_only)
+{
+	struct sgx545_handle_out result = {0};
+	struct sgx545_init_info_out info = {0};
+	struct sgx545_alloc_device_out a = {0}, b = {0}, c = {0};
+	struct sgx545_device_check check;
+	struct sgx545_bridge32 w;
+	struct { unsigned flags, token; struct sgx545_client_mem32 mem; } cpu_free = {0};
+	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 3 * 4096 + 17, 0};
+	unsigned free_in[3] = {0, device, 0}, i, heaps = 0, other, other_device;
+	volatile unsigned *first = 0, *second = 0;
+	int fd2;
+
+	w = package(6, services, in, 24, &a, 76);
+	expect("device allocation requires initializer", call(fd, &w), -13);
+	w = package(67, services, 0, 0, &result, 8);
+	expect("device initializer CONNECT ioctl", call(fd, &w), 0);
+	expect("device initializer CONNECT payload (reload services for a fresh attempt)", result.error, 0);
+	w = package(6, services, in, 24, &a, 76);
+	expect("device allocation requires delivered heap info", call(fd, &w), -13);
+	w = package(98, services, in, 8, &info, sizeof(info));
+	expect("device initializer INFO", call(fd, &w), 0);
+	expect("device initializer INFO payload", info.error, 0);
+	for (i = 0; i < SGX545_MAX_HEAPS; i++) if (info.heaps[i].handle) break;
+	if (i == SGX545_MAX_HEAPS) fail("no device allocation heaps", i);
+	in[2] = info.heaps[i].handle;
+	w = package(6, services, in, 24, &a, 76);
+	in[1]++;
+	expect("device allocation bad device", call(fd, &w), -2); in[1]--;
+	in[2] = 0xffffffffU;
+	expect("device allocation bad heap", call(fd, &w), -2); in[2] = info.heaps[i].handle;
+	in[3] &= ~8U;
+	expect("sync objects remain unsupported", call(fd, &w), -95); in[3] = SGX545_DEVICE_FLAGS;
+	in[4] = SGX545_BUFFER_MAX_BYTES + 1;
+	expect("device allocation bound", call(fd, &w), -22); in[4] = 3 * 4096 + 17;
+	in[5] = 4097;
+	expect("device alignment validation", call(fd, &w), -22); in[5] = 0;
+	w.out_size = 80;
+	expect("native-sized device reply rejected", call(fd, &w), -22); w.out_size = 76;
+	w.param_out = 1;
+	expect("device allocation copyout rollback", call(fd, &w), -14);
+	for (i = 0; i < SGX545_MAX_HEAPS; i++) {
+		const struct sgx545_heap32 *heap = &info.heaps[i];
+		if (!heap->handle) continue;
+		heaps++; in[2] = heap->handle; in[5] = 0;
+		w = package(6, services, in, 24, &a, 76);
+		expect("first persistent allocation", call(fd, &w), 0); device_reply(&a, heap, 4096);
+		in[5] = 65536; in[3] |= SGX545_RAM_BACKED;
+		w.param_out = ptr(&b);
+		expect("second aligned persistent allocation", call(fd, &w), 0); device_reply(&b, heap, 65536);
+		if ((__u64)a.mem.device_address < (__u64)b.mem.device_address + 16384 &&
+		    (__u64)b.mem.device_address < (__u64)a.mem.device_address + 16384)
+			fail("overlapping live device addresses", b.mem.device_address);
+		first = device_mapping(fd, services, &a, 0x13579bdfU);
+		second = device_mapping(fd, services, &b, 0x2468ace0U);
+		device_walk(fd, services, device, &a); device_walk(fd, services, device, &b);
+		cpu_free.token = a.kernel_mem; cpu_free.mem = a.mem;
+		w = package(64, services, &cpu_free, sizeof(cpu_free), &result.error, 4);
+		expect("CPU-only free cannot strand GPU PTEs", call(fd, &w), -22);
+		fd2 = open_bridge(path); other = connect_bridge(fd2);
+		free_in[1] = 0; free_in[2] = 7;
+		{
+			struct sgx545_enumerate_out devices = {0};
+			w = package(0, other, 0, 0, &devices, sizeof(devices));
+			expect("other file device enumeration", call(fd2, &w), 0);
+			if (devices.error || devices.count != 1) fail("other file device count", devices.error);
+			free_in[1] = devices.devices[0].index;
+		}
+		w = package(1, other, free_in, 12, &result, 8);
+		expect("other file device acquire", call(fd2, &w), 0);
+		if (result.error || !result.handle) fail("other file device acquire payload", result.error);
+		other_device = result.handle; free_in[1] = other_device; free_in[2] = a.kernel_mem;
+		w = package(7, other, free_in, 12, &result.error, 4);
+		expect("cross-file device free rejected", call(fd2, &w), -2);
+		check = (struct sgx545_device_check){other, other_device, a.kernel_mem, 0, 0, 0};
+		expect("cross-file device PTE check rejected", sys3(54, fd2, SGX545_IOCTL_DEVICE_CHECK, ptr(&check)), -2);
+		disconnect_bridge(fd2, other); expect("close other device file", sys3(6, fd2, 0, 0), 0);
+		free_in[1] = device;
+		w = package(7, services, free_in, 12, &result.error, 4);
+		expect("free device allocation with live CPU mapping", call(fd, &w), 0);
+		expect("device free payload", result.error, 0);
+		expect("stale device free rejected", call(fd, &w), -2);
+		check = (struct sgx545_device_check){services, device, a.kernel_mem, 0, 0, 0};
+		expect("freed device PTE check rejected", sys3(54, fd, SGX545_IOCTL_DEVICE_CHECK, ptr(&check)), -2);
+		check_words(first, 16384, 0xeca86420U);
+		device_walk(fd, services, device, &b);
+		in[5] = 4096;
+		w = package(6, services, in, 24, &c, 76);
+		expect("allocation after freeing neighbor", call(fd, &w), 0); device_reply(&c, heap, 4096);
+		if (c.kernel_mem == a.kernel_mem || c.kernel_mem == b.kernel_mem)
+			fail("device allocation reused stale token", c.kernel_mem);
+		device_walk(fd, services, device, &b); device_walk(fd, services, device, &c);
+		free_in[2] = c.kernel_mem; w = package(7, services, free_in, 12, &result.error, 4);
+		expect("free replacement allocation", call(fd, &w), 0); expect("free replacement payload", result.error, 0);
+		device_walk(fd, services, device, &b);
+		say("DEVICE heap=0x"); hex(heap->id); say(" pages=4 aligned_va=0x"); hex(b.mem.device_address);
+		say(" sibling_free=preserved CPU_mapping=preserved\n");
+		/* Keep one live allocation and both VMAs for final disconnect/close. */
+		if (heaps == 3) break;
+		free_in[2] = b.kernel_mem; w = package(7, services, free_in, 12, &result.error, 4);
+		expect("free second allocation", call(fd, &w), 0); expect("free second payload", result.error, 0);
+		expect("unmap first device buffer", sys3(91, ptr((const void *)first), 16384, 0), 0);
+		expect("unmap second device buffer", sys3(91, ptr((const void *)second), 16384, 0), 0);
+	}
+	if (heaps != 3) fail("expected three shared initializer heaps", heaps);
+	if (!close_only) disconnect_bridge(fd, services);
+	expect("close device fd with live VMAs", sys3(6, fd, 0, 0), 0);
+	check_words(first, 16384, 0xeca86420U); check_words(second, 16384, 0xdb97531fU);
+	expect("unmap freed device backing", sys3(91, ptr((const void *)first), 16384, 0), 0);
+	check_words(second, 16384, 0xdb97531fU);
+	expect("unmap final device backing", sys3(91, ptr((const void *)second), 16384, 0), 0);
+	say("PASS: i386 persistent device allocations, aligned VA, CPU-order PTEs, WC roundtrip, sibling lifetime, rollback and ");
+	say(close_only ? "deferred close cleanup\n" : "disconnect with live mappings\n");
+	say("Check sysfs: device_allocations=0 device_pages=0 device_errors=0 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 files=0 connections=0 init_running=0\n");
+}
+
 int probe_main(unsigned *initial_stack)
 {
 	unsigned argc = initial_stack[0];
@@ -380,16 +541,18 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
 		else if (same(argv[1], "--buffers")) init_mode = 3;
 		else if (same(argv[1], "--buffers-close")) init_mode = 4;
 		else if (same(argv[1], "--mmu")) init_mode = 5;
+		else if (same(argv[1], "--device")) init_mode = 6;
+		else if (same(argv[1], "--device-close")) init_mode = 7;
 		else path = argv[1];
 	}
 	fd = open_bridge(path);
@@ -451,6 +614,10 @@ int probe_main(unsigned *initial_stack)
 		fail("second file device handle", acquired.error);
 	expect("close implicitly disconnects second file", sys3(6, fd2, 0, 0), 0);
 	if (init_mode) {
+		if (init_mode >= 6) {
+			device_test(fd, services, device, path, init_mode == 7);
+			return 0;
+		}
 		if (init_mode >= 3) {
 			buffer_test(fd, services, device, path, init_mode == 4, init_mode == 5);
 			return 0;

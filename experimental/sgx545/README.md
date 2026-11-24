@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has an **offline native MMU checkpoint**. It builds
+The hybrid port now has a **persistent device-memory checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -15,9 +15,11 @@ including the real compat path and clean teardown.
 [Both initializer abort tests passed](../../research/sgx545/d2500hn-initializer-passed.json),
 including the disabled shared-PB heap. The
 [shared-buffer tests also passed](../../research/sgx545/d2500hn-shared-buffers.json),
-including both free and deferred-close lifetimes. The next
-[Atom test exercises native MMU allocation and scatter page tables](../../docs/SGX545-MMU-TESTING.md)
-in RAM without enabling GPU execution. It uses the already loaded host2 driver.
+including both free and deferred-close lifetimes.
+[All ten offline MMU hardware cases passed](../../research/sgx545/d2500hn-offline-mmu.json).
+The next [Atom test covers persistent device allocations](../../docs/SGX545-DEVICE-MEMORY-TESTING.md),
+including neighboring mappings, alignment and deferred close. GPU execution
+remains disabled. It uses the already loaded host2 driver.
 
 ## D2500HN hardware result
 
@@ -92,7 +94,7 @@ now also been build-validated; that is not a hardware compatibility result.
   release or child detach until the final VMA closes. Tests cover VMA splits,
   owner isolation, quotas, rollback and failed cache restoration. The ELF32
   client's `--buffers` and `--buffers-close` modes check zeroed padding and
-  user/kernel WC coherence on hardware. Device-heap allocation and DMA are pending.
+  user/kernel WC coherence on hardware. DMA ownership remains pending.
 * A bounded native MMU exercise over four borrowed buffer pages and existing
   shared initializer heaps. It reserves VA, maps scatter pages, checks valid PTEs
   and translation readback, and releases all mappings before returning. It also
@@ -101,6 +103,14 @@ now also been build-validated; that is not a hardware compatibility result.
   rollback trims empty metadata after partial page-table allocation failures.
   Actual DDK functions run in host fixtures for both profiles. The `--mmu` client
   checks this on the Atom; expired VA results are never usable by a GPU client.
+
+* File-owned persistent allocations in the three existing shared native heaps,
+  with Intel 1.7 i386 ALLOC/FREE device-memory translation. Zeroed WC pages stay
+  pinned until native PTE removal succeeds; open CPU VMAs have independent
+  lifetime. Unsupported sync/cache modes and per-context heaps remain rejected.
+  A private readback ioctl verifies PTEs in CPU buffer order without GPU access.
+  Host tests cover neighboring allocations, rollback, failed unmap retention and
+  close/detach. The `--device` and `--device-close` client modes await Atom testing.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
@@ -211,10 +221,11 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Validate the offline native MMU/scatter walk and repeat/boundary cleanup on
-   the Atom. Preparation, bridge, initializer and shared-buffer tests have passed.
-2. Extend explicit nested-payload translation to device-heap allocation and
-   remaining initializer mapping commands, retaining ownership and rollback.
+1. Validate persistent device-memory allocation/free and both CPU VMA cleanup
+   paths on the Atom. Preparation, bridge, initializer, shared-buffer and offline
+   MMU tests have passed.
+2. Extend explicit nested-payload translation to remaining initializer memory
+   and mapping commands, retaining ownership and rollback.
    Add the necessary DRM transport after validating the diagnostic subset.
 3. Port device DMA ownership, match the initializer/microkernel build, and
    connect the legacy ISR through the parent's interrupt API. Design bounded

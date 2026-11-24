@@ -65,6 +65,20 @@ struct gma_sgx_bridge {
 	bool online, registered;
 };
 
+/* A pin holds the CPU backing until all native PTEs have been removed. */
+struct gma_sgx_device_allocation {
+	struct gma_sgx_device_allocation *next;
+	struct gma_sgx_mmu_binding binding;
+	void *pin;
+	u32 token;
+};
+struct device_visit_context {
+	struct gma_sgx_device_allocation *allocation;
+	BM_HEAP *heap;
+	u32 alignment, tables;
+	bool verify;
+};
+
 struct gma_sgx_file {
 	struct gma_sgx_bridge *bridge;
 	struct list_head link;
@@ -77,6 +91,7 @@ struct gma_sgx_file {
 	struct sgx545_init_info_out init_info;
 	u32 heap_count;
 	bool info_ready, info_dirty;
+	struct gma_sgx_device_allocation *device_allocations;
 };
 
 /* No native pointer/handle is exposed. Wire IDs never repeat in this lifetime. */
@@ -295,6 +310,128 @@ fail:
 	return ret;
 }
 
+static struct gma_sgx_device_allocation **device_slot(struct gma_sgx_file *f, u32 token)
+{
+	struct gma_sgx_device_allocation **slot = &f->device_allocations;
+
+	while (*slot && (*slot)->token != token)
+		slot = &(*slot)->next;
+	return slot;
+}
+
+static int device_visit(void *context, struct page **pages, u32 count)
+{
+	struct device_visit_context *ctx = context;
+	u32 *physical, i;
+	int ret;
+
+	if (!count || count > SGX545_BUFFER_MAX_BYTES / 4096)
+		return -EINVAL;
+	physical = kcalloc(count, sizeof(*physical), GFP_KERNEL);
+	if (!physical)
+		return -ENOMEM;
+	/* CPU page order is essential: a GPU VA must name the same buffer byte. */
+	for (i = 0; i < count; i++) {
+		if (upper_32_bits(page_to_phys(pages[i]))) {
+			kfree(physical);
+			return -EOVERFLOW;
+		}
+		physical[i] = page_to_phys(pages[i]);
+	}
+	if (ctx->verify)
+		ret = gma3600_sgx_mmu_verify(&ctx->allocation->binding, physical, count, &ctx->tables);
+	else
+		ret = gma3600_sgx_mmu_bind(ctx->heap->pMMUHeap, physical, count,
+			ctx->alignment, &ctx->allocation->binding);
+	kfree(physical);
+	return ret;
+}
+
+static int backend_free_device(void *context, u32 token)
+{
+	struct gma_sgx_file *f = context;
+	struct gma_sgx_device_allocation **slot = device_slot(f, token), *allocation = *slot;
+	int ret;
+
+	if (!allocation)
+		return -ENOENT;
+	ret = gma3600_sgx_mmu_unbind(&allocation->binding);
+	if (ret) {
+		/* Retain both RAM pin and bookkeeping if native unmapping failed. */
+		f->info_dirty = true;
+		f->bridge->stats.device_errors++;
+		return ret;
+	}
+	*slot = allocation->next;
+	f->bridge->stats.device_allocations--;
+	f->bridge->stats.device_pages -= (allocation->binding.bytes / 4096);
+	gma_sgx_buffer_unpin(allocation->pin);
+	ret = gma_sgx_buffer_free(f->bridge->buffers, f, token);
+	kfree(allocation);
+	return ret;
+}
+
+static int backend_alloc_device(void *context, u32 heap_token, u32 flags, u32 bytes,
+	u32 alignment, struct sgx545_alloc_device_out *out)
+{
+	struct gma_sgx_file *f = context;
+	struct gma_sgx_device_allocation *allocation;
+	struct device_visit_context visit = {.alignment = alignment};
+	struct sgx545_alloc_shared_out backing;
+	u32 i, token;
+	int ret;
+
+	if (f->bridge->init_owner != f || !f->info_ready)
+		return -EACCES;
+	if (f->info_dirty)
+		return -EIO;
+	for (i = 0; i < SGX545_MAX_HEAPS; i++)
+		if (f->init_info.heaps[i].handle && f->init_info.heaps[i].handle == heap_token)
+			break;
+	if (i == SGX545_MAX_HEAPS || !f->heap_handles[i])
+		return -ENOENT;
+	ret = PVRSRVLookupHandle(f->handles, (void **)&visit.heap, f->heap_handles[i],
+		PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP);
+	if (ret)
+		return -EIO;
+	allocation = kzalloc(sizeof(*allocation), GFP_KERNEL);
+	if (!allocation)
+		return -ENOMEM;
+	ret = new_token(f->bridge, &token);
+	if (ret)
+		goto fail;
+	ret = gma_sgx_buffer_alloc(f->bridge->buffers, f, token, SGX545_BUFFER_WC, bytes, &backing);
+	if (ret)
+		goto fail;
+	ret = gma_sgx_buffer_pin(f->bridge->buffers, f, token, &allocation->pin);
+	if (ret) {
+		gma_sgx_buffer_free(f->bridge->buffers, f, token);
+		goto fail;
+	}
+	allocation->token = token;
+	allocation->next = f->device_allocations;
+	f->device_allocations = allocation;
+	f->bridge->stats.device_allocations++;
+	visit.allocation = allocation;
+	ret = gma_sgx_buffer_visit(f->bridge->buffers, f, token, device_visit, &visit);
+	/* Account only reservations actually obtained, including quarantined ones. */
+	f->bridge->stats.device_pages += allocation->binding.bytes / 4096;
+	if (ret) {
+		if (backend_free_device(f, token))
+			return -EIO;
+		return ret;
+	}
+	memset(out, 0, sizeof(*out));
+	out->kernel_mem = token;
+	out->mem = backing.mem;
+	out->mem.device_address = allocation->binding.address;
+	out->mem.flags = flags | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+	return 0;
+fail:
+	kfree(allocation);
+	return ret;
+}
+
 static int backend_disconnect(void *ctx)
 {
 	struct gma_sgx_file *f = ctx;
@@ -302,6 +439,11 @@ static int backend_disconnect(void *ctx)
 
 	if (f->bridge->init_owner == f)
 		backend_init_abort(f, 0);
+	while (f->device_allocations) {
+		ret = backend_free_device(f, f->device_allocations->token);
+		if (ret)
+			return ret;
+	}
 	gma_sgx_buffers_release_owner(f->bridge->buffers, f);
 	if (!f->handles)
 		return 0;
@@ -340,6 +482,8 @@ static int backend_free_shared(void *ctx, u32 token)
 {
 	struct gma_sgx_file *f = ctx;
 
+	if (*device_slot(f, token))
+		return -EINVAL; /* A CPU-only free must never strand native PTEs. */
 	return gma_sgx_buffer_free(f->bridge->buffers, f, token);
 }
 static int backend_map_info(void *ctx, u32 token, struct sgx545_map_info_out *out)
@@ -366,6 +510,7 @@ static const struct sgx545_bridge_ops bridge_ops = {
 	.init_connect = backend_init_connect, .init_abort = backend_init_abort,
 	.init_info = backend_init_info, .release_init_info = backend_release_init_info,
 	.alloc_shared = backend_alloc_shared, .free_shared = backend_free_shared, .map_info = backend_map_info,
+	.alloc_device = backend_alloc_device, .free_device = backend_free_device,
 };
 
 static void bridge_free(struct kref *ref)
@@ -467,6 +612,8 @@ static int bridge_mmu_check(struct gma_sgx_file *f, struct sgx545_mmu_check *che
 
 	if (f->bridge->init_owner != f || !f->info_ready)
 		return -EACCES;
+	if (f->device_allocations || f->info_dirty)
+		return -EBUSY;
 	if (!f->session.services || check->services != f->session.services ||
 	    !f->session.device || check->device != f->session.device)
 		return -ENOENT;
@@ -484,6 +631,26 @@ static int bridge_mmu_check(struct gma_sgx_file *f, struct sgx545_mmu_check *che
 	return gma_sgx_buffer_visit(f->bridge->buffers, f, check->buffer, bridge_mmu_visit, &context);
 }
 
+static int bridge_device_check(struct gma_sgx_file *f, struct sgx545_device_check *check)
+{
+	struct device_visit_context context = {.verify = true};
+	int ret;
+
+	if (!f->session.services || check->services != f->session.services ||
+	    !f->session.device || check->device != f->session.device)
+		return -ENOENT;
+	context.allocation = *device_slot(f, check->buffer);
+	if (!context.allocation)
+		return -ENOENT;
+	ret = gma_sgx_buffer_visit(f->bridge->buffers, f, check->buffer, device_visit, &context);
+	if (!ret) {
+		check->address = context.allocation->binding.address;
+		check->pages = context.allocation->binding.pages;
+		check->page_tables = context.tables;
+	}
+	return ret;
+}
+
 static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct gma_sgx_file *f = file->private_data;
@@ -493,10 +660,27 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	int ret;
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
-	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK)
+	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
+	if (cmd == SGX545_IOCTL_DEVICE_CHECK) {
+		struct sgx545_device_check check;
+
+		if (copy_from_user(&check, (void __user *)arg, sizeof(check)))
+			return -EFAULT;
+		mutex_lock(&b->lock);
+		if (!b->online) ret = -ENODEV;
+		else {
+			LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
+			ret = bridge_device_check(f, &check);
+			LinuxUnLockMutex(&gPVRSRVLock);
+		}
+		mutex_unlock(&b->lock);
+		if (!ret && copy_to_user((void __user *)arg, &check, sizeof(check)))
+			return -EFAULT;
+		return ret;
+	}
 	if (cmd == SGX545_IOCTL_MMU_CHECK) {
 		struct sgx545_mmu_check check;
 
@@ -601,9 +785,10 @@ static void bridge_stop(void *data)
 	}
 	LinuxUnLockMutex(&gPVRSRVLock);
 	gma_sgx_buffers_stop(b->buffers);
-	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u\n",
+	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u device_allocations=%u device_pages=%u device_errors=%u\n",
 		b->stats.files, b->stats.connections, b->stats.errors,
-		b->stats.heap_handles, b->stats.init_running, b->stats.init_ran);
+		b->stats.heap_handles, b->stats.init_running, b->stats.init_ran,
+		b->stats.device_allocations, b->stats.device_pages, b->stats.device_errors);
 	mutex_unlock(&b->lock);
 	kref_put(&b->ref, bridge_free);
 }

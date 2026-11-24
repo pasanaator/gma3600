@@ -47,7 +47,7 @@
   "client": {
     "ioctl": "Project-only 40-byte SGX545_IOCTL_MMU_CHECK; not a legacy Intel command",
     "selftest_under_QEMU_i386_10_0_13": "passed for both final build outputs",
-    "real_hardware_MMU_mode": "pending",
+    "real_hardware_MMU_mode": "passed; see d2500hn-offline-mmu.json",
     "expired_VA_semantics": "Device addresses are unmapped before ioctl returns"
   },
   "previous_hardware_result": "d2500hn-shared-buffers.json",

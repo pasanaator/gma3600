@@ -8,12 +8,37 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sgx545_abi.h"
+#include "gma3600_sgx_mmu.h"
 
 typedef uint32_t u32;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran; };
-struct gma_sgx_buffers { int unused; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, device_allocations, device_pages, device_errors; };
+struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; };
+struct gma_sgx_buffers { struct mock_buffer slots[16]; };
+static struct mock_buffer *visiting_buffer;
+static int fail_bind, fail_unbind, live_bindings;
+int gma3600_sgx_mmu_bind(void *heap, const __u32 *physical, __u32 count,
+    __u32 alignment, struct gma_sgx_mmu_binding *binding)
+{
+    const u32 cpu_order[] = {0x1000, 0x9000, 0x3000, 0x7000};
+    assert(visiting_buffer && visiting_buffer->pins == 1 && count == 4);
+    assert(!memcmp(physical, cpu_order, sizeof(cpu_order)));
+    if (fail_bind) { fail_bind--; return -ENOMEM; }
+    *binding = (struct gma_sgx_mmu_binding){heap, 0xf4000000 + 0x10000 * live_bindings, count * 4096, count, 1, 0};
+    assert(!(binding->address & (alignment - 1)));
+    visiting_buffer->binding = binding; live_bindings++;
+    return 0;
+}
+int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *physical,
+    __u32 count, __u32 *tables)
+{ assert(binding->live && count == 4); *tables = 1; return 0; }
+int gma3600_sgx_mmu_unbind(struct gma_sgx_mmu_binding *binding)
+{
+    if (fail_unbind) { fail_unbind--; return -EIO; }
+    if (binding->live) { assert(live_bindings > 0); live_bindings--; binding->live = 0; }
+    return 0;
+}
 typedef struct { u32 uiAddr; } IMG_DEV_PHYADDR;
 typedef struct {
     u32 ui32HeapID;
@@ -47,10 +72,19 @@ static int gma_sgx_buffer_visit(struct gma_sgx_buffers *p, void *owner, u32 toke
     int (*visit)(void *, struct page **, u32), void *context)
 {
     assert(p);
-    if (owner != mmu_buffer_owner || token != 999) return -ENOENT;
-    return visit(context, mmu_page_list, mmu_page_count);
+    unsigned i;
+    int ret;
+    if (owner == mmu_buffer_owner && token == 999)
+        return visit(context, mmu_page_list, mmu_page_count);
+    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+        visiting_buffer = &p->slots[i];
+        ret = visit(context, mmu_page_list, mmu_page_count);
+        visiting_buffer = NULL;
+        return ret;
+    }
+    return -ENOENT;
 }
-static int gma3600_sgx_mmu_exercise(void *heap, const __u32 *physical, __u32 count,
+int gma3600_sgx_mmu_exercise(void *heap, const __u32 *physical, __u32 count,
     __u32 flags, struct sgx545_mmu_check *out)
 {
     const u32 sorted[] = {0x9000, 0x7000, 0x3000, 0x1000};
@@ -118,11 +152,54 @@ static void *kzalloc(size_t size, int flags)
     allocations++;
     return p;
 }
+static void *kcalloc(size_t n, size_t size, int flags) { return kzalloc(n * size, flags); }
 static void kfree(void *p);
 static struct gma_sgx_buffers *gma_sgx_buffers_create(void)
 { return kzalloc(sizeof(struct gma_sgx_buffers), 0); }
+static int gma_sgx_buffer_alloc(struct gma_sgx_buffers *p, void *owner, u32 token, u32 flags,
+    u32 bytes, struct sgx545_alloc_shared_out *out)
+{
+    unsigned i;
+    for (i = 0; i < 16; i++) if (!p->slots[i].owner) break;
+    if (i == 16) return -ENOSPC;
+    p->slots[i] = (struct mock_buffer){.owner = owner, .token = token, .bytes = bytes};
+    memset(out, 0, sizeof(*out));
+    out->kernel_mem = out->mem.kernel_mem = out->mem.mapping = token;
+    out->mem.alloc_size = bytes; out->mem.flags = flags | SGX545_BUFFER_MULTI;
+    return 0;
+}
+static int gma_sgx_buffer_pin(struct gma_sgx_buffers *p, void *owner, u32 token, void **pin)
+{
+    unsigned i;
+    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+        p->slots[i].pins++; *pin = &p->slots[i]; return 0;
+    }
+    return -ENOENT;
+}
+static void gma_sgx_buffer_unpin(void *pin)
+{
+    struct mock_buffer *buffer = pin;
+    assert(buffer->pins == 1 && (!buffer->binding || !buffer->binding->live));
+    buffer->pins--;
+}
+static int gma_sgx_buffer_free(struct gma_sgx_buffers *p, void *owner, u32 token)
+{
+    unsigned i;
+    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+        assert(!p->slots[i].pins);
+        memset(&p->slots[i], 0, sizeof(p->slots[i])); return 0;
+    }
+    return -ENOENT;
+}
 static void gma_sgx_buffers_release_owner(struct gma_sgx_buffers *p, void *owner)
-{ assert(p && owner); }
+{
+    unsigned i;
+    assert(p && owner);
+    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner) {
+        assert(!p->slots[i].pins);
+        memset(&p->slots[i], 0, sizeof(p->slots[i]));
+    }
+}
 static void gma_sgx_buffers_stop(struct gma_sgx_buffers *p) { kfree(p); }
 static int nonseekable_open(struct inode *inode, struct file *file) { return 0; }
 static int misc_register(struct miscdevice *m)
@@ -337,6 +414,69 @@ static void mmu_bridge_validation(void)
     assert(!bridge_release(NULL, &file)); stop(&dev); empty();
 }
 
+static void device_allocation_lifetime(void)
+{
+    struct device dev = {0};
+    struct gma_sgx_bridge *b;
+    struct file file, second;
+    struct gma_sgx_file *f, *other;
+    struct sgx545_alloc_device_out a, c;
+    struct sgx545_device_check check = {.services = 1, .device = 2};
+    BM_HEAP heap = {.pMMUHeap = &fake_device};
+    u32 token, first;
+    unsigned mode;
+    for (mode = 0; mode < 4; mode++) {
+        b = start(&dev); f = open_(b, &file); other = open_(b, &second);
+        assert(!backend_connect(f, &token) && !backend_connect(other, &token));
+        f->session.services = 1; f->session.device = 2;
+        assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -EACCES);
+        assert(!backend_init_connect(f)); f->info_ready = true;
+        f->init_info.heaps[0].handle = 100;
+        assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
+            PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
+        assert(backend_alloc_device(f, 101, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOENT);
+        fail_bind = 1;
+        assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOMEM);
+        assert(!b->stats.device_allocations && !b->stats.device_pages);
+        fail_alloc = 1;
+        assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOMEM);
+        assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a)); first = a.kernel_mem;
+        assert(a.mem.device_address == 0xf4000000 && b->stats.device_pages == 4);
+        assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &c));
+        assert(b->stats.device_allocations == 2 && b->stats.device_pages == 8 && live_bindings == 2);
+        check.buffer = first;
+        assert(!bridge_device_check(f, &check) && check.pages == 4 && check.address == a.mem.device_address);
+        check.device++;
+        assert(bridge_device_check(f, &check) == -ENOENT); check.device--;
+        assert(backend_free_device(other, first) == -ENOENT);
+        assert(backend_free_shared(f, first) == -EINVAL);
+        if (!mode) {
+            assert(!backend_free_device(f, first) && b->stats.device_allocations == 1);
+            assert(backend_free_device(f, first) == -ENOENT);
+            check.buffer = c.kernel_mem;
+            assert(!bridge_device_check(f, &check));
+            assert(!backend_disconnect(f) && !live_bindings);
+        } else if (mode == 1) {
+            fail_unbind = 1;
+            assert(backend_free_device(f, first) == -EIO);
+            assert(b->stats.device_allocations == 2 && b->stats.device_pages == 8 && live_bindings == 2);
+            assert(f->info_dirty && b->stats.device_errors == 1);
+            assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -EIO);
+        } else if (mode == 2) {
+            stop(&dev); ddk_alive = 0;
+            assert(!f->handles && !live_bindings && !b->stats.device_allocations);
+        } else {
+            assert(!backend_init_abort(f, 0));
+            assert(!backend_free_device(f, first)); /* free after abort */
+        }
+        assert(!bridge_release(NULL, &file) && !live_bindings);
+        assert(!bridge_release(NULL, &second));
+        ddk_alive = 1;
+        if (dev.action) stop(&dev);
+        empty();
+    }
+}
+
 int main(void)
 {
     struct device dev = {0};
@@ -400,7 +540,8 @@ int main(void)
     assert(allocations == 3 && current_pid.refs == 1);
     /* Test-only reclamation of intentionally retained metadata. */
     ddk_alive = 1;
-    assert(!backend_disconnect(f));
+    assert(!PVRSRVFreeHandleBase(f->handles)); /* pool already stopped */
+    f->handles = NULL; b->stats.connections--;
     bridge_file_free(f); kref_put(&b->ref, bridge_free);
     empty();
 
@@ -412,6 +553,7 @@ int main(void)
     assert(freed_bases == 5);
     initializer_lifetime();
     mmu_bridge_validation();
-    puts("SGX bridge lifetime tests passed: ownership, heap translation/deduplication/cache/rollback, close and detach");
+    device_allocation_lifetime();
+    puts("SGX bridge lifetime tests passed: ownership, heap translation/rollback, device allocation/pin ordering, failed unmap retention, close and detach");
     return 0;
 }

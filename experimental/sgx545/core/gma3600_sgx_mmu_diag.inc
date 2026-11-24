@@ -1,6 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Included by patched mmu.c, where the native MMU structures are defined. */
 #include <linux/errno.h>
+#include <linux/slab.h>
+#include <linux/string.h>
 #include "gma3600_sgx_mmu.h"
 
 /* Only the tested SGX545 4K, non-bypass configuration is supported here. */
@@ -41,6 +43,118 @@ static int gma_mmu_page_matches(MMU_HEAP *heap, IMG_DEV_VIRTADDR address, IMG_UI
 	return MMU_GetPhysPageAddr(heap, address).uiAddr == physical;
 }
 #endif
+
+int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *physical,
+	__u32 count, __u32 *tables)
+{
+#if defined(FIX_HW_BRN_31620) || defined(SUPPORT_SGX_MMU_DUMMY_PAGE) || defined(SUPPORT_SGX_MMU_BYPASS)
+	return -EOPNOTSUPP;
+#else
+	MMU_HEAP *heap = binding->heap;
+	IMG_DEV_VIRTADDR walk;
+	IMG_UINT32 i;
+
+	if (!binding->live || binding->failed || !physical || count != binding->pages)
+		return -EINVAL;
+	OSMemoryBarrier();
+	for (i = 0; i < count; i++) {
+		walk.uiAddr = binding->address + i * 4096;
+		if (!gma_mmu_page_matches(heap, walk, physical[i]))
+			return -EIO;
+	}
+	*tables = gma_mmu_table_count(heap);
+	return 0;
+#endif
+}
+
+int gma3600_sgx_mmu_unbind(struct gma_sgx_mmu_binding *binding)
+{
+#if defined(FIX_HW_BRN_31620) || defined(SUPPORT_SGX_MMU_DUMMY_PAGE) || defined(SUPPORT_SGX_MMU_BYPASS)
+	return -EOPNOTSUPP;
+#else
+	MMU_HEAP *heap = binding->heap;
+	IMG_UINT32 i, capacity;
+
+	if (binding->failed)
+		return -EIO; /* Do not retry RA_Free on an already released reservation. */
+	if (!binding->live)
+		return 0;
+	capacity = heap->ui32PTETotalUsable;
+	MMU_Free(heap, (IMG_DEV_VIRTADDR){binding->address}, binding->bytes);
+	binding->live = 0;
+	OSMemoryBarrier();
+	for (i = 0; i < binding->pages; i++) {
+		IMG_UINT32 address = binding->address + i * 4096;
+		MMU_PT_INFO *pt = heap->psMMUContext->apsPTInfoList[address >> heap->ui32PDShift];
+		IMG_UINT32 index = (address & heap->ui32PTMask) >> heap->ui32PTShift;
+
+		if (pt && pt->PTPageCpuVAddr && (((IMG_UINT32 *)pt->PTPageCpuVAddr)[index] & SGX_MMU_PTE_VALID))
+			binding->failed = 1;
+	}
+	gma_mmu_trim_empty(heap);
+	OSMemoryBarrier();
+	if (heap->ui32PTETotalUsable != capacity)
+		binding->failed = 1;
+	return binding->failed ? -EIO : 0;
+#endif
+}
+
+int gma3600_sgx_mmu_bind(void *native_heap, const __u32 *physical, __u32 count,
+	__u32 alignment, struct gma_sgx_mmu_binding *binding)
+{
+#if defined(FIX_HW_BRN_31620) || defined(SUPPORT_SGX_MMU_DUMMY_PAGE) || defined(SUPPORT_SGX_MMU_BYPASS)
+	return -EOPNOTSUPP;
+#else
+	MMU_HEAP *heap = native_heap;
+	IMG_SYS_PHYADDR *scatter;
+	IMG_DEV_VIRTADDR address;
+	IMG_SIZE_T actual = 0;
+	IMG_UINT32 i, tables, bytes;
+	int ret = -ENOMEM;
+
+	if (binding->live || binding->failed)
+		return -EBUSY;
+	memset(binding, 0, sizeof(*binding));
+	if (!heap || !physical || !count || count > 256 || alignment < 4096 ||
+	    alignment > SGX545_BUFFER_MAX_BYTES || (alignment & (alignment - 1)))
+		return -EINVAL;
+	if (heap->ui32DataPageSize != 4096 || heap->ui32PDShift != 22 ||
+	    heap->psDevArena->psDeviceMemoryHeapInfo->psLocalDevMemArena ||
+	    (heap->psDevArena->DevMemHeapType != DEVICE_MEMORY_HEAP_SHARED &&
+	     heap->psDevArena->DevMemHeapType != DEVICE_MEMORY_HEAP_SHARED_EXPORTED))
+		return -EOPNOTSUPP;
+	bytes = count * 4096;
+	if (bytes > heap->psDevArena->ui32Size)
+		return -ENOSPC;
+	for (i = 0; i < count; i++)
+		if (physical[i] & 4095)
+			return -EINVAL;
+	scatter = kcalloc(count, sizeof(*scatter), GFP_KERNEL);
+	if (!scatter)
+		return -ENOMEM;
+	for (i = 0; i < count; i++) scatter[i].uiAddr = physical[i];
+	if (!MMU_Alloc(heap, bytes, &actual, 0, alignment, &address)) {
+		gma_mmu_trim_empty(heap);
+		OSMemoryBarrier();
+		goto out;
+	}
+	binding->heap = heap; binding->address = address.uiAddr;
+	binding->bytes = bytes; binding->pages = count; binding->live = 1;
+	if (actual != bytes || (address.uiAddr & (alignment - 1))) {
+		ret = -EIO;
+		goto rollback;
+	}
+	MMU_MapScatter(heap, address, scatter, bytes, PVRSRV_MEM_READ | PVRSRV_MEM_WRITE, IMG_NULL);
+	ret = gma3600_sgx_mmu_verify(binding, physical, count, &tables);
+	if (!ret)
+		goto out;
+rollback:
+	if (gma3600_sgx_mmu_unbind(binding)) ret = -EIO;
+out:
+	kfree(scatter);
+	return ret;
+#endif
+}
 
 int gma3600_sgx_mmu_exercise(void *native_heap, const __u32 *physical, __u32 count,
 	__u32 flags, struct sgx545_mmu_check *result)

@@ -47,6 +47,8 @@ struct sgx545_bridge_request {
 #define SGX545_COMMAND(number)      (SGX545_COMMAND_BASE | (number))
 #define SGX545_CMD_ENUMERATE        0U
 #define SGX545_CMD_ACQUIRE          1U
+#define SGX545_CMD_ALLOC_DEVICE     6U
+#define SGX545_CMD_FREE_DEVICE      7U
 #define SGX545_CMD_MAP_INFO         11U
 #define SGX545_CMD_CONNECT          12U
 #define SGX545_CMD_DISCONNECT       13U
@@ -62,6 +64,8 @@ struct sgx545_bridge_request {
 #define SGX545_BUFFER_WC            0x00004000U
 #define SGX545_BUFFER_MULTI         0x00020000U
 #define SGX545_BUFFER_MAX_BYTES     0x00100000U
+#define SGX545_DEVICE_FLAGS        (SGX545_BUFFER_WC | 0x0000000bU) /* RW, no sync */
+#define SGX545_RAM_BACKED           0x00000200U
 /* Project diagnostic ioctl, separate from the Intel services command space. */
 #define SGX545_IOCTL_BUFFER_CHECK   0xc0104701U
 struct sgx545_buffer_check { __u32 services, handle, expected, fill; };
@@ -72,6 +76,8 @@ struct sgx545_mmu_check {
 	/* The reported device address has already been unmapped on return. */
 	__u32 device_address, checked_pages, pt_peak, pt_after, scatter_breaks;
 };
+#define SGX545_IOCTL_DEVICE_CHECK   0xc0184703U
+struct sgx545_device_check { __u32 services, device, buffer, address, pages, page_tables; };
 
 struct sgx545_connect_out { __u32 error, services_lo, services_hi; };
 struct sgx545_device_id { __u32 type, device_class, index; };
@@ -93,6 +99,11 @@ struct sgx545_client_mem32 {
 struct sgx545_alloc_shared_out {
 	__u32 error, kernel_mem;
 	struct sgx545_client_mem32 mem;
+};
+struct sgx545_alloc_device_out {
+	__u32 error, kernel_mem;
+	struct sgx545_client_mem32 mem;
+	__u32 sync[5]; /* NO_SYNCOBJ: all fields remain zero. */
 };
 struct sgx545_map_info_out { __u32 error, offset, byte_offset, real_size, user_address; };
 
@@ -117,6 +128,9 @@ struct sgx545_bridge_ops {
 		struct sgx545_alloc_shared_out *out);
 	int (*free_shared)(void *ctx, __u32 token);
 	int (*map_info)(void *ctx, __u32 token, struct sgx545_map_info_out *out);
+	int (*alloc_device)(void *ctx, __u32 heap, __u32 flags, __u32 bytes,
+		__u32 alignment, struct sgx545_alloc_device_out *out);
+	int (*free_device)(void *ctx, __u32 token);
 };
 
 /* Backend: zero=success, positive=DDK error, negative=Linux errno.

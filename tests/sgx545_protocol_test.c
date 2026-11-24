@@ -14,7 +14,8 @@ struct fake {
 	unsigned count;
 	unsigned init_connects, init_aborts, infos, info_releases, rollbacks;
 	int fail_init, fail_abort, fail_info, fail_info_release;
-	unsigned buffers, buffer_frees;
+	unsigned buffers, buffer_frees, device_buffers, device_frees;
+	int fail_device_free, fail_device;
 };
 static int connect_(void *ctx, unsigned *token)
 {
@@ -123,6 +124,27 @@ static int map_info(void *ctx, unsigned token, struct sgx545_map_info_out *out)
 	out->real_size = 4096;
 	return 0;
 }
+static int alloc_device(void *ctx, unsigned heap, unsigned flags, unsigned bytes,
+    unsigned alignment, struct sgx545_alloc_device_out *out)
+{
+    struct fake *f = ctx;
+    assert(heap == 99 && alignment >= 4096 && !(alignment & (alignment - 1)));
+    if (f->fail_device) return f->fail_device;
+    f->device_buffers++;
+    out->kernel_mem = out->mem.kernel_mem = out->mem.mapping = ++f->token;
+    out->mem.device_address = 0xf4000000;
+    out->mem.alloc_size = bytes;
+    out->mem.flags = flags | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+    return 0;
+}
+static int free_device(void *ctx, unsigned token)
+{
+    struct fake *f = ctx;
+    if (f->fail_device_free) return f->fail_device_free;
+    if (token != f->token || !f->device_buffers) return -ENOENT;
+    f->device_buffers--; f->device_frees++;
+    return 0;
+}
 static const struct sgx545_bridge_ops ops = {
 	.connect = connect_, .enumerate = enumerate, .acquire = acquire,
 	.release_device = release, .disconnect = disconnect,
@@ -130,14 +152,15 @@ static const struct sgx545_bridge_ops ops = {
 	.init_connect = init_connect, .init_abort = init_abort,
 	.init_info = init_info, .release_init_info = release_init_info,
 	.alloc_shared = alloc_shared, .free_shared = free_shared, .map_info = map_info,
+	.alloc_device = alloc_device, .free_device = free_device,
 };
 static struct sgx545_bridge_request request(unsigned cmd, unsigned service)
 {
 	return (struct sgx545_bridge_request) {
 		.param_in = 0x1234, .param_out = 0x5678,
 		.bridge_id = SGX545_COMMAND(cmd), .services = service,
-		.in_size = cmd == 64 ? 56 : cmd == 12 || cmd == 68 || cmd == 98 || cmd == 11 ? 8 : cmd == 1 || cmd == 63 ? 12 : 0,
-		.out_size = cmd == 63 ? 56 : cmd == 64 ? 4 : cmd == 11 ? 20 : cmd == 98 ? 776 : cmd == 12 ? 12 : cmd == 0 ? 200 : 8,
+		.in_size = cmd == 6 ? 24 : cmd == 7 ? 12 : cmd == 64 ? 56 : cmd == 12 || cmd == 68 || cmd == 98 || cmd == 11 ? 8 : cmd == 1 || cmd == 63 ? 12 : 0,
+		.out_size = cmd == 6 ? 76 : cmd == 7 ? 4 : cmd == 63 ? 56 : cmd == 64 ? 4 : cmd == 11 ? 20 : cmd == 98 ? 776 : cmd == 12 ? 12 : cmd == 0 ? 200 : 8,
 	};
 }
 static int run(struct sgx545_session *s, struct fake *f, unsigned cmd)
@@ -235,6 +258,50 @@ static void buffer_protocol(void)
 	assert(run(&s, &f, 64) == -ENOENT);
 }
 
+static void device_protocol(void)
+{
+    struct fake f = {0};
+    struct sgx545_session s = {.services = 1, .device = 2};
+    struct sgx545_bridge_request r;
+    unsigned i, token;
+    f.in[1] = 2; f.in[2] = 99; f.in[3] = SGX545_DEVICE_FLAGS; f.in[4] = 8193;
+    assert(run(&s, &f, 6) == -EACCES);
+    s.initializer = 1;
+    assert(run(&s, &f, 6) == -EACCES);
+    s.init_info = 1; f.in[1]++;
+    assert(run(&s, &f, 6) == -ENOENT);
+    f.in[1]--; f.in[3] &= ~8U;
+    assert(run(&s, &f, 6) == -EOPNOTSUPP); /* no sync object must be explicit */
+    f.in[3] = SGX545_DEVICE_FLAGS; f.in[4] = 0;
+    assert(run(&s, &f, 6) == -EINVAL);
+    f.in[4] = SGX545_BUFFER_MAX_BYTES + 1;
+    assert(run(&s, &f, 6) == -EINVAL);
+    f.in[4] = 8193; f.in[5] = 4097;
+    assert(run(&s, &f, 6) == -EINVAL);
+    f.in[5] = 0; f.fail_device = 17;
+    assert(!run(&s, &f, 6) && word(&f, 0) == 17 && !word(&f, 1));
+    f.fail_device = -ENOMEM;
+    assert(run(&s, &f, 6) == -ENOMEM);
+    f.fail_device = 0; f.fail_out = 1;
+    assert(run(&s, &f, 6) == -EFAULT && !f.device_buffers && f.device_frees == 1);
+    f.fail_device_free = -EIO;
+    assert(run(&s, &f, 6) == -EFAULT && f.device_buffers == 1);
+    token = f.token; f.fail_device_free = 0; f.in[2] = token;
+    assert(run(&s, &f, 7) == -EFAULT && !f.device_buffers); /* free commits */
+    f.fail_out = 0; f.in[2] = 99; f.in[3] |= SGX545_RAM_BACKED; f.in[5] = 0x100000;
+    assert(!run(&s, &f, 6)); token = word(&f, 1);
+    assert(word(&f, 4) == 0xf4000000 && word(&f, 6) == (SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI));
+    assert(word(&f, 8) == 8193 && word(&f, 11) == token);
+    for (i = 14; i < 19; i++) assert(!word(&f, i)); /* zero sync record */
+    r = request(6, 1); r.out_size = 80;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL);
+    s.initializer = 0; f.in[2] = token; f.in[1]++;
+    assert(run(&s, &f, 7) == -ENOENT && f.device_buffers);
+    f.in[1]--;
+    assert(!run(&s, &f, 7) && !f.device_buffers); /* allowed after initializer abort */
+    assert(run(&s, &f, 7) == -ENOENT);
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -244,7 +311,7 @@ int main(void)
 
 	assert(run(&s, &f, 0) == -ENOENT);
 	for (i = 0; i < 256; i++) {
-		if (i == 0 || i == 1 || i == 11 || i == 12 || i == 13 || i == 63 || i == 64 || i == 67 || i == 68 || i == 98)
+		if (i == 0 || i == 1 || i == 6 || i == 7 || i == 11 || i == 12 || i == 13 || i == 63 || i == 64 || i == 67 || i == 68 || i == 98)
 			continue;
 		assert(run(&s, &f, i) == -EOPNOTSUPP);
 	}
@@ -315,6 +382,7 @@ int main(void)
 	assert(!sgx545_session_close(&s, &ops, &f) && old == f.disconnects);
 	initializer_protocol();
 	buffer_protocol();
-	puts("SGX545 bridge protocol tests passed: services, initializer ownership, read-only heap info and rollback");
+	device_protocol();
+	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }

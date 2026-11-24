@@ -136,6 +136,22 @@ static int visit_pages(void *context, struct page **pages, u32 count)
     return 17;
 }
 
+static void pinned_buffer_lifetime(void)
+{
+    struct gma_sgx_buffers *p = gma_sgx_buffers_create();
+    struct sgx545_alloc_shared_out out;
+    int owner, other;
+    void *pin = (void *)1;
+    assert(gma_sgx_buffer_pin(p, &owner, 1, &pin) == -ENOENT && !pin);
+    assert(!gma_sgx_buffer_alloc(p, &owner, 1, SGX545_BUFFER_WC, 4096, &out));
+    assert(gma_sgx_buffer_pin(p, &other, 1, &pin) == -ENOENT && !pin);
+    assert(!gma_sgx_buffer_pin(p, &owner, 1, &pin) && pin);
+    assert(!gma_sgx_buffer_free(p, &owner, 1) && pages_live == 1);
+    gma_sgx_buffers_stop(p);
+    assert(pages_live == 1); /* pin outlives both ownership and provider detach */
+    gma_sgx_buffer_unpin(pin); empty();
+}
+
 int main(void)
 {
     int owner, other;
@@ -244,6 +260,7 @@ int main(void)
     /* Test-only recovery of deliberately retained cache-failure metadata. */
     b->refs = 1; buffer_put_locked(b);
     gma_sgx_buffers_stop(p); empty();
-    puts("SGX buffer tests passed: ownership, zeroing, WC aliases, VMA split/detach lifetime, quotas and cache-failure retention");
+    pinned_buffer_lifetime();
+    puts("SGX buffer tests passed: independent mapping pins, ownership, zeroing, WC aliases, VMA split/detach lifetime, quotas and cache-failure retention");
     return 0;
 }

@@ -22,5 +22,7 @@ int gma_sgx_buffer_check(struct gma_sgx_buffers *pool, void *owner, u32 token, u
 /* Callback runs under the pool mutex; it must not retain the borrowed pages. */
 int gma_sgx_buffer_visit(struct gma_sgx_buffers *pool, void *owner, u32 token,
 	int (*visit)(void *, struct page **, u32), void *context);
+int gma_sgx_buffer_pin(struct gma_sgx_buffers *pool, void *owner, u32 token, void **pin);
+void gma_sgx_buffer_unpin(void *pin);
 void gma_sgx_buffers_stats(struct gma_sgx_buffers *pool, struct gma_sgx_buffer_stats *out);
 #endif

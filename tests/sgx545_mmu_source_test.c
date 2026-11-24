@@ -54,7 +54,12 @@ typedef int SYS_DATA;
 #define PDUMPPDENTRIES(...) ((void)0)
 #define MakeKernelPageReadWrite(p) ((void)(p))
 #define MakeKernelPageReadOnly(p) ((void)(p))
-static unsigned pt_pages, pt_metadata, reservations, fail_pt_at, pt_attempts, fail_reserve;
+static unsigned pt_pages, pt_metadata, reservations, fail_pt_at, pt_attempts, fail_reserve, reserve_floor, corrupt_free_capacity;
+#define GFP_KERNEL 0
+static unsigned fail_scatter;
+static void *kcalloc(size_t n, size_t size, int flags)
+{ if (fail_scatter) { fail_scatter--; return NULL; } return calloc(n, size); }
+#define kfree free
 static void OSMemoryBarrier(void) { }
 static void SysAcquireData(SYS_DATA **p) { static SYS_DATA data; *p = &data; }
 static void CheckPT(MMU_PT_INFO *pt)
@@ -86,6 +91,7 @@ static IMG_BOOL RA_Alloc(RA_ARENA *arena, size_t bytes, size_t *actual, void *pr
     unsigned flags, unsigned alignment, unsigned offset, void *ref, unsigned ref_size, uintptr_t *address)
 {
     uintptr_t pos = arena->heap->psDevArena->BaseDevVAddr.uiAddr;
+    if (reserve_floor) pos += reserve_floor;
     unsigned i, slot;
     bool overlap;
     if (fail_reserve) { fail_reserve--; return false; }
@@ -112,6 +118,7 @@ static void RA_Free(RA_ARENA *arena, uintptr_t address, int free_pages)
     assert(i < 8 && reservations);
     if (free_pages) MMU_FreePageTables(arena->heap, address, address + arena->slots[i].size, IMG_NULL);
     arena->slots[i].live = false; reservations--;
+    if (corrupt_free_capacity) { arena->heap->ui32PTETotalUsable--; corrupt_free_capacity = 0; }
 }
 static IMG_BOOL _DeferredAllocPagetables(MMU_HEAP *heap, IMG_DEV_VIRTADDR address, unsigned bytes)
 {
@@ -126,6 +133,66 @@ static IMG_BOOL _DeferredAllocPagetables(MMU_HEAP *heap, IMG_DEV_VIRTADDR addres
         ((unsigned *)heap->psMMUContext->pvPDCpuVAddr)[i] = 0x1001 + i * 4096;
     }
     return true;
+}
+
+static void persistent_bindings(MMU_HEAP *heap, const __u32 *physical)
+{
+    struct gma_sgx_mmu_binding a = {0}, b = {0}, c = {0};
+    __u32 tables, old_address;
+    unsigned i, capacity = heap->ui32PTETotalUsable;
+    __u32 full[256];
+
+    assert(gma3600_sgx_mmu_bind(heap, physical, 0, 4096, &a) == -EINVAL);
+    assert(gma3600_sgx_mmu_bind(heap, physical, 4, 8193, &a) == -EINVAL);
+    assert(gma3600_sgx_mmu_bind(heap, physical, 257, 4096, &a) == -EINVAL);
+    for (i = 0; i < 4; i++) {
+        assert(!gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &a));
+        old_address = a.address;
+        assert(gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &a) == -EBUSY && a.live);
+        assert(!gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &b));
+        assert(a.address != b.address && reservations == 2 && pt_pages == 1);
+        assert(!gma3600_sgx_mmu_verify(&a, physical, 4, &tables) && tables == 1);
+        assert(!gma3600_sgx_mmu_verify(&b, physical, 4, &tables));
+        fail_reserve = 1;
+        assert(gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &c) == -ENOMEM);
+        fail_scatter = 1;
+        assert(gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &c) == -ENOMEM);
+        /* Fail a new page table while an existing one still has live PTEs. */
+        if (heap->psDevArena->ui32Size > 0x400000) {
+            reserve_floor = 0x400000; fail_pt_at = pt_attempts + 1;
+            assert(gma3600_sgx_mmu_bind(heap, physical, 4, 0x100000, &c) == -ENOMEM);
+            reserve_floor = fail_pt_at = 0;
+            assert(pt_pages == 1 && pt_metadata == 1 && reservations == 2);
+        }
+        assert(!gma3600_sgx_mmu_verify(&b, physical, 4, &tables));
+        assert(!gma3600_sgx_mmu_unbind(&a) && !a.live && pt_pages == 1);
+        assert(!gma3600_sgx_mmu_unbind(&a)); /* no double RA_Free */
+        assert(gma3600_sgx_mmu_verify(&a, physical, 4, &tables) == -EINVAL);
+        assert(!gma3600_sgx_mmu_verify(&b, physical, 4, &tables));
+        assert(!gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &c) && c.address == old_address);
+        assert(!gma3600_sgx_mmu_unbind(&b) && pt_pages == 1);
+        assert(!gma3600_sgx_mmu_verify(&c, physical, 4, &tables));
+        assert(!gma3600_sgx_mmu_unbind(&c));
+        assert(!pt_pages && !pt_metadata && !reservations && heap->ui32PTETotalUsable == capacity);
+    }
+    if (heap->psDevArena->ui32Size >= sizeof(full) * 1024) {
+        for (i = 0; i < 256; i++) full[i] = 0x1000000 + i * 8192;
+        assert(!gma3600_sgx_mmu_bind(heap, full, 256, 0x100000, &a));
+        assert(a.pages == 256 && !(a.address & 0xfffff));
+        assert(!gma3600_sgx_mmu_verify(&a, full, 256, &tables));
+        full[255] += 4096;
+        assert(gma3600_sgx_mmu_verify(&a, full, 256, &tables) == -EIO);
+        assert(!gma3600_sgx_mmu_unbind(&a));
+    }
+    assert(!gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &a));
+    corrupt_free_capacity = 1;
+    assert(gma3600_sgx_mmu_unbind(&a) == -EIO && a.failed && !a.live);
+    assert(!pt_pages && !pt_metadata && !reservations);
+    /* A failed post-free check must never invoke RA_Free twice. */
+    assert(gma3600_sgx_mmu_unbind(&a) == -EIO);
+    assert(gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &a) == -EBUSY);
+    heap->ui32PTETotalUsable = capacity; /* test-only restoration of injected corruption */
+
 }
 
 int main(void)
@@ -166,6 +233,7 @@ int main(void)
     }
     fail_pt_at = 0;
     assert(!gma3600_sgx_mmu_exercise(&heap, physical, 4, 1, &out));
+    persistent_bindings(&heap, physical);
     /* Repeated frees in a partial, single-PT heap must preserve capacity too. */
     arena_desc.ui32Size = 127 * 4096;
     heap.ui32PageTableCount = 1; heap.ui32PTETotalUsable = 127;
@@ -174,6 +242,7 @@ int main(void)
         assert(heap.ui32PTETotalUsable == 127 && !pt_pages && !pt_metadata && !reservations);
     }
     assert(gma3600_sgx_mmu_exercise(&heap, physical, 4, 1, &out) == -EINVAL);
-    puts("Actual DDK MMU tests passed: scatter PTEs, boundary crossing, repeated free capacity and partial PT allocation rollback");
+    persistent_bindings(&heap, physical);
+    puts("Actual DDK MMU tests passed: persistent sibling allocations, VA reuse, scatter PTEs, boundary crossing, repeated free capacity and partial PT allocation rollback");
     return 0;
 }

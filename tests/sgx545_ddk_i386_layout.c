@@ -50,3 +50,21 @@ MEM_FIELD(hMappingInfo, mapping);
 MEM_FIELD(hKernelMemInfo, kernel_mem);
 MEM_FIELD(hResItem, resource);
 MEM_FIELD(psNext, next);
+
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_ALLOCDEVICEMEM) == 24, "device allocation request");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_ALLOCDEVICEMEM) == sizeof(struct sgx545_alloc_device_out), "device allocation reply");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_FREEDEVICEMEM) == 12, "device free request");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_FREEDEVICEMEM) == 4, "device free reply");
+_Static_assert(PVRSRV_BRIDGE_ALLOC_DEVICEMEM == SGX545_COMMAND(SGX545_CMD_ALLOC_DEVICE), "device alloc command");
+_Static_assert(PVRSRV_BRIDGE_FREE_DEVICEMEM == SGX545_COMMAND(SGX545_CMD_FREE_DEVICE), "device free command");
+_Static_assert((PVRSRV_MEM_READ | PVRSRV_MEM_WRITE | PVRSRV_MEM_NO_SYNCOBJ | PVRSRV_HAP_WRITECOMBINE) == SGX545_DEVICE_FLAGS, "device flags");
+_Static_assert(PVRSRV_MEM_RAM_BACKED_ALLOCATION == SGX545_RAM_BACKED, "RAM backed flag");
+
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_IN_ALLOCDEVICEMEM, hDevCookie) == 4, "device cookie offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_IN_ALLOCDEVICEMEM, hDevMemHeap) == 8, "device heap offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_IN_ALLOCDEVICEMEM, ui32Attribs) == 12, "device flags offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_IN_ALLOCDEVICEMEM, uSize) == 16, "device size offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_IN_ALLOCDEVICEMEM, uAlignment) == 20, "device alignment offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_ALLOCDEVICEMEM, psKernelMemInfo) == __builtin_offsetof(struct sgx545_alloc_device_out, kernel_mem), "device token offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_ALLOCDEVICEMEM, sClientMemInfo) == __builtin_offsetof(struct sgx545_alloc_device_out, mem), "device client offset");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_ALLOCDEVICEMEM, sClientSyncInfo) == __builtin_offsetof(struct sgx545_alloc_device_out, sync), "device sync offset");

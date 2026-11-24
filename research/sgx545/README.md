@@ -60,6 +60,14 @@ checks partial PT rollback; it does not enable hardware MMU access or rendering.
 The [offline MMU build/test record](offline-mmu-6.12-build.json) lists the native
 functions exercised, failure cases and both successful kernel compile profiles.
 
+[The offline MMU test passed on the Atom](d2500hn-offline-mmu.json): ten cases,
+all PTE readbacks correct, no remaining page tables, and zero-page cleanup.
+Services 0.8.0 now adds [persistent device memory](../../docs/SGX545-DEVICE-MEMORY-TESTING.md),
+with Intel 1.7 allocation/free wire translation, backing-page pins, and native
+PTE lifetime independent of open CPU VMAs. The
+[build and host-test record](device-memory-6.12-build.json) covers both profiles
+and the actual i386 public-header layouts. Hardware tests remain pending.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

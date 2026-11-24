@@ -324,6 +324,33 @@ int gma_sgx_buffer_visit(struct gma_sgx_buffers *p, void *owner, u32 token,
 	return ret;
 }
 
+int gma_sgx_buffer_pin(struct gma_sgx_buffers *p, void *owner, u32 token, void **pin)
+{
+	struct gma_sgx_buffer *b;
+	int ret = 0;
+
+	*pin = NULL;
+	mutex_lock(&p->lock);
+	b = buffer_find(p, owner, token);
+	if (!p->online) ret = -ENODEV;
+	else if (!b) ret = -ENOENT;
+	else { b->refs++; *pin = b; }
+	mutex_unlock(&p->lock);
+	return ret;
+}
+
+void gma_sgx_buffer_unpin(void *pin)
+{
+	struct gma_sgx_buffer *b = pin;
+	struct gma_sgx_buffers *p = b->pool;
+
+	kref_get(&p->ref);
+	mutex_lock(&p->lock);
+	buffer_put_locked(b);
+	mutex_unlock(&p->lock);
+	kref_put(&p->ref, pool_destroy);
+}
+
 void gma_sgx_buffers_stop(struct gma_sgx_buffers *p)
 {
 	struct gma_sgx_buffer *b, *next;
