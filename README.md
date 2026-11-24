@@ -21,9 +21,12 @@ The [initializer tests](docs/SGX545-INITIALIZER-TESTING.md) passed for explicit 
 automatic abort. The [shared-buffer tests](docs/SGX545-BUFFER-TESTING.md) also passed
 on the Atom, including WC coherence and mapping lifetime. The
 [offline MMU test also passed](research/sgx545/d2500hn-offline-mmu.json), including
-all ten scatter/boundary/reuse cases. Services 0.8.0 adds
-[persistent device memory tests](docs/SGX545-DEVICE-MEMORY-TESTING.md) with native
-VA/PTE lifetimes and independent CPU mappings. GPU execution remains disabled.
+all ten scatter/boundary/reuse cases. The
+[persistent device memory tests](docs/SGX545-DEVICE-MEMORY-TESTING.md) passed with
+services 0.8.0, including native VA/PTE lifetimes, neighboring allocations, WC
+coherence and both CPU mapping cleanup paths. Version 0.8.1 adds the
+[original Intel CONNECT/free forms and initializer ABI audit](docs/SGX545-INTEL-ABI.md).
+GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the

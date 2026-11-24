@@ -34,7 +34,7 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		struct sgx545_map_info_out mapped;
 		struct sgx545_alloc_device_out device;
 	} out = {0};
-	__u32 in[14] = {0}, cmd, token = 0, out_size;
+	__u32 in[15] = {0}, cmd, token = 0, out_size;
 	int ret, copied, rollback = 0, created = 0;
 
 	if ((r->bridge_id & ~0xffU) != SGX545_COMMAND_BASE)
@@ -42,8 +42,8 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 	cmd = r->bridge_id & 0xffU;
 	switch (cmd) {
 	case SGX545_CMD_CONNECT:
-		out_size = sizeof(out.connect);
-		if (r->in_size != 8 || r->services)
+		out_size = r->out_size;
+		if ((out_size != 8 && out_size != sizeof(out.connect)) || r->in_size != 8 || r->services)
 			return -EINVAL;
 		break;
 	case SGX545_CMD_ACQUIRE:
@@ -57,8 +57,11 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			return -EINVAL;
 		break;
 	case SGX545_CMD_FREE_DEVICE:
-		out_size = sizeof(__u32);
-		if (r->in_size != 12)
+		out_size = r->out_size;
+		if (out_size != 4 && out_size != 8)
+			return -EINVAL;
+		/* Intel 20120717 appends an untrusted 48-byte client record. */
+		if (r->in_size != 12 && r->in_size != 12 + sizeof(struct sgx545_client_mem32))
 			return -EINVAL;
 		break;
 	case SGX545_CMD_ALLOC_SHARED:

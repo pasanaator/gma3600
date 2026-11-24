@@ -1,0 +1,516 @@
+{
+  "target": "Intel D2500HN / Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.8.1",
+  "pinned_compat_source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "reference_package": {
+    "name": "cedarview-drm_20120717-0ubuntu1_i386.deb",
+    "size": 2539960,
+    "sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "url": "https://old-releases.ubuntu.com/ubuntu/pool/multiverse/c/cedarview-drm-drivers/cedarview-drm_20120717-0ubuntu1_i386.deb"
+  },
+  "reference_package_index": "precise-updates/multiverse/binary-i386/Packages.bz2; cached signed-Release verification recorded with the previous Intel artifact audit",
+  "reference_public_header_defines": [
+    "LINUX",
+    "SGX545",
+    "SUPPORT_SGX545",
+    "SGX_CORE_REV=10131",
+    "RELEASE",
+    "SERVICES4",
+    "PVR2D_VALIDATE_INPUT_PARAMS",
+    "SUPPORT_DRI_DRM",
+    "SUPPORT_DRI_DRM_EXT",
+    "SUPPORT_SRVINIT",
+    "SUPPORT_SGX",
+    "SUPPORT_LINUX_X86_WRITECOMBINE",
+    "TRANSFER_QUEUE",
+    "SYS_USING_INTERRUPTS",
+    "SUPPORT_HW_RECOVERY",
+    "PVR_SECURE_HANDLES",
+    "USE_PTHREADS",
+    "SUPPORT_SGX_EVENT_OBJECT",
+    "SUPPORT_SGX_HWPERF",
+    "SUPPORT_LINUX_X86_PAT",
+    "PVR_PROC_USE_SEQ_FILE",
+    "SUPPORT_CACHE_LINE_FLUSH",
+    "SUPPORT_CPU_CACHED_BUFFERS",
+    "DISABLE_PM",
+    "SUPPORT_SGX_NEW_STATUS_VALS",
+    "SUPPORT_PERCONTEXT_PB",
+    "DRM_PVR_USE_INTEL_FB",
+    "PVRSRV_RESOURCE_PROFILING",
+    "PERPROC_LIST",
+    "RES_MAN_EXTEND",
+    "PVRSRV_OS_MEM_INFO"
+  ],
+  "reference_i386_measurements": {
+    "magic": 1397184577,
+    "version": 1,
+    "pointer_bytes": 4,
+    "core_revision_profile": 10131,
+    "build_options": 393752,
+    "build_option_mask": 4294967295,
+    "bridge_package_bytes": 28,
+    "connect_reply_bytes": 8,
+    "client_memory_bytes": 48,
+    "device_alloc_request_bytes": 24,
+    "device_alloc_reply_bytes": 76,
+    "device_free_request_bytes": 60,
+    "device_free_reply_bytes": 8,
+    "init_info_reply_bytes": 776,
+    "init2_command": 3223086947,
+    "init2_request_bytes": 2068,
+    "init2_reply_bytes": 8,
+    "init2_info_offset": 8,
+    "init2_info_bytes": 2060,
+    "init2_scripts_offset": 68,
+    "init2_options_offset": 1796,
+    "init2_sizes_offset": 1800,
+    "init2_hwperf_offset": 1852,
+    "init2_tasig_offset": 1856,
+    "init2_edm_task_offset": 1864,
+    "init2_dev_data_offset": 1892,
+    "init2_mem_handles_offset": 1988,
+    "script_command_bytes": 12,
+    "scripts_bytes": 1728,
+    "script_write_opcode": 1,
+    "script_halt_opcode": 2,
+    "struct_sizes_bytes": 52,
+    "firmware_command_bytes": 32,
+    "firmware_ccb_bytes": 8192,
+    "firmware_ccb_control_bytes": 8,
+    "firmware_host_control_bytes": 68,
+    "firmware_power_offset": 4,
+    "firmware_interrupt_offset": 32,
+    "firmware_interrupt_clear_offset": 36,
+    "wire_init2_request_bytes": 2068,
+    "wire_init2_info_bytes": 2060,
+    "wire_init2_scripts_offset": 68,
+    "wire_init2_options_offset": 1796,
+    "wire_init2_handles_offset": 1988,
+    "wire_connect_reply_bytes": 8,
+    "wire_device_free_request_bytes": 60,
+    "wire_device_free_reply_bytes": 8
+  },
+  "profiles": [
+    {
+      "compile_profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "source_and_i386_layout_tests": "passed",
+      "services_compiler_warnings": 0,
+      "services_sha256": "dfe5348ca12b8a359cdb2e8e579ccac7d2fc9129933b10633b80e7593a16015e",
+      "compat_i386_measurements": {
+        "magic": 1397184577,
+        "version": 1,
+        "pointer_bytes": 4,
+        "core_revision_profile": 10131,
+        "build_options": 3539480,
+        "build_option_mask": 4291165318,
+        "bridge_package_bytes": 28,
+        "connect_reply_bytes": 12,
+        "client_memory_bytes": 48,
+        "device_alloc_request_bytes": 24,
+        "device_alloc_reply_bytes": 76,
+        "device_free_request_bytes": 12,
+        "device_free_reply_bytes": 4,
+        "init_info_reply_bytes": 776,
+        "init2_command": 3223086947,
+        "init2_request_bytes": 2068,
+        "init2_reply_bytes": 8,
+        "init2_info_offset": 8,
+        "init2_info_bytes": 2060,
+        "init2_scripts_offset": 68,
+        "init2_options_offset": 1796,
+        "init2_sizes_offset": 1800,
+        "init2_hwperf_offset": 1852,
+        "init2_tasig_offset": 1856,
+        "init2_edm_task_offset": 1864,
+        "init2_dev_data_offset": 1892,
+        "init2_mem_handles_offset": 1988,
+        "script_command_bytes": 12,
+        "scripts_bytes": 1728,
+        "script_write_opcode": 1,
+        "script_halt_opcode": 2,
+        "struct_sizes_bytes": 52,
+        "firmware_command_bytes": 32,
+        "firmware_ccb_bytes": 8192,
+        "firmware_ccb_control_bytes": 8,
+        "firmware_host_control_bytes": 68,
+        "firmware_power_offset": 4,
+        "firmware_interrupt_offset": 32,
+        "firmware_interrupt_clear_offset": 36,
+        "wire_init2_request_bytes": 2068,
+        "wire_init2_info_bytes": 2060,
+        "wire_init2_scripts_offset": 68,
+        "wire_init2_options_offset": 1796,
+        "wire_init2_handles_offset": 1988,
+        "wire_connect_reply_bytes": 8,
+        "wire_device_free_request_bytes": 60,
+        "wire_device_free_reply_bytes": 8
+      },
+      "actual_kernel_amd64_measurements": {
+        "magic": 1397184577,
+        "version": 1,
+        "pointer_bytes": 8,
+        "core_revision_profile": 10131,
+        "build_options": 3539480,
+        "build_option_mask": 4291165318,
+        "bridge_package_bytes": 48,
+        "connect_reply_bytes": 16,
+        "client_memory_bytes": 80,
+        "device_alloc_request_bytes": 48,
+        "device_alloc_reply_bytes": 128,
+        "device_free_request_bytes": 24,
+        "device_free_reply_bytes": 4,
+        "init_info_reply_bytes": 1040,
+        "init2_command": 3224397667,
+        "init2_request_bytes": 2192,
+        "init2_reply_bytes": 8,
+        "init2_info_offset": 16,
+        "init2_info_bytes": 2176,
+        "init2_scripts_offset": 92,
+        "init2_options_offset": 1820,
+        "init2_sizes_offset": 1824,
+        "init2_hwperf_offset": 1880,
+        "init2_tasig_offset": 1888,
+        "init2_edm_task_offset": 1904,
+        "init2_dev_data_offset": 1932,
+        "init2_mem_handles_offset": 2032,
+        "script_command_bytes": 12,
+        "scripts_bytes": 1728,
+        "script_write_opcode": 1,
+        "script_halt_opcode": 2,
+        "struct_sizes_bytes": 52,
+        "firmware_command_bytes": 32,
+        "firmware_ccb_bytes": 8192,
+        "firmware_ccb_control_bytes": 8,
+        "firmware_host_control_bytes": 68,
+        "firmware_power_offset": 4,
+        "firmware_interrupt_offset": 32,
+        "firmware_interrupt_clear_offset": 36,
+        "wire_init2_request_bytes": 2068,
+        "wire_init2_info_bytes": 2060,
+        "wire_init2_scripts_offset": 68,
+        "wire_init2_options_offset": 1796,
+        "wire_init2_handles_offset": 1988,
+        "wire_connect_reply_bytes": 8,
+        "wire_device_free_request_bytes": 60,
+        "wire_device_free_reply_bytes": 8
+      },
+      "assessment": {
+        "selected_i386_wire_layout_matches": false,
+        "i386_wire_differences": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          }
+        },
+        "supported_protocol_forms": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          }
+        },
+        "selected_i386_wire_supported": true,
+        "unsupported_i386_wire_differences": {},
+        "selected_firmware_control_layouts_match": true,
+        "firmware_control_differences": {},
+        "raw_build_option_xor": 3145728,
+        "masked_build_option_xor": 0,
+        "masked_build_options_match": true,
+        "native_requires_translation": true,
+        "native_translation_differences": {
+          "bridge_package_bytes": {
+            "reference": 28,
+            "other": 48
+          },
+          "init2_command": {
+            "reference": 3223086947,
+            "other": 3224397667
+          },
+          "init2_request_bytes": {
+            "reference": 2068,
+            "other": 2192
+          },
+          "init2_info_offset": {
+            "reference": 8,
+            "other": 16
+          },
+          "init2_info_bytes": {
+            "reference": 2060,
+            "other": 2176
+          },
+          "init2_scripts_offset": {
+            "reference": 68,
+            "other": 92
+          },
+          "init2_options_offset": {
+            "reference": 1796,
+            "other": 1820
+          },
+          "init2_sizes_offset": {
+            "reference": 1800,
+            "other": 1824
+          },
+          "init2_hwperf_offset": {
+            "reference": 1852,
+            "other": 1880
+          },
+          "init2_tasig_offset": {
+            "reference": 1856,
+            "other": 1888
+          },
+          "init2_edm_task_offset": {
+            "reference": 1864,
+            "other": 1904
+          },
+          "init2_dev_data_offset": {
+            "reference": 1892,
+            "other": 1932
+          },
+          "init2_mem_handles_offset": {
+            "reference": 1988,
+            "other": 2032
+          }
+        },
+        "firmware_revision_or_execution_verified": false
+      }
+    },
+    {
+      "compile_profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "source_and_i386_layout_tests": "passed",
+      "services_compiler_warnings": 0,
+      "services_sha256": "fd2b602bfbf3012f3e54d117988c8a0144d52c5ffa8ed1a3e5e4b50880488cfc",
+      "compat_i386_measurements": {
+        "magic": 1397184577,
+        "version": 1,
+        "pointer_bytes": 4,
+        "core_revision_profile": 10141,
+        "build_options": 3539480,
+        "build_option_mask": 4291165318,
+        "bridge_package_bytes": 28,
+        "connect_reply_bytes": 12,
+        "client_memory_bytes": 48,
+        "device_alloc_request_bytes": 24,
+        "device_alloc_reply_bytes": 76,
+        "device_free_request_bytes": 12,
+        "device_free_reply_bytes": 4,
+        "init_info_reply_bytes": 776,
+        "init2_command": 3223086947,
+        "init2_request_bytes": 2068,
+        "init2_reply_bytes": 8,
+        "init2_info_offset": 8,
+        "init2_info_bytes": 2060,
+        "init2_scripts_offset": 68,
+        "init2_options_offset": 1796,
+        "init2_sizes_offset": 1800,
+        "init2_hwperf_offset": 1852,
+        "init2_tasig_offset": 1856,
+        "init2_edm_task_offset": 1864,
+        "init2_dev_data_offset": 1892,
+        "init2_mem_handles_offset": 1988,
+        "script_command_bytes": 12,
+        "scripts_bytes": 1728,
+        "script_write_opcode": 1,
+        "script_halt_opcode": 2,
+        "struct_sizes_bytes": 52,
+        "firmware_command_bytes": 32,
+        "firmware_ccb_bytes": 8192,
+        "firmware_ccb_control_bytes": 8,
+        "firmware_host_control_bytes": 68,
+        "firmware_power_offset": 4,
+        "firmware_interrupt_offset": 32,
+        "firmware_interrupt_clear_offset": 36,
+        "wire_init2_request_bytes": 2068,
+        "wire_init2_info_bytes": 2060,
+        "wire_init2_scripts_offset": 68,
+        "wire_init2_options_offset": 1796,
+        "wire_init2_handles_offset": 1988,
+        "wire_connect_reply_bytes": 8,
+        "wire_device_free_request_bytes": 60,
+        "wire_device_free_reply_bytes": 8
+      },
+      "actual_kernel_amd64_measurements": {
+        "magic": 1397184577,
+        "version": 1,
+        "pointer_bytes": 8,
+        "core_revision_profile": 10141,
+        "build_options": 3539480,
+        "build_option_mask": 4291165318,
+        "bridge_package_bytes": 48,
+        "connect_reply_bytes": 16,
+        "client_memory_bytes": 80,
+        "device_alloc_request_bytes": 48,
+        "device_alloc_reply_bytes": 128,
+        "device_free_request_bytes": 24,
+        "device_free_reply_bytes": 4,
+        "init_info_reply_bytes": 1040,
+        "init2_command": 3224397667,
+        "init2_request_bytes": 2192,
+        "init2_reply_bytes": 8,
+        "init2_info_offset": 16,
+        "init2_info_bytes": 2176,
+        "init2_scripts_offset": 92,
+        "init2_options_offset": 1820,
+        "init2_sizes_offset": 1824,
+        "init2_hwperf_offset": 1880,
+        "init2_tasig_offset": 1888,
+        "init2_edm_task_offset": 1904,
+        "init2_dev_data_offset": 1932,
+        "init2_mem_handles_offset": 2032,
+        "script_command_bytes": 12,
+        "scripts_bytes": 1728,
+        "script_write_opcode": 1,
+        "script_halt_opcode": 2,
+        "struct_sizes_bytes": 52,
+        "firmware_command_bytes": 32,
+        "firmware_ccb_bytes": 8192,
+        "firmware_ccb_control_bytes": 8,
+        "firmware_host_control_bytes": 68,
+        "firmware_power_offset": 4,
+        "firmware_interrupt_offset": 32,
+        "firmware_interrupt_clear_offset": 36,
+        "wire_init2_request_bytes": 2068,
+        "wire_init2_info_bytes": 2060,
+        "wire_init2_scripts_offset": 68,
+        "wire_init2_options_offset": 1796,
+        "wire_init2_handles_offset": 1988,
+        "wire_connect_reply_bytes": 8,
+        "wire_device_free_request_bytes": 60,
+        "wire_device_free_reply_bytes": 8
+      },
+      "assessment": {
+        "selected_i386_wire_layout_matches": false,
+        "i386_wire_differences": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          }
+        },
+        "supported_protocol_forms": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          }
+        },
+        "selected_i386_wire_supported": true,
+        "unsupported_i386_wire_differences": {},
+        "selected_firmware_control_layouts_match": true,
+        "firmware_control_differences": {},
+        "raw_build_option_xor": 3145728,
+        "masked_build_option_xor": 0,
+        "masked_build_options_match": true,
+        "native_requires_translation": true,
+        "native_translation_differences": {
+          "bridge_package_bytes": {
+            "reference": 28,
+            "other": 48
+          },
+          "init2_command": {
+            "reference": 3223086947,
+            "other": 3224397667
+          },
+          "init2_request_bytes": {
+            "reference": 2068,
+            "other": 2192
+          },
+          "init2_info_offset": {
+            "reference": 8,
+            "other": 16
+          },
+          "init2_info_bytes": {
+            "reference": 2060,
+            "other": 2176
+          },
+          "init2_scripts_offset": {
+            "reference": 68,
+            "other": 92
+          },
+          "init2_options_offset": {
+            "reference": 1796,
+            "other": 1820
+          },
+          "init2_sizes_offset": {
+            "reference": 1800,
+            "other": 1824
+          },
+          "init2_hwperf_offset": {
+            "reference": 1852,
+            "other": 1880
+          },
+          "init2_tasig_offset": {
+            "reference": 1856,
+            "other": 1888
+          },
+          "init2_edm_task_offset": {
+            "reference": 1864,
+            "other": 1904
+          },
+          "init2_dev_data_offset": {
+            "reference": 1892,
+            "other": 1932
+          },
+          "init2_mem_handles_offset": {
+            "reference": 1988,
+            "other": 2032
+          }
+        },
+        "firmware_revision_or_execution_verified": false
+      }
+    }
+  ],
+  "host_c_suites": 11,
+  "python_unittests": 13,
+  "sanitizers": [
+    "AddressSanitizer",
+    "UndefinedBehaviorSanitizer"
+  ],
+  "new_protocol_tests": [
+    "8-byte CONNECT success/reuse and rollback; output length does not overwrite trailing memory",
+    "60-byte FREE request copies all words but never follows the untrusted trailing client record",
+    "8-byte FREE reply has zero pointer/extra word and exact copyout length",
+    "Malformed sizes and wrong device tokens rejected before releasing allocation",
+    "Successful original FREE commits even if its output copy fails",
+    "Existing 12-byte CONNECT, 12-byte FREE input and 4-byte FREE output remain supported"
+  ],
+  "hardware_original_payload_test": "pending: --device-intel",
+  "previous_device_memory_hardware_result": "d2500hn-device-memory.json",
+  "initializer_command_99_enabled": false,
+  "gpu_execution_enabled": false,
+  "objects_executed_by_audit": false,
+  "proprietary_libraries_executed": false,
+  "selected_header_layout_matches_do_not_prove_firmware_or_rendering_compatibility": true,
+  "guide": "docs/SGX545-INTEL-ABI.md"
+}

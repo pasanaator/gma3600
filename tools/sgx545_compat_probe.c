@@ -20,6 +20,9 @@ _Static_assert(sizeof(struct sgx545_alloc_device_out) == 76, "i386 device alloca
 _Static_assert(sizeof(struct sgx545_device_check) == 24, "device diagnostic message");
 _Static_assert(sizeof(struct sgx545_mmu_check) == 40, "MMU diagnostic message");
 
+_Static_assert(sizeof(struct sgx545_init2_in32) == 2068, "Intel initializer wire model");
+static int original_intel_abi;
+
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
 extern unsigned probe_mmap2(unsigned fd, unsigned size, unsigned prot, unsigned flags, unsigned offset);
 
@@ -87,7 +90,7 @@ static unsigned connect_bridge(int fd)
 {
 	unsigned in[2] = {0};
 	struct sgx545_connect_out out = {0};
-	struct sgx545_bridge32 w = package(12, 0, in, sizeof(in), &out, sizeof(out));
+	struct sgx545_bridge32 w = package(12, 0, in, sizeof(in), &out, original_intel_abi ? 8 : sizeof(out));
 
 	expect("CONNECT ioctl", call(fd, &w), 0);
 	if (out.error || !out.services_lo || out.services_hi)
@@ -407,7 +410,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	struct sgx545_bridge32 w;
 	struct { unsigned flags, token; struct sgx545_client_mem32 mem; } cpu_free = {0};
 	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 3 * 4096 + 17, 0};
-	unsigned free_in[3] = {0, device, 0}, i, heaps = 0, other, other_device;
+	unsigned free_in[15] = {0, device, 0}, i, heaps = 0, other, other_device;
 	volatile unsigned *first = 0, *second = 0;
 	int fd2;
 
@@ -470,13 +473,13 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		expect("other file device acquire", call(fd2, &w), 0);
 		if (result.error || !result.handle) fail("other file device acquire payload", result.error);
 		other_device = result.handle; free_in[1] = other_device; free_in[2] = a.kernel_mem;
-		w = package(7, other, free_in, 12, &result.error, 4);
+		w = package(7, other, free_in, original_intel_abi ? 60 : 12, &result.error, original_intel_abi ? 8 : 4);
 		expect("cross-file device free rejected", call(fd2, &w), -2);
 		check = (struct sgx545_device_check){other, other_device, a.kernel_mem, 0, 0, 0};
 		expect("cross-file device PTE check rejected", sys3(54, fd2, SGX545_IOCTL_DEVICE_CHECK, ptr(&check)), -2);
 		disconnect_bridge(fd2, other); expect("close other device file", sys3(6, fd2, 0, 0), 0);
 		free_in[1] = device;
-		w = package(7, services, free_in, 12, &result.error, 4);
+		w = package(7, services, free_in, original_intel_abi ? 60 : 12, &result.error, original_intel_abi ? 8 : 4);
 		expect("free device allocation with live CPU mapping", call(fd, &w), 0);
 		expect("device free payload", result.error, 0);
 		expect("stale device free rejected", call(fd, &w), -2);
@@ -490,14 +493,14 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		if (c.kernel_mem == a.kernel_mem || c.kernel_mem == b.kernel_mem)
 			fail("device allocation reused stale token", c.kernel_mem);
 		device_walk(fd, services, device, &b); device_walk(fd, services, device, &c);
-		free_in[2] = c.kernel_mem; w = package(7, services, free_in, 12, &result.error, 4);
+		free_in[2] = c.kernel_mem; w = package(7, services, free_in, original_intel_abi ? 60 : 12, &result.error, original_intel_abi ? 8 : 4);
 		expect("free replacement allocation", call(fd, &w), 0); expect("free replacement payload", result.error, 0);
 		device_walk(fd, services, device, &b);
 		say("DEVICE heap=0x"); hex(heap->id); say(" pages=4 aligned_va=0x"); hex(b.mem.device_address);
 		say(" sibling_free=preserved CPU_mapping=preserved\n");
 		/* Keep one live allocation and both VMAs for final disconnect/close. */
 		if (heaps == 3) break;
-		free_in[2] = b.kernel_mem; w = package(7, services, free_in, 12, &result.error, 4);
+		free_in[2] = b.kernel_mem; w = package(7, services, free_in, original_intel_abi ? 60 : 12, &result.error, original_intel_abi ? 8 : 4);
 		expect("free second allocation", call(fd, &w), 0); expect("free second payload", result.error, 0);
 		expect("unmap first device buffer", sys3(91, ptr((const void *)first), 16384, 0), 0);
 		expect("unmap second device buffer", sys3(91, ptr((const void *)second), 16384, 0), 0);
@@ -541,10 +544,10 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=12 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
@@ -553,6 +556,7 @@ int probe_main(unsigned *initial_stack)
 		else if (same(argv[1], "--mmu")) init_mode = 5;
 		else if (same(argv[1], "--device")) init_mode = 6;
 		else if (same(argv[1], "--device-close")) init_mode = 7;
+		else if (same(argv[1], "--device-intel")) { init_mode = 6; original_intel_abi = 1; }
 		else path = argv[1];
 	}
 	fd = open_bridge(path);
@@ -616,6 +620,7 @@ int probe_main(unsigned *initial_stack)
 	if (init_mode) {
 		if (init_mode >= 6) {
 			device_test(fd, services, device, path, init_mode == 7);
+			if (original_intel_abi) say("PASS: original Intel CONNECT=8 FREE_DEVICE_IN=60 FREE_DEVICE_OUT=8 payload forms\n");
 			return 0;
 		}
 		if (init_mode >= 3) {

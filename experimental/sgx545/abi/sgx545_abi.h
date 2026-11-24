@@ -38,8 +38,9 @@ struct sgx545_bridge_request {
 #define SGX545_BRIDGE32_SIZE 28
 #define SGX545_BRIDGE_BUFFER_MAX 0x1000
 
-/* Intel 1.7 i386 ioctl and payload layouts. All members are 32-bit words,
- * including the two halves of CONNECT's 64-bit handle (aligned to 4 on i386).
+/* Intel i386 ioctl and payload layouts. All members are 32-bit words.
+ * The original Intel CONNECT reply is 8 bytes; the community compatibility
+ * reply below adds a high handle word. Both forms are supported.
  */
 #define SGX545_IOCTL_SERVICES       0xc01c6440U
 #define SGX545_IOCTL_SERVICES_ALIAS 0xc01c6452U
@@ -106,6 +107,26 @@ struct sgx545_alloc_device_out {
 	__u32 sync[5]; /* NO_SYNCOBJ: all fields remain zero. */
 };
 struct sgx545_map_info_out { __u32 error, offset, byte_offset, real_size, user_address; };
+
+/* Audited Intel 20120717 release initializer layout: i386, SGX545, HWPERF,
+ * recovery, no PDUMP/debug. This is a wire model only; command 99 is disabled.
+ * Never cast it to SGX_BRIDGE_INIT_INFO, whose handles are native pointers.
+ */
+struct sgx545_init_command32 { __u32 op, offset, value; };
+struct sgx545_init_scripts32 {
+	struct sgx545_init_command32 part1[64], part2[64], deinit[16];
+};
+struct sgx545_init2_info32 {
+	__u32 ccb, ccb_control, event_kicker, host_control, ta3d_control, misc;
+	__u32 host_kick[11];
+	struct sgx545_init_scripts32 scripts;
+	__u32 build_options, struct_sizes[13];
+	__u32 hwperf, ta_signature, signature_3d;
+	__u32 edm_task[2], clock_control[2], clock_status_reg, clock_status_mask, cache_control;
+	__u32 dev_data[24], mem_handles[18];
+};
+struct sgx545_init2_in32 { __u32 flags, device; struct sgx545_init2_info32 info; };
+struct sgx545_init2_out32 { __u32 error, kernel_build_options; };
 
 /* Diagnostic subset, scoped to an open file. Backend objects never cross ABI. */
 struct sgx545_session {

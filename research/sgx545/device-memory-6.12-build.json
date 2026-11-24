@@ -54,7 +54,7 @@
     "--device",
     "--device-close"
   ],
-  "hardware_test_status": "pending",
+  "hardware_test_status": "both modes passed; see d2500hn-device-memory.json",
   "previous_hardware_result": "d2500hn-offline-mmu.json",
   "device_allocation_limit_bytes": 1048576,
   "owned_backing_limit_per_file": 16,

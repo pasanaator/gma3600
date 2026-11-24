@@ -15,8 +15,10 @@ the real compat ioctl path, file-owned handles and clean teardown. The
 [initializer tests](SGX545-INITIALIZER-TESTING.md) passed for exclusive ownership,
 read-only heap metadata and both abort paths. The
 [shared-buffer tests](SGX545-BUFFER-TESTING.md) also passed for WC coherence and
-CPU mmap lifetime. The next [offline MMU test](SGX545-MMU-TESTING.md) uses the
-native DDK's VA/scatter/PTE/free routines on RAM, without binding the GPU to them.
+CPU mmap lifetime. The [offline MMU](SGX545-MMU-TESTING.md) and
+[persistent device-memory](SGX545-DEVICE-MEMORY-TESTING.md) tests also passed.
+The [original Intel ABI audit](SGX545-INTEL-ABI.md) identifies the next initializer
+translation requirements and fixes CONNECT/free payload differences.
 The Intel i386 userspace artifact has been archive-verified and statically audited;
 see [the artifact record](../research/sgx545/README.md). The normal display build
 remains version 1.0.4, with SGX host support excluded by default.
@@ -179,10 +181,11 @@ Connect/enumerate/acquire/disconnect translation has also passed on the Atom,
 including CONNECT's differently aligned 64-bit handle field. Initializer
 ownership and the 776-byte i386 heap-info reply have passed on hardware.
 Shared system-memory buffers have translated allocation/free/map-info layouts
-and their rewritten backing/mmap lifetime has passed on the Atom. The next native
-MMU exercise checks temporary device addresses and scatter page tables in RAM.
-Persistent device-heap allocation,
-remaining mapping APIs, DMA, power/IRQ integration and rendering remain unfinished.
+and their rewritten backing/mmap lifetime has passed on the Atom. Native MMU
+scatter mappings and persistent shared-heap allocations have also passed. The
+original Intel headers now have compiler measurements alongside the actual
+amd64 kernel build. Initializer translation/ownership handoff, remaining mapping
+APIs, DMA, power/IRQ integration and rendering remain unfinished.
 No DRM rendering interface is exposed yet.
 
 ## Inspected source references

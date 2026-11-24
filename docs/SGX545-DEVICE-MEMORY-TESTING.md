@@ -1,5 +1,10 @@
 # Test persistent SGX device allocations on the Atom
 
+**Hardware result:** both 0.8.0 modes passed on all three shared heaps, with zero
+remaining allocations, mappings, errors and tracked pages after unload. See
+[the D2500HN result](../research/sgx545/d2500hn-device-memory.json).
+The next test checks [original Intel payload forms](SGX545-INTEL-ABI.md).
+
 The [0.7.0 offline MMU test passed on the D2500HN](../research/sgx545/d2500hn-offline-mmu.json),
 including all ten scatter/boundary/reuse cases and zero-page cleanup. Services
 **0.8.0** adds file-owned device allocations that remain mapped between bridge
@@ -8,7 +13,9 @@ scatter mapping, PTE lookup and free routines, with rewritten backing-page and
 ownership handling.
 
 The Intel 1.7 i386 allocation/free payloads are translated explicitly: requests
-are 24/12 bytes and replies are 76/4 bytes. This is a restricted implementation
+are 24/12 bytes and replies are 76/4 bytes in the compatibility forms tested
+with 0.8.0. Version 0.8.1 also accepts the original Intel 60-byte free request
+and 8-byte reply. This is a restricted implementation
 of those commands on the project diagnostic device, not a complete legacy
 userspace interface. Only read/write WC allocations with `NO_SYNCOBJ` are
 accepted. There is no sync object, fence, per-context heap, DMA submission or
@@ -47,7 +54,7 @@ modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
 ```
 
 Choose a new output directory if that one already exists. Expected module
-version: `0.8.0`. Selftest includes `device_alloc=76 device_check=24`. Both compile
+version: `0.8.1` in current builds (`0.8.0` for the recorded hardware run). Selftest includes `device_alloc=76 device_check=24`. Both compile
 profiles have host tests; this guide continues the `10131` compile profile.
 Neither profile has yet been matched to running SGX firmware.
 

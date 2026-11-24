@@ -1,0 +1,57 @@
+{
+  "source": "User-supplied SSH transcript for --device and fresh-load --device-close",
+  "checkpoint": "6dabe6c / services 0.8.0",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, Linux 6.12.117+deb13-amd64, VGA",
+  "explicit_disconnect_result": "PASS: i386 persistent device allocations, aligned VA, CPU-order PTEs, WC roundtrip, sibling lifetime, rollback and disconnect with live mappings",
+  "deferred_close_result": "PASS: i386 persistent device allocations, aligned VA, CPU-order PTEs, WC roundtrip, sibling lifetime, rollback and deferred close cleanup",
+  "shared_heaps_per_mode": [
+    {
+      "heap": "0x07000002",
+      "pages": 4,
+      "aligned_va": "0xf2010000",
+      "sibling_free": "preserved",
+      "CPU_mapping": "preserved"
+    },
+    {
+      "heap": "0x07000003",
+      "pages": 4,
+      "aligned_va": "0xf4010000",
+      "sibling_free": "preserved",
+      "CPU_mapping": "preserved"
+    },
+    {
+      "heap": "0x07000008",
+      "pages": 4,
+      "aligned_va": "0xef010000",
+      "sibling_free": "preserved",
+      "CPU_mapping": "preserved"
+    }
+  ],
+  "status_after_each_client": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 device_allocations=0 device_pages=0 device_errors=0",
+  "explicit_disconnect_cleanup": {
+    "buffers": "[564.090191] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[564.090206] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0",
+    "services": "[564.111585] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "deferred_close_cleanup": {
+    "buffers": "[587.563210] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[587.563227] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0",
+    "services": "[587.575668] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "established": [
+    "Persistent CPU-inspected native PTEs in all three shared heaps",
+    "64 KiB device-address alignment",
+    "PTE physical addresses match CPU buffer page order",
+    "Zeroed padding and WC user/kernel roundtrip",
+    "Freeing one allocation preserves its neighbor and open CPU mapping",
+    "Copyout rollback, stale and cross-file handle rejection",
+    "Both disconnect and deferred-close cleanup release all tracked resources"
+  ],
+  "not_validated": [
+    "Live auxiliary detach with outstanding allocations on hardware",
+    "GPU DMA or active hardware page walks",
+    "Firmware compatibility, power/reset, SGX interrupt delivery or rendering"
+  ],
+  "visual_desktop_observation_in_transcript": "not explicitly supplied",
+  "gpu_execution_enabled": false
+}

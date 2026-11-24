@@ -1,5 +1,10 @@
 # Test the i386 diagnostic bridge on Debian 13 amd64
 
+Version 0.8.1 also accepts the original Intel 8-byte CONNECT reply. The 12-byte
+reply used by this historical diagnostic comes from the community compatibility
+headers. See [the original-source ABI audit and test](SGX545-INTEL-ABI.md).
+
+
 This checkpoint [passed on the Atom](../research/sgx545/d2500hn-i386-bridge.json).
 The next [initializer ownership and heap-info test](SGX545-INITIALIZER-TESTING.md)
 extends the client with `--init-info` and `--init-close` modes.

@@ -17,9 +17,10 @@ including the disabled shared-PB heap. The
 [shared-buffer tests also passed](../../research/sgx545/d2500hn-shared-buffers.json),
 including both free and deferred-close lifetimes.
 [All ten offline MMU hardware cases passed](../../research/sgx545/d2500hn-offline-mmu.json).
-The next [Atom test covers persistent device allocations](../../docs/SGX545-DEVICE-MEMORY-TESTING.md),
-including neighboring mappings, alignment and deferred close. GPU execution
-remains disabled. It uses the already loaded host2 driver.
+[Both persistent device-memory tests also passed](../../research/sgx545/d2500hn-device-memory.json),
+including neighboring mappings, alignment, WC coherence and deferred close.
+Version 0.8.1 adds [original Intel payload support and an initializer ABI audit](../../docs/SGX545-INTEL-ABI.md).
+GPU execution remains disabled.
 
 ## D2500HN hardware result
 
@@ -110,7 +111,7 @@ now also been build-validated; that is not a hardware compatibility result.
   lifetime. Unsupported sync/cache modes and per-context heaps remain rejected.
   A private readback ioctl verifies PTEs in CPU buffer order without GPU access.
   Host tests cover neighboring allocations, rollback, failed unmap retention and
-  close/detach. The `--device` and `--device-close` client modes await Atom testing.
+  close/detach. The `--device` and `--device-close` client modes have both passed on the Atom.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
@@ -221,9 +222,10 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Validate persistent device-memory allocation/free and both CPU VMA cleanup
-   paths on the Atom. Preparation, bridge, initializer, shared-buffer and offline
-   MMU tests have passed.
+1. Test the newly supported original Intel CONNECT/free forms. The original
+   initializer layout is now compiler-audited against the verified 20120717
+   kernel source. Preparation, bridge, initializer, shared-buffer, offline MMU
+   and both persistent-allocation tests have passed.
 2. Extend explicit nested-payload translation to remaining initializer memory
    and mapping commands, retaining ownership and rollback.
    Add the necessary DRM transport after validating the diagnostic subset.

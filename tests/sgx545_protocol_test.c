@@ -7,7 +7,7 @@
 #include "sgx545_abi.h"
 
 struct fake {
-	unsigned in[14];
+	unsigned in[15];
 	unsigned char out[776];
 	unsigned token, connects, acquires, releases, disconnects, enumerates;
 	int fail_in, fail_out, fail_connect, fail_acquire, fail_release, fail_disconnect;
@@ -302,6 +302,42 @@ static void device_protocol(void)
     assert(run(&s, &f, 7) == -ENOENT);
 }
 
+static void original_intel_protocol(void)
+{
+    struct fake f = {0};
+    struct sgx545_session s = {0};
+    struct sgx545_bridge_request r = request(12, 0);
+    unsigned token, i;
+
+    r.out_size = 8; f.fail_out = 1;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EFAULT && !s.services && f.disconnects == 1);
+    f.fail_out = 0; memset(f.out, 0xaa, sizeof(f.out));
+    assert(!sgx545_bridge_execute(&s, &ops, &f, &r) && s.services == word(&f, 1));
+    for (i = 8; i < sizeof(f.out); i++) assert(f.out[i] == 0xaa); /* no 12-byte overwrite */
+    s.device = 99; s.initializer = s.init_info = 1;
+    f.in[1] = 99; f.in[2] = 99; f.in[3] = SGX545_DEVICE_FLAGS; f.in[4] = 8193;
+    assert(!run(&s, &f, 6)); token = word(&f, 1);
+    r = request(7, s.services); r.in_size = 60; r.out_size = 8; f.in[2] = token;
+    for (i = 3; i < 15; i++) f.in[i] = 0xffffffff; /* never follow client pointers */
+    r.in_size = 56;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL && f.device_buffers);
+    r.in_size = 64;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL && f.device_buffers);
+    r.in_size = 60; f.in[1]++;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -ENOENT && f.device_buffers);
+    f.in[1]--; r.out_size = 12;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL && f.device_buffers);
+    r.out_size = 8; memset(f.out, 0xff, sizeof(f.out));
+    assert(!sgx545_bridge_execute(&s, &ops, &f, &r) && !word(&f, 0) && !word(&f, 1));
+    for (i = 8; i < sizeof(f.out); i++) assert(f.out[i] == 0xff);
+    memset(f.in, 0, sizeof(f.in)); f.in[1] = 99; f.in[2] = 99;
+    f.in[3] = SGX545_DEVICE_FLAGS; f.in[4] = 8193;
+    assert(!run(&s, &f, 6)); f.in[2] = word(&f, 1); f.fail_out = 1;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EFAULT && !f.device_buffers);
+    f.fail_out = 0;
+    assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -ENOENT);
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -383,6 +419,7 @@ int main(void)
 	initializer_protocol();
 	buffer_protocol();
 	device_protocol();
+	original_intel_protocol();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }

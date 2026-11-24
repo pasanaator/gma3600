@@ -66,7 +66,17 @@ Services 0.8.0 now adds [persistent device memory](../../docs/SGX545-DEVICE-MEMO
 with Intel 1.7 allocation/free wire translation, backing-page pins, and native
 PTE lifetime independent of open CPU VMAs. The
 [build and host-test record](device-memory-6.12-build.json) covers both profiles
-and the actual i386 public-header layouts. Hardware tests remain pending.
+and the actual i386 public-header layouts.
+[Both device-memory modes passed on the Atom](d2500hn-device-memory.json), with
+all three heaps, clean neighboring mappings and zero-page teardown.
+
+The [original Intel kernel-source ABI audit](initializer-abi-6.12-audit.json)
+uses an independently checksum-verified Ubuntu `cedarview-drm` source package
+from the same 20120717 release. It found CONNECT and device-free payload-size
+differences from the community compatibility headers. Services 0.8.1 supports
+both forms. The initializer model is 2,068 bytes on i386 versus 2,192 bytes with
+actual amd64 kernel handles. Both compile profiles passed the new audit;
+[the original-payload hardware test](../../docs/SGX545-INTEL-ABI.md) is pending.
 
 ## Retrieved artifact and provenance
 

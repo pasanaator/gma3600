@@ -45,6 +45,7 @@ def main():
                     "-Wall", "-Wextra", "-Werror", "-DLINUX", "-DUSE_CODE",
                     "-DTRANSFER_QUEUE", "-DPVR_SECURE_HANDLES", "-DPVR_ABI_COMPAT=1,7,862890",
                     "-DSGX545", "-DSGX_CORE_REV=10131", "-DSUPPORT_PERCONTEXT_PB",
+                    "-DSUPPORT_SGX_HWPERF", "-DSUPPORT_HW_RECOVERY",
                     "-I", str(includes),
                     "-I", str(core / "include4"), "-I", str(core / "services4/include"),
                     "-I", str(core / "services4/system/cedarview_linux"),
