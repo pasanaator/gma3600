@@ -128,6 +128,24 @@ struct sgx545_init2_info32 {
 struct sgx545_init2_in32 { __u32 flags, device; struct sgx545_init2_info32 info; };
 struct sgx545_init2_out32 { __u32 error, kernel_build_options; };
 
+/* Project-only initializer staging: no legacy finalization or GPU execution. */
+#define SGX545_INIT_ROLES 9U
+#define SGX545_INIT_MAX_BUFFERS 27U
+#define SGX545_IOCTL_INIT_REQUIREMENTS 0xc0684704U
+struct sgx545_init_requirements {
+	__u32 services, device, build_options, build_option_mask;
+	__u32 minimum_bytes[SGX545_INIT_ROLES], struct_sizes[13];
+};
+#define SGX545_IOCTL_INIT_STAGE 0xc0204705U
+struct sgx545_init_stage {
+	__u32 services, device, request, request_bytes;
+	__u32 stage, buffers, pages, flags;
+};
+#define SGX545_IOCTL_INIT_CONTROL 0xc0184706U
+#define SGX545_STAGE_QUERY 0U
+#define SGX545_STAGE_ABORT 1U
+struct sgx545_init_control { __u32 services, stage, operation, buffers, pages, flags; };
+
 /* Diagnostic subset, scoped to an open file. Backend objects never cross ABI. */
 struct sgx545_session {
 	__u32 services, device, device_index, device_type;

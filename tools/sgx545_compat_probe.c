@@ -21,6 +21,9 @@ _Static_assert(sizeof(struct sgx545_device_check) == 24, "device diagnostic mess
 _Static_assert(sizeof(struct sgx545_mmu_check) == 40, "MMU diagnostic message");
 
 _Static_assert(sizeof(struct sgx545_init2_in32) == 2068, "Intel initializer wire model");
+_Static_assert(sizeof(struct sgx545_init_requirements) == 104, "initializer requirements ABI");
+_Static_assert(sizeof(struct sgx545_init_stage) == 32, "initializer staging ABI");
+_Static_assert(sizeof(struct sgx545_init_control) == 24, "initializer control ABI");
 static int original_intel_abi;
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
@@ -517,6 +520,151 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	say("Check sysfs: device_allocations=0 device_pages=0 device_errors=0 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 files=0 connections=0 init_running=0\n");
 }
 
+static void stage_query(int fd, unsigned services, unsigned id, unsigned buffers, unsigned pages)
+{
+	struct sgx545_init_control control = {services, id, SGX545_STAGE_QUERY, 0, 0, 0};
+	expect("staged native snapshot and PTE query", sys3(54, fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), 0);
+	if (control.buffers != buffers || control.pages != pages) fail("staged resource counts", control.buffers);
+}
+
+static void stage_test(int fd, unsigned services, unsigned device, const char *path, int leave_staged)
+{
+	struct sgx545_init_requirements caps = {.services = services, .device = device};
+	struct sgx545_init_info_out info = {0};
+	struct sgx545_handle_out result = {0};
+	struct sgx545_init2_in32 wire = {.device = device};
+	struct sgx545_init_stage message = {.services = services, .device = device,
+		.request = ptr(&wire), .request_bytes = sizeof(wire)};
+	struct sgx545_init_control control;
+	struct sgx545_alloc_device_out allocations[12] = {0};
+	struct sgx545_bridge32 w;
+	struct sgx545_map_info_out map = {0};
+	struct sgx545_device_check walk;
+	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 0, 4096};
+	unsigned i, data_heap = 0, code_heap = 0, total_pages = 0, first_size, other, temporary, bit;
+	volatile unsigned *memory;
+	volatile struct sgx545_init_stage *readonly;
+	int control_fd, child, status;
+
+	expect("requirements need initializer metadata", sys3(54, fd, SGX545_IOCTL_INIT_REQUIREMENTS, ptr(&caps)), -13);
+	w = package(67, services, 0, 0, &result, 8);
+	expect("staging initializer CONNECT", call(fd, &w), 0);
+	expect("staging initializer payload (reload child for a fresh attempt)", result.error, 0);
+	w = package(98, services, in, 8, &info, sizeof(info));
+	expect("staging heap info", call(fd, &w), 0); expect("staging heap info payload", info.error, 0);
+	for (i = 0; i < 32; i++) {
+		if (info.heaps[i].id == 0x07000003) data_heap = info.heaps[i].handle;
+		if (info.heaps[i].id == 0x07000002) code_heap = info.heaps[i].handle;
+	}
+	if (!data_heap || !code_heap) fail("missing initializer data/code heaps", data_heap);
+	expect("initializer minimum sizes and ABI options", sys3(54, fd, SGX545_IOCTL_INIT_REQUIREMENTS, ptr(&caps)), 0);
+	if (!caps.build_option_mask || caps.struct_sizes[11] != 68 || caps.struct_sizes[12] != 32)
+		fail("unexpected initializer ABI requirements", caps.struct_sizes[11]);
+	for (i = 0; i < 12; i++) {
+		unsigned bytes = i < 9 ? caps.minimum_bytes[i] : 4096;
+		if (!bytes || bytes > SGX545_BUFFER_MAX_BYTES) fail("initializer allocation bound", bytes);
+		in[2] = i < 9 ? data_heap : code_heap; in[4] = (bytes + 4095) & ~4095U;
+		w = package(6, services, in, 24, &allocations[i], 76);
+		expect("staging device allocation", call(fd, &w), 0);
+		if (allocations[i].error || !allocations[i].kernel_mem ||
+		    allocations[i].mem.alloc_size != in[4] || !allocations[i].mem.device_address)
+			fail("staging device allocation payload", allocations[i].error);
+		if (i < 11) total_pages += in[4] / 4096;
+	}
+	wire.info.ccb = allocations[0].kernel_mem; wire.info.ccb_control = allocations[1].kernel_mem;
+	wire.info.event_kicker = allocations[2].kernel_mem; wire.info.host_control = allocations[3].kernel_mem;
+	wire.info.ta3d_control = allocations[4].kernel_mem; wire.info.misc = allocations[5].kernel_mem;
+	wire.info.hwperf = allocations[6].kernel_mem; wire.info.ta_signature = allocations[7].kernel_mem;
+	wire.info.signature_3d = allocations[8].kernel_mem;
+	wire.info.mem_handles[0] = allocations[9].kernel_mem; wire.info.mem_handles[17] = allocations[10].kernel_mem;
+	/* Options measured from the verified original Intel 20120717 release. */
+	wire.info.build_options = 0x00060218U;
+	if ((wire.info.build_options ^ caps.build_options) & caps.build_option_mask)
+		fail("original Intel build options no longer match", caps.build_options);
+	for (i = 0; i < 13; i++) wire.info.struct_sizes[i] = caps.struct_sizes[i];
+	wire.info.scripts.part1[0].op = wire.info.scripts.part2[0].op = wire.info.scripts.deinit[0].op = 2;
+	first_size = allocations[0].mem.alloc_size;
+	in[1] = allocations[0].kernel_mem;
+	w = package(11, services, in, 8, &map, 20);
+	expect("staging CCB mapping metadata", call(fd, &w), 0);
+	if (map.error || map.real_size != first_size) fail("staging map reply", map.error);
+	memory = map_buffer(fd, first_size, allocations[0].kernel_mem);
+	for (i = 0; i < first_size / 4; i++) {
+		if (memory[i]) fail("staging backing not zeroed", i);
+		memory[i] = 0x13579bdfU ^ i;
+	}
+	__asm__ volatile("sfence" ::: "memory");
+	w = package(99, services, &wire, sizeof(wire), &result, 8);
+	expect("legacy hardware initializer remains disabled", call(fd, &w), -95);
+	message.request_bytes = 2192;
+	expect("native-sized staging payload rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -22);
+	message.request_bytes = sizeof(wire); message.request = 1;
+	expect("bad nested initializer pointer", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -14);
+	message.request = ptr(&wire); wire.info.ccb_control = wire.info.ccb;
+	expect("duplicate initializer memory rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -22);
+	wire.info.ccb_control = allocations[1].kernel_mem; wire.info.mem_handles[0] = 0xffffffff;
+	expect("unknown initializer memory rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -2);
+	wire.info.mem_handles[0] = allocations[9].kernel_mem;
+	bit = caps.build_option_mask & (0U - caps.build_option_mask); wire.info.build_options ^= bit;
+	expect("incompatible initializer options rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -71);
+	wire.info.build_options ^= bit; wire.info.struct_sizes[11] += 4;
+	expect("incompatible host-control size rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -71);
+	wire.info.struct_sizes[11] -= 4;
+	wire.info.scripts.part1[0].op = 1; wire.info.scripts.part1[0].offset = 0x4000;
+	expect("out-of-window script register rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -34);
+	wire.info.scripts.part1[0].op = 2; wire.info.scripts.part1[0].offset = 0;
+	temporary = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+	if (temporary >= 0xfffff001U) fail("staging rollback page", temporary);
+	readonly = (volatile struct sgx545_init_stage *)temporary; *readonly = message;
+	expect("staging copyout mprotect", sys3(125, temporary, 4096, 1), 0);
+	expect("staging copyout ownership rollback", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, temporary), -14);
+	expect("staging copyout munmap", sys3(91, temporary, 4096, 0), 0);
+	walk = (struct sgx545_device_check){services, device, allocations[0].kernel_mem, 0, 0, 0};
+	expect("rollback restored file-owned PTEs", sys3(54, fd, SGX545_IOCTL_DEVICE_CHECK, ptr(&walk)), 0);
+	if (walk.pages != first_size / 4096) fail("rollback PTE page count", walk.pages);
+	control_fd = open_bridge(path); other = connect_bridge(control_fd);
+	expect("staged initializer ownership handoff", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), 0);
+	if (!message.stage || message.buffers != 11 || message.pages != total_pages)
+		fail("initializer handoff reply", message.buffers);
+	stage_query(control_fd, other, message.stage, 11, total_pages);
+	in[1] = device; in[2] = allocations[0].kernel_mem;
+	w = package(7, services, in, 12, &result, 8);
+	expect("creator cannot free handed-off memory", call(fd, &w), -2);
+	in[1] = allocations[0].kernel_mem; w = package(11, services, in, 8, &map, 20);
+	expect("creator mapping token revoked by handoff", call(fd, &w), -2);
+	expect("creator cannot create another CPU mapping", probe_mmap2(fd, first_size, 3, 1, in[1]), -2);
+	child = sys3(2, 0, 0, 0);
+	if (child < 0) fail("staging control fork", child);
+	if (!child) {
+		int child_fd = open_bridge(path);
+		unsigned child_services = connect_bridge(child_fd);
+		control = (struct sgx545_init_control){child_services, message.stage, SGX545_STAGE_QUERY, 0, 0, 0};
+		sys3(1, sys3(54, child_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)) == -1 ? 0 : 1, 0, 0);
+		return;
+	}
+	expect("staging child wait", sys3(7, child, ptr(&status), 0), child);
+	expect("different process cannot control staging", status, 0);
+	expect("close initializer with live CPU VMA", sys3(6, fd, 0, 0), 0);
+	check_words(memory, first_size, 0x13579bdfU);
+	stage_query(control_fd, other, message.stage, 11, total_pages);
+	expect("unmap final creator VMA", sys3(91, ptr((const void *)memory), first_size, 0), 0);
+	stage_query(control_fd, other, message.stage, 11, total_pages);
+	if (!leave_staged) {
+		control = (struct sgx545_init_control){other, message.stage, SGX545_STAGE_ABORT, 0, 0, 0};
+		expect("explicit staged initializer abort", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), 0);
+		if (control.buffers || control.pages) fail("staging abort counters", control.buffers);
+		control.operation = SGX545_STAGE_QUERY;
+		expect("stale staging handle rejected", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), -2);
+	}
+	expect("close staging control connection", sys3(6, control_fd, 0, 0), 0);
+	say("PASS: i386 initializer staging, native snapshot, ownership rollback, creator-close lifetime and ");
+	say(leave_staged ? "driver-owned retention for unload\n" : "explicit staged abort\n");
+	if (leave_staged) {
+		say("Check sysfs: stages=1 staged_buffers=11 staged_pages="); number(total_pages);
+		say(" files=0 connections=0 buffer_maps=0 init_running=0; unload must release all pages\n");
+	} else say("Check sysfs: stages=0 staged_buffers=0 staged_pages=0 stage_errors=0 device_allocations=0 buffers=0 files=0 connections=0\n");
+}
+
 int probe_main(unsigned *initial_stack)
 {
 	unsigned argc = initial_stack[0];
@@ -544,10 +692,10 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
@@ -557,6 +705,8 @@ int probe_main(unsigned *initial_stack)
 		else if (same(argv[1], "--device")) init_mode = 6;
 		else if (same(argv[1], "--device-close")) init_mode = 7;
 		else if (same(argv[1], "--device-intel")) { init_mode = 6; original_intel_abi = 1; }
+		else if (same(argv[1], "--init-stage")) { init_mode = 8; original_intel_abi = 1; }
+		else if (same(argv[1], "--init-stage-close")) { init_mode = 9; original_intel_abi = 1; }
 		else path = argv[1];
 	}
 	fd = open_bridge(path);
@@ -618,6 +768,10 @@ int probe_main(unsigned *initial_stack)
 		fail("second file device handle", acquired.error);
 	expect("close implicitly disconnects second file", sys3(6, fd2, 0, 0), 0);
 	if (init_mode) {
+		if (init_mode >= 8) {
+			stage_test(fd, services, device, path, init_mode == 9);
+			return 0;
+		}
 		if (init_mode >= 6) {
 			device_test(fd, services, device, path, init_mode == 7);
 			if (original_intel_abi) say("PASS: original Intel CONNECT=8 FREE_DEVICE_IN=60 FREE_DEVICE_OUT=8 payload forms\n");

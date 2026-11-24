@@ -1,0 +1,44 @@
+{
+  "source": "User-supplied --device-intel transcript and init-abi-report.json",
+  "checkpoint": "717f509 / services 0.8.1 feature set",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, Linux 6.12.117+deb13-amd64, VGA",
+  "client_selftest": "passed",
+  "payload_test": "PASS: original Intel CONNECT=8 FREE_DEVICE_IN=60 FREE_DEVICE_OUT=8 payload forms",
+  "device_memory_result": "PASS: i386 persistent device allocations, aligned VA, CPU-order PTEs, WC roundtrip, sibling lifetime, rollback and disconnect with live mappings",
+  "heaps": [
+    {
+      "id": "0x07000002",
+      "aligned_va": "0xf2010000"
+    },
+    {
+      "id": "0x07000003",
+      "aligned_va": "0xf4010000"
+    },
+    {
+      "id": "0x07000008",
+      "aligned_va": "0xef010000"
+    }
+  ],
+  "status_after_client": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 device_allocations=0 device_pages=0 device_errors=0",
+  "final_cleanup": {
+    "buffers": "[2018.020742] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[2018.020756] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0",
+    "services": "[2018.032340] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "report_file": "d2500hn-init-abi-report.json",
+  "report_sha256": "16cc8c4f3c2ed0d5cd2e489cf79b14321c644e4728fcbab283db66a682cd4303",
+  "report_independently_reassessed": "Matches supplied assessment and prior cloud 10131 measurements exactly",
+  "report_summary": {
+    "i386_request_bytes": 2068,
+    "native_kernel_request_bytes": 2192,
+    "selected_i386_wire_supported": true,
+    "unsupported_i386_wire_differences": {},
+    "selected_firmware_control_layouts_match": true,
+    "masked_build_options_match": true,
+    "native_requires_translation": true
+  },
+  "raw_i386_layout_match_false_explanation": "Expected CONNECT and device-free forms differ from the community headers; all three differences are supported by the explicit translator.",
+  "gpu_execution_enabled": false,
+  "visual_desktop_observation_in_transcript": "not explicitly supplied",
+  "staging_0_9_hardware_tested": false
+}

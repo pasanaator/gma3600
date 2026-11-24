@@ -188,7 +188,7 @@ def main():
         if not assessment["selected_i386_wire_supported"] or not assessment["selected_firmware_control_layouts_match"] or not assessment["masked_build_options_match"]:
             print("FAIL: selected ABI measurements differ; inspect report")
             return 1
-        print("PASS: selected Intel i386 layouts, translated payload forms and firmware control sizes; initializer translation remains required")
+        print("PASS: selected Intel i386 layouts, translated payload forms and firmware control sizes; native structures require explicit translation")
         return 0
     except (OSError, ValueError, subprocess.CalledProcessError) as error:
         print(error, file=sys.stderr)

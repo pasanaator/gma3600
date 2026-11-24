@@ -24,5 +24,11 @@ int gma_sgx_buffer_visit(struct gma_sgx_buffers *pool, void *owner, u32 token,
 	int (*visit)(void *, struct page **, u32), void *context);
 int gma_sgx_buffer_pin(struct gma_sgx_buffers *pool, void *owner, u32 token, void **pin);
 void gma_sgx_buffer_unpin(void *pin);
+/* Borrowed kernel alias remains valid while the caller holds its buffer pin. */
+int gma_sgx_buffer_describe(struct gma_sgx_buffers *pool, void *owner, u32 token,
+	void **linear, u32 *bytes);
+/* Atomic ownership transfer; VMAs and existing pins retain their references. */
+int gma_sgx_buffers_transfer(struct gma_sgx_buffers *pool, void *from, void *to,
+	const u32 *tokens, u32 count);
 void gma_sgx_buffers_stats(struct gma_sgx_buffers *pool, struct gma_sgx_buffer_stats *out);
 #endif

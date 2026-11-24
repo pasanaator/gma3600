@@ -1,5 +1,10 @@
 # Original Intel ABI audit and test
 
+**Hardware result:** `--device-intel` passed, with zero-page teardown. The
+[user-supplied compiler report also matches](../research/sgx545/d2500hn-intel-abi.json).
+The next test is [initializer staging and ownership handoff](SGX545-STAGING-TESTING.md).
+These historical instructions target 0.8.1; current builds report 0.9.0.
+
 Both services 0.8.0 device-memory modes [passed on the D2500HN](../research/sgx545/d2500hn-device-memory.json).
 All three heaps preserved neighboring allocations and CPU mappings, and both
 unloads released every tracked page with no blocked hardware access.

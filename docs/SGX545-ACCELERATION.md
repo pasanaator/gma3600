@@ -184,8 +184,10 @@ Shared system-memory buffers have translated allocation/free/map-info layouts
 and their rewritten backing/mmap lifetime has passed on the Atom. Native MMU
 scatter mappings and persistent shared-heap allocations have also passed. The
 original Intel headers now have compiler measurements alongside the actual
-amd64 kernel build. Initializer translation/ownership handoff, remaining mapping
-APIs, DMA, power/IRQ integration and rendering remain unfinished.
+amd64 kernel build. The original payload forms passed on the Atom. Services
+0.9.0 now translates initializer metadata and stages driver-owned allocations
+without executing the initializer. Executable handoff, remaining mapping APIs,
+DMA, power/IRQ integration and rendering remain unfinished.
 No DRM rendering interface is exposed yet.
 
 ## Inspected source references

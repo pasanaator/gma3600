@@ -152,6 +152,42 @@ static void pinned_buffer_lifetime(void)
     gma_sgx_buffer_unpin(pin); empty();
 }
 
+static void ownership_transfer(void)
+{
+    struct gma_sgx_buffers *p = gma_sgx_buffers_create();
+    struct sgx545_alloc_shared_out out;
+    struct sgx545_map_info_out map;
+    u32 tokens[2] = {1, 2}, bytes;
+    int creator, stage;
+    void *first_pin, *second_pin, *linear;
+    struct vm_area_struct vma = area(1, 4096);
+    struct vm_fault fault;
+    assert(!gma_sgx_buffer_alloc(p, &creator, 1, SGX545_BUFFER_WC, 4096, &out));
+    assert(!gma_sgx_buffer_alloc(p, &creator, 2, SGX545_BUFFER_WC, 4096, &out));
+    assert(!gma_sgx_buffer_mmap(p, &creator, &vma));
+    assert(!gma_sgx_buffer_pin(p, &creator, 1, &first_pin));
+    assert(!gma_sgx_buffer_pin(p, &creator, 2, &second_pin));
+    assert(!gma_sgx_buffer_describe(p, &creator, 1, &linear, &bytes) && linear && bytes == 4096);
+    tokens[1] = 99;
+    assert(gma_sgx_buffers_transfer(p, &creator, &stage, tokens, 2) == -ENOENT);
+    assert(!gma_sgx_buffer_map_info(p, &creator, 1, &map)); /* no partial transfer */
+    tokens[1] = 1;
+    assert(gma_sgx_buffers_transfer(p, &creator, &stage, tokens, 2) == -EINVAL);
+    tokens[1] = 2;
+    assert(!gma_sgx_buffers_transfer(p, &creator, &stage, tokens, 2));
+    assert(gma_sgx_buffer_map_info(p, &creator, 1, &map) == -ENOENT);
+    gma_sgx_buffers_release_owner(p, &creator);
+    assert(pages_live == 2 && !gma_sgx_buffer_map_info(p, &stage, 1, &map));
+    assert(!gma_sgx_buffers_transfer(p, &stage, &creator, tokens, 2)); /* copyout rollback */
+    assert(!gma_sgx_buffer_map_info(p, &creator, 1, &map));
+    gma_sgx_buffer_unpin(first_pin); gma_sgx_buffer_unpin(second_pin);
+    gma_sgx_buffers_stop(p);
+    assert(pages_live == 1); /* VMA outlives transfer, rollback and provider detach. */
+    fault = (struct vm_fault){&vma, vma.vm_start, vma.vm_pgoff};
+    assert(vma.vm_ops->fault(&fault) == VM_FAULT_NOPAGE);
+    vma.vm_ops->close(&vma); empty();
+}
+
 int main(void)
 {
     int owner, other;
@@ -261,6 +297,7 @@ int main(void)
     b->refs = 1; buffer_put_locked(b);
     gma_sgx_buffers_stop(p); empty();
     pinned_buffer_lifetime();
+    ownership_transfer();
     puts("SGX buffer tests passed: independent mapping pins, ownership, zeroing, WC aliases, VMA split/detach lifetime, quotas and cache-failure retention");
     return 0;
 }

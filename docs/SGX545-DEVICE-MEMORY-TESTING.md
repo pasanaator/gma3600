@@ -23,7 +23,7 @@ firmware execution. **GPU execution remains disabled; llvmpipe is expected.**
 
 Each allocation is limited to 1 MiB, with page-sized through 1 MiB power-of-two
 alignment (zero selects 4 KiB). The existing shared/device backing pool enforces
-16 owned buffers per file, 64 live buffers and 16 MiB total. CPU mappings cover
+16 owned buffers per file in 0.8.x (32 in 0.9.0), 64 live buffers and 16 MiB total. CPU mappings cover
 the rounded, zeroed backing, while `alloc_size` reports the requested size.
 Device addresses remain reserved until free/disconnect/close. File-owned tokens
 never expose kernel pointers. CPU mapping handles use the existing map-info and

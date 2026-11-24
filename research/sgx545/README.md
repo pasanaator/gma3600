@@ -76,7 +76,11 @@ from the same 20120717 release. It found CONNECT and device-free payload-size
 differences from the community compatibility headers. Services 0.8.1 supports
 both forms. The initializer model is 2,068 bytes on i386 versus 2,192 bytes with
 actual amd64 kernel handles. Both compile profiles passed the new audit;
-[the original-payload hardware test](../../docs/SGX545-INTEL-ABI.md) is pending.
+[the original-payload hardware test and on-target ABI report passed](d2500hn-intel-abi.json).
+Services 0.9.0 adds [initializer staging](../../docs/SGX545-STAGING-TESTING.md): native
+metadata translation and driver-owned buffer lifetime, with no GPU execution.
+[Both build profiles and host lifetime/translation tests passed](staging-6.12-build.json);
+the two staging hardware modes are pending.
 
 ## Retrieved artifact and provenance
 

@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has a **persistent device-memory checkpoint**. It builds
+The hybrid port now has an **initializer staging checkpoint**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -20,7 +20,9 @@ including both free and deferred-close lifetimes.
 [Both persistent device-memory tests also passed](../../research/sgx545/d2500hn-device-memory.json),
 including neighboring mappings, alignment, WC coherence and deferred close.
 Version 0.8.1 adds [original Intel payload support and an initializer ABI audit](../../docs/SGX545-INTEL-ABI.md).
-GPU execution remains disabled.
+The [original payload test and on-target ABI report passed](../../research/sgx545/d2500hn-intel-abi.json).
+Services 0.9.0 adds [initializer translation and staged ownership](../../docs/SGX545-STAGING-TESTING.md),
+with hardware execution still disabled.
 
 ## D2500HN hardware result
 
@@ -112,6 +114,15 @@ now also been build-validated; that is not a hardware compatibility result.
   A private readback ioctl verifies PTEs in CPU buffer order without GPU access.
   Host tests cover neighboring allocations, rollback, failed unmap retention and
   close/detach. The `--device` and `--device-close` client modes have both passed on the Atom.
+
+* Project-only initializer staging over the audited 2,068-byte wire model.
+  Bounded scripts, size/build checks and file-owned token lookup produce native
+  metadata snapshots. An atomic transfer moves referenced mappings to the
+  driver, with copyout rollback and same-process control. Creator close does
+  not release handed-off pages; explicit abort or child detach removes PTEs
+  before backing/common state. Snapshots have no native resource registration
+  and are never passed to the hardware initializer. The new `--init-stage` and
+  `--init-stage-close` modes await hardware testing; legacy command 99 stays off.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and
@@ -222,10 +233,10 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Test the newly supported original Intel CONNECT/free forms. The original
-   initializer layout is now compiler-audited against the verified 20120717
-   kernel source. Preparation, bridge, initializer, shared-buffer, offline MMU
-   and both persistent-allocation tests have passed.
+1. Test explicit abort and unload cleanup of staged initializer buffers. The
+   original Intel payload forms and on-target layout audit have passed, along
+   with preparation, bridge, initializer, shared-buffer, offline MMU and both
+   persistent-allocation tests.
 2. Extend explicit nested-payload translation to remaining initializer memory
    and mapping commands, retaining ownership and rollback.
    Add the necessary DRM transport after validating the diagnostic subset.

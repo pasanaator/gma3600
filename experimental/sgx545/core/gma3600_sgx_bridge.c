@@ -26,6 +26,7 @@
 #include "gma3600_sgx_buffers.h"
 #include "gma3600_sgx_mmu.h"
 #include "buffer_manager.h"
+#include "gma3600_sgx_init.h"
 
 #if !defined(PVR_SECURE_HANDLES)
 #error The diagnostic bridge requires DDK secure handles
@@ -52,6 +53,9 @@ static_assert(_IOC_NR(PVRSRV_BRIDGE_FREE_SHARED_SYS_MEM) == SGX545_CMD_FREE_SHAR
 static_assert(_IOC_NR(PVRSRV_BRIDGE_MHANDLE_TO_MMAP_DATA) == SGX545_CMD_MAP_INFO);
 static_assert(SGX545_BUFFER_WC == PVRSRV_HAP_WRITECOMBINE);
 static_assert(SGX545_BUFFER_MULTI == PVRSRV_HAP_MULTI_PROCESS);
+static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_REQUIREMENTS) == sizeof(struct sgx545_init_requirements));
+static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_STAGE) == sizeof(struct sgx545_init_stage));
+static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTROL) == sizeof(struct sgx545_init_control));
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -61,6 +65,7 @@ struct gma_sgx_bridge {
 	struct gma_sgx_bridge_stats stats;
 	struct gma_sgx_file *init_owner;
 	struct gma_sgx_buffers *buffers;
+	struct gma_sgx_stage *stage;
 	u32 next_token;
 	bool online, registered;
 };
@@ -93,6 +98,17 @@ struct gma_sgx_file {
 	bool info_ready, info_dirty;
 	struct gma_sgx_device_allocation *device_allocations;
 };
+
+struct gma_sgx_stage {
+	struct gma_sgx_native_init snapshot;
+	struct gma_sgx_init_memory memory[SGX545_INIT_MAX_BUFFERS];
+	struct gma_sgx_device_allocation *allocations;
+	struct pid *owner;
+	u32 id, count, tokens[SGX545_INIT_MAX_BUFFERS];
+	bool dirty;
+};
+
+static void bridge_free(struct kref *ref);
 
 /* No native pointer/handle is exposed. Wire IDs never repeat in this lifetime. */
 static int new_token(struct gma_sgx_bridge *b, u32 *token)
@@ -347,27 +363,35 @@ static int device_visit(void *context, struct page **pages, u32 count)
 	return ret;
 }
 
+static int device_free_owned(struct gma_sgx_bridge *b, void *owner,
+	struct gma_sgx_device_allocation **slot)
+{
+	struct gma_sgx_device_allocation *allocation = *slot;
+	int ret;
+
+	ret = gma3600_sgx_mmu_unbind(&allocation->binding);
+	if (ret) {
+		b->stats.device_errors++;
+		return ret; /* Retain both the RAM pin and the native bookkeeping. */
+	}
+	*slot = allocation->next;
+	b->stats.device_allocations--;
+	b->stats.device_pages -= allocation->binding.bytes / 4096;
+	gma_sgx_buffer_unpin(allocation->pin);
+	ret = gma_sgx_buffer_free(b->buffers, owner, allocation->token);
+	kfree(allocation);
+	return ret;
+}
+
 static int backend_free_device(void *context, u32 token)
 {
 	struct gma_sgx_file *f = context;
-	struct gma_sgx_device_allocation **slot = device_slot(f, token), *allocation = *slot;
+	struct gma_sgx_device_allocation **slot = device_slot(f, token);
 	int ret;
 
-	if (!allocation)
-		return -ENOENT;
-	ret = gma3600_sgx_mmu_unbind(&allocation->binding);
-	if (ret) {
-		/* Retain both RAM pin and bookkeeping if native unmapping failed. */
-		f->info_dirty = true;
-		f->bridge->stats.device_errors++;
-		return ret;
-	}
-	*slot = allocation->next;
-	f->bridge->stats.device_allocations--;
-	f->bridge->stats.device_pages -= (allocation->binding.bytes / 4096);
-	gma_sgx_buffer_unpin(allocation->pin);
-	ret = gma_sgx_buffer_free(f->bridge->buffers, f, token);
-	kfree(allocation);
+	if (!*slot) return -ENOENT;
+	ret = device_free_owned(f->bridge, f, slot);
+	if (ret) f->info_dirty = true;
 	return ret;
 }
 
@@ -430,6 +454,185 @@ static int backend_alloc_device(void *context, u32 heap_token, u32 flags, u32 by
 fail:
 	kfree(allocation);
 	return ret;
+}
+
+static int stage_requirements(struct gma_sgx_file *f, struct sgx545_init_requirements *out)
+{
+	if (!f->session.services || out->services != f->session.services ||
+	    !f->session.device || out->device != f->session.device) return -ENOENT;
+	if (f->bridge->init_owner != f || !f->info_ready) return -EACCES;
+	gma_sgx_init_requirements(out);
+	return 0;
+}
+
+static int stage_prepare(struct gma_sgx_file *f, const struct sgx545_init2_in32 *wire,
+	struct sgx545_init_stage *message, struct gma_sgx_stage **result)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct gma_sgx_stage *s;
+	u32 i;
+	int ret;
+
+	*result = NULL;
+	if (!f->session.services || message->services != f->session.services ||
+	    !f->session.device || message->device != f->session.device || wire->device != f->session.device)
+		return -ENOENT;
+	if (!OSProcHasPrivSrvInit()) return -EPERM;
+	if (b->stage) return -EBUSY;
+	if (b->init_owner != f || !f->info_ready || !f->session.initializer) return -EACCES;
+	if (f->info_dirty) return -EIO;
+	if (message->flags || message->stage || message->buffers || message->pages ||
+	    message->request_bytes != sizeof(*wire)) return -EINVAL;
+	s = kzalloc(sizeof(*s), GFP_KERNEL);
+	if (!s) return -ENOMEM;
+	ret = gma_sgx_init_tokens(wire, s->tokens, &s->count);
+	if (ret) goto fail;
+	for (i = 0; i < s->count; i++) {
+		struct gma_sgx_device_allocation *a = *device_slot(f, s->tokens[i]);
+		struct device_visit_context visit = {.allocation = a, .verify = true};
+
+		if (!a) { ret = -ENOENT; goto fail; }
+		ret = gma_sgx_buffer_visit(b->buffers, f, a->token, device_visit, &visit);
+		if (ret) goto fail;
+		s->memory[i].token = a->token; s->memory[i].address = a->binding.address;
+		s->memory[i].flags = SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+		ret = gma_sgx_buffer_describe(b->buffers, f, a->token,
+			&s->memory[i].linear, &s->memory[i].bytes);
+		if (ret) goto fail;
+	}
+	ret = gma_sgx_init_translate(wire, s->memory, s->count, &s->snapshot);
+	if (ret) goto fail;
+	ret = new_token(b, &s->id);
+	if (ret) goto fail;
+	*result = s;
+	return 0;
+fail:
+	kfree(s);
+	return ret;
+}
+
+static void stage_drop_metadata(struct gma_sgx_bridge *b)
+{
+	struct gma_sgx_stage *s = b->stage;
+
+	b->stage = NULL;
+	b->stats.stages = b->stats.staged_buffers = b->stats.staged_pages = 0;
+	put_pid(s->owner);
+	kfree(s);
+	kref_put(&b->ref, bridge_free);
+}
+
+static int stage_commit(struct gma_sgx_file *f, struct gma_sgx_stage *s)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	u32 i;
+	int ret;
+
+	ret = gma_sgx_buffers_transfer(b->buffers, f, s, s->tokens, s->count);
+	if (ret) return ret;
+	/* The bridge mutex prevents owner changes between validation and this move. */
+	for (i = 0; i < s->count; i++) {
+		struct gma_sgx_device_allocation **slot = device_slot(f, s->tokens[i]), *a = *slot;
+
+		*slot = a->next; a->next = s->allocations; s->allocations = a;
+		b->stats.staged_pages += a->binding.pages;
+	}
+	s->owner = get_pid(f->owner);
+	b->stage = s;
+	b->stats.stages = 1; b->stats.staged_buffers = s->count;
+	kref_get(&b->ref); /* Quarantined cleanup must retain its owning bridge. */
+	return 0;
+}
+
+static int stage_rollback(struct gma_sgx_file *f)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct gma_sgx_stage *s = b->stage;
+	int ret;
+
+	ret = gma_sgx_buffers_transfer(b->buffers, s, f, s->tokens, s->count);
+	if (ret) { f->info_dirty = s->dirty = true; b->stats.stage_errors++; return ret; }
+	while (s->allocations) {
+		struct gma_sgx_device_allocation *a = s->allocations;
+
+		s->allocations = a->next; a->next = f->device_allocations; f->device_allocations = a;
+	}
+	stage_drop_metadata(b);
+	return 0;
+}
+
+static int stage_publish(struct gma_sgx_file *f, const struct sgx545_init2_in32 *wire,
+	struct sgx545_init_stage *message, int (*publish)(void *, const struct sgx545_init_stage *), void *context)
+{
+	struct gma_sgx_stage *s;
+	int ret = stage_prepare(f, wire, message, &s);
+
+	if (ret) return ret;
+	ret = stage_commit(f, s);
+	if (ret) { kfree(s); return ret; }
+	message->stage = s->id; message->buffers = s->count; message->pages = f->bridge->stats.staged_pages;
+	ret = publish(context, message);
+	if (ret) {
+		if (stage_rollback(f)) return -EIO;
+		return ret;
+	}
+	/* A delivered staging attempt ends ownership but never finalizes hardware. */
+	backend_init_abort(f, 0);
+	f->session.initializer = 0;
+	return 0;
+}
+
+static int stage_abort(struct gma_sgx_bridge *b)
+{
+	struct gma_sgx_stage *s = b->stage;
+
+	if (!s) return 0;
+	while (s->allocations) {
+		struct gma_sgx_device_allocation *a = s->allocations;
+		u32 pages = a->binding.pages, before = b->stats.device_allocations;
+		int ret = device_free_owned(b, s, &s->allocations);
+
+		if (b->stats.device_allocations != before) {
+			b->stats.staged_buffers--; b->stats.staged_pages -= pages;
+		}
+		if (ret) { s->dirty = true; b->stats.stage_errors++; return ret; }
+	}
+	stage_drop_metadata(b);
+	return 0;
+}
+
+static int stage_control(struct gma_sgx_file *f, struct sgx545_init_control *message)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct gma_sgx_stage *s = b->stage;
+	u32 i;
+	int ret;
+
+	if (message->flags || message->operation > SGX545_STAGE_ABORT) return -EINVAL;
+	if (!f->session.services || message->services != f->session.services || !s || message->stage != s->id)
+		return -ENOENT;
+	if (f->owner != s->owner || !OSProcHasPrivSrvInit()) return -EPERM;
+	if (message->operation == SGX545_STAGE_ABORT) {
+		ret = stage_abort(b);
+		if (ret) return ret;
+		message->buffers = message->pages = 0;
+		return 0;
+	}
+	if (s->dirty) return -EIO;
+	for (i = 0; i < s->count; i++) {
+		struct gma_sgx_device_allocation *a = s->allocations;
+		struct device_visit_context visit = {.verify = true};
+
+		while (a && a->token != s->tokens[i]) a = a->next;
+		if (!a) return -EIO;
+		visit.allocation = a;
+		ret = gma_sgx_buffer_visit(b->buffers, s, a->token, device_visit, &visit);
+		if (ret) return ret;
+	}
+	ret = gma_sgx_init_check(&s->snapshot, s->memory, s->count);
+	if (ret) return ret;
+	message->buffers = b->stats.staged_buffers; message->pages = b->stats.staged_pages;
+	return 0;
 }
 
 static int backend_disconnect(void *ctx)
@@ -651,6 +854,49 @@ static int bridge_device_check(struct gma_sgx_file *f, struct sgx545_device_chec
 	return ret;
 }
 
+static int stage_copy_result(void *context, const struct sgx545_init_stage *message)
+{
+	return copy_to_user(context, message, sizeof(*message)) ? -EFAULT : 0;
+}
+
+static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned long arg)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct sgx545_init2_in32 *wire = NULL;
+	union {
+		struct sgx545_init_requirements caps;
+		struct sgx545_init_stage stage;
+		struct sgx545_init_control control;
+	} message;
+	u32 size = cmd == SGX545_IOCTL_INIT_REQUIREMENTS ? sizeof(message.caps) :
+		cmd == SGX545_IOCTL_INIT_STAGE ? sizeof(message.stage) : sizeof(message.control);
+	int ret;
+
+	if (copy_from_user(&message, (void __user *)arg, size)) return -EFAULT;
+	if (cmd == SGX545_IOCTL_INIT_STAGE) {
+		if (message.stage.request_bytes != sizeof(*wire)) return -EINVAL;
+		wire = kzalloc(sizeof(*wire), GFP_KERNEL);
+		if (!wire) return -ENOMEM;
+		if (copy_from_user(wire, u64_to_user_ptr((u64)message.stage.request), sizeof(*wire))) {
+			kfree(wire); return -EFAULT;
+		}
+	}
+	mutex_lock(&b->lock);
+	if (!b->online) { ret = -ENODEV; goto out; }
+	LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
+	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS) ret = stage_requirements(f, &message.caps);
+	else if (cmd == SGX545_IOCTL_INIT_STAGE)
+		ret = stage_publish(f, wire, &message.stage, stage_copy_result, (void __user *)arg);
+	else ret = stage_control(f, &message.control);
+	/* STAGE copies its result transactionally. QUERY/ABORT own no new resource. */
+	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
+	LinuxUnLockMutex(&gPVRSRVLock);
+out:
+	mutex_unlock(&b->lock);
+	kfree(wire);
+	return ret;
+}
+
 static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct gma_sgx_file *f = file->private_data;
@@ -660,10 +906,13 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	int ret;
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
-	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK)
+	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK && cmd != SGX545_IOCTL_INIT_REQUIREMENTS &&
+	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
+	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL)
+		return bridge_init_ioctl(f, cmd, arg);
 	if (cmd == SGX545_IOCTL_DEVICE_CHECK) {
 		struct sgx545_device_check check;
 
@@ -783,12 +1032,14 @@ static void bridge_stop(void *data)
 			kref_put(&b->ref, bridge_free);
 		}
 	}
+	stage_abort(b); /* Native PTEs disappear before common DDK teardown. */
 	LinuxUnLockMutex(&gPVRSRVLock);
 	gma_sgx_buffers_stop(b->buffers);
-	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u device_allocations=%u device_pages=%u device_errors=%u\n",
+	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u\n",
 		b->stats.files, b->stats.connections, b->stats.errors,
 		b->stats.heap_handles, b->stats.init_running, b->stats.init_ran,
-		b->stats.device_allocations, b->stats.device_pages, b->stats.device_errors);
+		b->stats.device_allocations, b->stats.device_pages, b->stats.device_errors,
+		b->stats.stages, b->stats.staged_buffers, b->stats.staged_pages, b->stats.stage_errors);
 	mutex_unlock(&b->lock);
 	kref_put(&b->ref, bridge_free);
 }

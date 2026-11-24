@@ -1,0 +1,76 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "services_module_version": "0.9.0",
+  "host_interface_abi": 2,
+  "previous_hardware_result": "d2500hn-intel-abi.json",
+  "profile_builds": [
+    {
+      "profile": "10131",
+      "host_probe_core_client": "passed",
+      "native_translation_MMU_i386_layout_fixtures": "passed",
+      "original_Intel_ABI_audit": "passed",
+      "services_compiler_warnings": 0,
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "0e954e7d6296dbe436bd11057ee521cfcb1a6f23324c811305d8f97fb1158012"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client": "passed",
+      "native_translation_MMU_i386_layout_fixtures": "passed",
+      "original_Intel_ABI_audit": "passed",
+      "services_compiler_warnings": 0,
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "f87f6cfdb38b629f549f6b67a740926847d7152f1b7b6135f909f5e0f69175f2"
+    }
+  ],
+  "base_host_c_suites": 11,
+  "python_unittests": 13,
+  "translator_fixtures_with_real_DDK_structures": [
+    "OS integer-type shim only; real native pointer-handle DDK structures and measured 2176-byte body",
+    "Compile profiles 10131 and 10141, full 27 distinct references",
+    "CPU kernel aliases above 4 GiB retained without truncation",
+    "Original Intel 0x60218 build options accepted through the DDK mask",
+    "Known HOST_CTL/COMMAND size checks; bounded preservation of eleven unverified declarations",
+    "Scripts bounded by opcode, alignment, window and HALT; unused tails normalized",
+    "Duplicates, counts, memory bounds, wrong sizes/options and failure output clearing"
+  ],
+  "ownership_fixtures": [
+    "Atomic provider transfer and rollback; invalid/duplicate tokens cause no partial mutation",
+    "CPU VMA survives transfer, rollback and provider detach",
+    "Failed result publication restores file ownership without consuming initializer attempt",
+    "Failed commit preserves creator ownership and pins",
+    "Creator close releases its handle base while staged native mappings remain queryable",
+    "Same-process control accepted and foreign process rejected",
+    "Explicit abort and detach remove native PTEs before backing ownership/pins",
+    "All user files can close while stage retains bridge and PID references",
+    "Failed detach cleanup retains stage, bridge, backing pool and pins for quarantine",
+    "Late file close after successful detach uses no dead DDK state"
+  ],
+  "limits": {
+    "stage_buffers": 27,
+    "required_roles": 9,
+    "owned_buffers": 32,
+    "global_buffers": 64,
+    "global_backing_bytes": 16777216,
+    "single_buffer_bytes": 1048576
+  },
+  "hardware_modes": [
+    "--init-stage",
+    "--init-stage-close"
+  ],
+  "hardware_status": "pending",
+  "staging_transport": "Project-only ioctl; not successful legacy command 99",
+  "legacy_command_99_enabled": false,
+  "native_memory_snapshots_registered_with_BM_or_ResMan": false,
+  "buffers_sealed_or_firmware_authenticated": false,
+  "gpu_execution_enabled": false,
+  "GPU_DMA_or_active_page_walk_verified": false,
+  "proprietary_libraries_executed": false,
+  "display_parent_changed": false,
+  "sanitizers": [
+    "AddressSanitizer",
+    "UndefinedBehaviorSanitizer"
+  ],
+  "guide": "docs/SGX545-STAGING-TESTING.md"
+}

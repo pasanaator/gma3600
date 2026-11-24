@@ -13,9 +13,9 @@
 typedef uint32_t u32;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, device_allocations, device_pages, device_errors; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors; };
 struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; };
-struct gma_sgx_buffers { struct mock_buffer slots[16]; };
+struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
 static int fail_bind, fail_unbind, live_bindings;
 int gma3600_sgx_mmu_bind(void *heap, const __u32 *physical, __u32 count,
@@ -76,7 +76,7 @@ static int gma_sgx_buffer_visit(struct gma_sgx_buffers *p, void *owner, u32 toke
     int ret;
     if (owner == mmu_buffer_owner && token == 999)
         return visit(context, mmu_page_list, mmu_page_count);
-    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+    for (i = 0; i < 32; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
         visiting_buffer = &p->slots[i];
         ret = visit(context, mmu_page_list, mmu_page_count);
         visiting_buffer = NULL;
@@ -92,6 +92,16 @@ int gma3600_sgx_mmu_exercise(void *heap, const __u32 *physical, __u32 count,
     assert(!memcmp(physical, sorted, sizeof(sorted)));
     mmu_calls++; out->checked_pages = 4; return 0;
 }
+struct gma_sgx_init_memory { u32 token, address, bytes, flags; void *linear; };
+struct gma_sgx_native_init { struct gma_sgx_init_memory memory[27]; u32 count; };
+static void gma_sgx_init_requirements(struct sgx545_init_requirements *out)
+{ unsigned i; for (i = 0; i < 9; i++) out->minimum_bytes[i] = 4; }
+static int gma_sgx_init_translate(const struct sgx545_init2_in32 *wire,
+    const struct gma_sgx_init_memory *memory, u32 count, struct gma_sgx_native_init *out)
+{ memcpy(out->memory, memory, count * sizeof(*memory)); out->count = count; return 0; }
+static int gma_sgx_init_check(const struct gma_sgx_native_init *out,
+    const struct gma_sgx_init_memory *memory, u32 count)
+{ assert(out->count == count); return memcmp(out->memory, memory, count * sizeof(*memory)) ? -EIO : 0; }
 struct list_head { struct list_head *next, *prev; };
 #define container_of(p, type, member) ((type *)((char *)(p) - offsetof(type, member)))
 #define INIT_LIST_HEAD(h) ((h)->next = (h)->prev = (h))
@@ -160,8 +170,8 @@ static int gma_sgx_buffer_alloc(struct gma_sgx_buffers *p, void *owner, u32 toke
     u32 bytes, struct sgx545_alloc_shared_out *out)
 {
     unsigned i;
-    for (i = 0; i < 16; i++) if (!p->slots[i].owner) break;
-    if (i == 16) return -ENOSPC;
+    for (i = 0; i < 32; i++) if (!p->slots[i].owner) break;
+    if (i == 32) return -ENOSPC;
     p->slots[i] = (struct mock_buffer){.owner = owner, .token = token, .bytes = bytes};
     memset(out, 0, sizeof(*out));
     out->kernel_mem = out->mem.kernel_mem = out->mem.mapping = token;
@@ -171,7 +181,7 @@ static int gma_sgx_buffer_alloc(struct gma_sgx_buffers *p, void *owner, u32 toke
 static int gma_sgx_buffer_pin(struct gma_sgx_buffers *p, void *owner, u32 token, void **pin)
 {
     unsigned i;
-    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+    for (i = 0; i < 32; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
         p->slots[i].pins++; *pin = &p->slots[i]; return 0;
     }
     return -ENOENT;
@@ -185,7 +195,7 @@ static void gma_sgx_buffer_unpin(void *pin)
 static int gma_sgx_buffer_free(struct gma_sgx_buffers *p, void *owner, u32 token)
 {
     unsigned i;
-    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+    for (i = 0; i < 32; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
         assert(!p->slots[i].pins);
         memset(&p->slots[i], 0, sizeof(p->slots[i])); return 0;
     }
@@ -195,12 +205,38 @@ static void gma_sgx_buffers_release_owner(struct gma_sgx_buffers *p, void *owner
 {
     unsigned i;
     assert(p && owner);
-    for (i = 0; i < 16; i++) if (p->slots[i].owner == owner) {
+    for (i = 0; i < 32; i++) if (p->slots[i].owner == owner) {
         assert(!p->slots[i].pins);
         memset(&p->slots[i], 0, sizeof(p->slots[i]));
     }
 }
-static void gma_sgx_buffers_stop(struct gma_sgx_buffers *p) { kfree(p); }
+static void gma_sgx_buffers_stop(struct gma_sgx_buffers *p)
+{
+    unsigned i;
+    for (i = 0; i < 32; i++) if (p->slots[i].pins) return; /* quarantined backing retains pool */
+    kfree(p);
+}
+static int fail_transfer;
+static int gma_sgx_buffer_describe(struct gma_sgx_buffers *p, void *owner, u32 token,
+    void **linear, u32 *bytes)
+{
+    unsigned i;
+    for (i = 0; i < 32; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+        *linear = (void *)(uintptr_t)(0x100000000ULL + token * 0x10000ULL);
+        *bytes = p->slots[i].bytes; return 0;
+    }
+    return -ENOENT;
+}
+static int gma_sgx_buffers_transfer(struct gma_sgx_buffers *p, void *from, void *to, const u32 *tokens, u32 count)
+{
+    unsigned i, j;
+    if (fail_transfer) { fail_transfer--; return -EIO; }
+    for (i = 0; i < count; i++) {
+        for (j = 0; j < 32; j++) if (p->slots[j].owner == from && p->slots[j].token == tokens[i]) break;
+        assert(j < 32 && p->slots[j].pins == 1); p->slots[j].owner = to;
+    }
+    return 0;
+}
 static int nonseekable_open(struct inode *inode, struct file *file) { return 0; }
 static int misc_register(struct miscdevice *m)
 { if (fail_misc) return -ENOMEM; assert(!misc_live); misc_live = 1; return 0; }
@@ -477,6 +513,100 @@ static void device_allocation_lifetime(void)
     }
 }
 
+static int publish_stage(void *context, const struct sgx545_init_stage *message)
+{ assert(message->stage && message->buffers == 9 && message->pages == 36); return context ? -EFAULT : 0; }
+static void initializer_stage_lifetime(void)
+{
+    unsigned mode, i;
+    for (mode = 0; mode < 5; mode++) {
+        struct device dev = {0};
+        struct gma_sgx_bridge *b = start(&dev);
+        struct file first, second;
+        struct gma_sgx_file *f = open_(b, &first), *controller = open_(b, &second);
+        struct sgx545_init2_in32 wire = {.device = 2};
+        struct sgx545_init_stage message = {.services = 1, .device = 2, .request_bytes = sizeof(wire)};
+        struct sgx545_init_control control = {0};
+        struct sgx545_alloc_device_out allocation;
+        struct sgx545_init_requirements caps = {.services = 1, .device = 2};
+        BM_HEAP heap = {.pMMUHeap = &fake_device};
+        u32 token, tokens[9];
+        struct gma_sgx_stage *candidate = NULL;
+        struct pid foreign = {0};
+        assert(!backend_connect(f, &token));
+        assert(!backend_connect(controller, &token)); controller->session.services = token;
+        f->session.services = 1; f->session.device = 2;
+        assert(stage_requirements(f, &caps) == -EACCES);
+        assert(!backend_init_connect(f)); f->info_ready = true; f->session.initializer = 1;
+        assert(!stage_requirements(f, &caps));
+        f->init_info.heaps[0].handle = 100;
+        assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
+            PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
+        for (i = 0; i < 9; i++) {
+            assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &allocation));
+            tokens[i] = allocation.kernel_mem;
+        }
+        wire.info.ccb = tokens[0]; wire.info.ccb_control = tokens[1]; wire.info.event_kicker = tokens[2];
+        wire.info.host_control = tokens[3]; wire.info.ta3d_control = tokens[4]; wire.info.misc = tokens[5];
+        wire.info.hwperf = tokens[6]; wire.info.ta_signature = tokens[7]; wire.info.signature_3d = tokens[8];
+        wire.info.ccb ^= 0x40000000;
+        assert(stage_prepare(f, &wire, &message, &candidate) == -ENOENT && !candidate);
+        wire.info.ccb ^= 0x40000000;
+        fail_alloc = 1;
+        assert(stage_prepare(f, &wire, &message, &candidate) == -ENOMEM && !candidate);
+        fail_transfer = 1;
+        assert(stage_publish(f, &wire, &message, publish_stage, NULL) == -EIO && !b->stage);
+        assert(stage_publish(f, &wire, &message, publish_stage, &dev) == -EFAULT);
+        assert(!b->stage && !b->stats.stages && b->stats.device_allocations == 9);
+        assert(b->init_owner == f && f->session.initializer && !b->stats.init_ran);
+        message.stage = message.buffers = message.pages = 0;
+        assert(!stage_publish(f, &wire, &message, publish_stage, NULL));
+        assert(b->stage && b->stats.stages == 1 && !f->device_allocations);
+        assert(!b->init_owner && !f->session.initializer && b->stats.init_ran);
+        assert(stage_prepare(f, &wire, &message, &candidate) == -EBUSY);
+        assert(backend_free_device(f, tokens[0]) == -ENOENT);
+        control.services = controller->session.services; control.stage = message.stage;
+        controller->owner = &foreign;
+        assert(stage_control(controller, &control) == -EPERM); controller->owner = &current_pid;
+        assert(!stage_control(controller, &control) && control.buffers == 9 && control.pages == 36);
+        assert(!bridge_release(NULL, &first) && live_bindings == 9);
+        assert(!stage_control(controller, &control)); /* creator and native handles gone */
+        if (mode == 0 || mode == 1) {
+            control.operation = SGX545_STAGE_ABORT;
+            if (mode == 1) {
+                fail_unbind = 1;
+                assert(stage_control(controller, &control) == -EIO && live_bindings == 9);
+                assert(b->stats.stages == 1 && b->stats.stage_errors == 1 && b->stage->dirty);
+                control.operation = SGX545_STAGE_QUERY;
+                assert(stage_control(controller, &control) == -EIO);
+                control.operation = SGX545_STAGE_ABORT;
+            }
+            assert(!stage_control(controller, &control) && !live_bindings && !b->stage);
+            assert(stage_control(controller, &control) == -ENOENT);
+            assert(!bridge_release(NULL, &second)); stop(&dev);
+        } else if (mode == 2) {
+            assert(!bridge_release(NULL, &second));
+            assert(b->stage && b->stats.files == 0 && live_bindings == 9);
+            stop(&dev); assert(!live_bindings);
+        } else if (mode == 4) {
+            struct gma_sgx_buffers *pool = b->buffers;
+            assert(!bridge_release(NULL, &second)); fail_unbind = 1;
+            stop(&dev); ddk_alive = 0;
+            assert(!b->online && b->stage && b->stage->dirty && b->ref.refs == 1);
+            assert(live_bindings == 9 && current_pid.refs == 1);
+            /* Test-only recovery of intentionally quarantined CPU metadata.
+             * Production never retries native cleanup after DDK teardown. */
+            ddk_alive = 1; kref_get(&b->ref);
+            assert(!stage_abort(b) && !live_bindings);
+            gma_sgx_buffers_stop(pool); kref_put(&b->ref, bridge_free);
+        } else {
+            stop(&dev); ddk_alive = 0;
+            assert(!b->stage && !live_bindings);
+            assert(!bridge_release(NULL, &second)); ddk_alive = 1;
+        }
+        empty();
+    }
+}
+
 int main(void)
 {
     struct device dev = {0};
@@ -554,6 +684,7 @@ int main(void)
     initializer_lifetime();
     mmu_bridge_validation();
     device_allocation_lifetime();
+    initializer_stage_lifetime();
     puts("SGX bridge lifetime tests passed: ownership, heap translation/rollback, device allocation/pin ordering, failed unmap retention, close and detach");
     return 0;
 }

@@ -16,7 +16,7 @@
 
 #define BUFFER_MAX_COUNT 64U
 #define BUFFER_MAX_PAGES 4096U
-#define BUFFER_OWNER_MAX 16U
+#define BUFFER_OWNER_MAX 32U
 
 struct gma_sgx_buffers {
 	struct kref ref;
@@ -349,6 +349,47 @@ void gma_sgx_buffer_unpin(void *pin)
 	buffer_put_locked(b);
 	mutex_unlock(&p->lock);
 	kref_put(&p->ref, pool_destroy);
+}
+
+int gma_sgx_buffer_describe(struct gma_sgx_buffers *p, void *owner, u32 token,
+	void **linear, u32 *bytes)
+{
+	struct gma_sgx_buffer *b;
+	int ret = 0;
+
+	*linear = NULL; *bytes = 0;
+	mutex_lock(&p->lock);
+	b = buffer_find(p, owner, token);
+	if (!p->online) ret = -ENODEV;
+	else if (!b) ret = -ENOENT;
+	else { *linear = b->linear; *bytes = b->bytes; }
+	mutex_unlock(&p->lock);
+	return ret;
+}
+
+int gma_sgx_buffers_transfer(struct gma_sgx_buffers *p, void *from, void *to,
+	const u32 *tokens, u32 count)
+{
+	struct gma_sgx_buffer *b;
+	u32 i, j, owned = 0;
+	int ret = 0;
+
+	if (!from || !to || from == to || !tokens || !count || count > BUFFER_OWNER_MAX)
+		return -EINVAL;
+	mutex_lock(&p->lock);
+	if (!p->online) { ret = -ENODEV; goto out; }
+	list_for_each_entry(b, &p->buffers, link) owned += b->owner == to;
+	if (count > BUFFER_OWNER_MAX - owned) { ret = -ENOSPC; goto out; }
+	/* Complete validation before changing even one owner. */
+	for (i = 0; i < count; i++) {
+		if (!buffer_find(p, from, tokens[i])) { ret = -ENOENT; goto out; }
+		for (j = 0; j < i; j++)
+			if (tokens[j] == tokens[i]) { ret = -EINVAL; goto out; }
+	}
+	for (i = 0; i < count; i++) buffer_find(p, from, tokens[i])->owner = to;
+out:
+	mutex_unlock(&p->lock);
+	return ret;
 }
 
 void gma_sgx_buffers_stop(struct gma_sgx_buffers *p)

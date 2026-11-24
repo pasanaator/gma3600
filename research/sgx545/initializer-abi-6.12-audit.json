@@ -505,7 +505,7 @@
     "Successful original FREE commits even if its output copy fails",
     "Existing 12-byte CONNECT, 12-byte FREE input and 4-byte FREE output remain supported"
   ],
-  "hardware_original_payload_test": "pending: --device-intel",
+  "hardware_original_payload_test": "passed; see d2500hn-intel-abi.json",
   "previous_device_memory_hardware_result": "d2500hn-device-memory.json",
   "initializer_command_99_enabled": false,
   "gpu_execution_enabled": false,

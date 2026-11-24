@@ -55,6 +55,8 @@ def main():
                     str(root / "tests/sgx545_ddk_i386_layout.c"),
                     "-o", str(output / "ddk-i386-layout.o")], check=True)
     print("Actual DDK i386 public-header layout and command assertions passed")
+    subprocess.run([sys.executable, str(root / "tests/sgx545_init_source_test.py"),
+                    str(core), str(output / "initializer")], check=True)
     subprocess.run([sys.executable, str(root / "tests/sgx545_mmu_source_test.py"),
                     str(core), str(output / "mmu")], check=True)
 
