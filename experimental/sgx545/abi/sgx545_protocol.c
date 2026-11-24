@@ -28,13 +28,14 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 	union {
 		struct sgx545_connect_out connect;
 		struct sgx545_enumerate_out enumerate;
+		struct sgx545_intel_enumerate_out32 intel_enumerate;
 		struct sgx545_handle_out handle;
 		struct sgx545_init_info_out init_info;
 		struct sgx545_alloc_shared_out allocated;
 		struct sgx545_map_info_out mapped;
 		struct sgx545_alloc_device_out device;
 	} out = {0};
-	__u32 in[15] = {0}, cmd, token = 0, out_size;
+	__u32 in[15] = {0}, cmd, token = 0, out_size, i;
 	int ret, copied, rollback = 0, created = 0;
 
 	if ((r->bridge_id & ~0xffU) != SGX545_COMMAND_BASE)
@@ -90,9 +91,14 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			return -EINVAL;
 		break;
 	case SGX545_CMD_ENUMERATE:
+		out_size = r->out_size;
+		if ((out_size != sizeof(out.enumerate) && out_size != sizeof(out.intel_enumerate)) ||
+		    (r->in_size != 0 && r->in_size != 4))
+			return -EINVAL;
+		break;
 	case SGX545_CMD_DISCONNECT:
 	case SGX545_CMD_INIT_CONNECT:
-		out_size = cmd == SGX545_CMD_ENUMERATE ? sizeof(out.enumerate) : sizeof(out.handle);
+		out_size = sizeof(out.handle);
 		if (r->in_size != 0 && r->in_size != 4)
 			return -EINVAL;
 		break;
@@ -131,14 +137,27 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			return ret;
 		out.connect.error = ret;
 		break;
-	case SGX545_CMD_ENUMERATE:
-		ret = ops->enumerate(ctx, &out.enumerate);
+	case SGX545_CMD_ENUMERATE: {
+		struct sgx545_enumerate_out devices = {0};
+		ret = ops->enumerate(ctx, &devices);
 		if (ret < 0)
 			return ret;
-		if (out.enumerate.count > SGX545_MAX_DEVICES)
+		if (devices.count > SGX545_MAX_DEVICES)
 			return -EOVERFLOW;
-		out.enumerate.error = ret;
+		if (out_size == sizeof(out.intel_enumerate)) {
+			out.intel_enumerate.error = ret;
+			out.intel_enumerate.count = devices.count;
+			for (i = 0; i < devices.count; i++) {
+				out.intel_enumerate.devices[i].type = devices.devices[i].type;
+				out.intel_enumerate.devices[i].device_class = devices.devices[i].device_class;
+				out.intel_enumerate.devices[i].index = devices.devices[i].index;
+			}
+		} else {
+			out.enumerate = devices;
+			out.enumerate.error = ret;
+		}
 		break;
+	}
 	case SGX545_CMD_ACQUIRE:
 		if (in[2] != SGX545_DEVICE_TYPE)
 			return -EOPNOTSUPP;

@@ -19,11 +19,11 @@ class InitAbiAuditTests(unittest.TestCase):
     def test_section_schema_rejects_truncation_unknown_magic_and_version(self):
         names = audit.field_names()
         values = [0] * len(names)
-        values[:2] = [0x53475841, 1]
+        values[:2] = [0x53475841, 2]
         encoded = struct.pack("<" + "I" * len(values), *values)
-        self.assertEqual(audit.decode_manifest(encoded, names)["version"], 1)
+        self.assertEqual(audit.decode_manifest(encoded, names)["version"], 2)
         for invalid in (encoded[:-1], encoded + b"\0", b"BAD!" + encoded[4:],
-                        encoded[:4] + struct.pack("<I", 2) + encoded[8:]):
+                        encoded[:4] + struct.pack("<I", 1) + encoded[8:]):
             with self.assertRaises(ValueError):
                 audit.decode_manifest(invalid, names)
 
@@ -42,15 +42,23 @@ class InitAbiAuditTests(unittest.TestCase):
         self.assertEqual(result["raw_build_option_xor"], 0x300000)
         self.assertTrue(result["masked_build_options_match"])
         self.assertTrue(result["selected_firmware_control_layouts_match"])
-        reference.update(connect_reply_bytes=8, device_free_request_bytes=60, device_free_reply_bytes=8,
+        reference.update(connect_reply_bytes=8, enumerate_reply_bytes=328, device_identifier_bytes=20,
+                         wire_enumerate_reply_bytes=328, wire_device_identifier_bytes=20,
+                         device_free_request_bytes=60, device_free_reply_bytes=8,
                          wire_connect_reply_bytes=8, wire_device_free_request_bytes=60, wire_device_free_reply_bytes=8)
-        compat.update(connect_reply_bytes=12, device_free_request_bytes=12, device_free_reply_bytes=4,
+        compat.update(connect_reply_bytes=12, enumerate_reply_bytes=200, device_identifier_bytes=12,
+                      wire_enumerate_reply_bytes=328, wire_device_identifier_bytes=20,
+                      device_free_request_bytes=12, device_free_reply_bytes=4,
                       wire_connect_reply_bytes=8, wire_device_free_request_bytes=60, wire_device_free_reply_bytes=8)
-        native.update(wire_connect_reply_bytes=8, wire_device_free_request_bytes=60, wire_device_free_reply_bytes=8)
+        native.update(wire_connect_reply_bytes=8, wire_device_free_request_bytes=60, wire_device_free_reply_bytes=8,
+                      wire_enumerate_reply_bytes=328, wire_device_identifier_bytes=20)
         result = audit.compare(reference, compat, native)
         self.assertFalse(result["selected_i386_wire_layout_matches"])
         self.assertTrue(result["selected_i386_wire_supported"])
-        self.assertEqual(len(result["supported_protocol_forms"]), 3)
+        self.assertEqual(len(result["supported_protocol_forms"]), 5)
+        compat["wire_enumerate_reply_bytes"] = 200
+        self.assertFalse(audit.compare(reference, compat, native)["selected_i386_wire_supported"])
+        compat["wire_enumerate_reply_bytes"] = 328
         compat["wire_connect_reply_bytes"] = 12
         self.assertFalse(audit.compare(reference, compat, native)["selected_i386_wire_supported"])
         compat["wire_connect_reply_bytes"] = 8

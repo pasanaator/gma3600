@@ -2,8 +2,12 @@
 
 **Hardware result:** `--device-intel` passed, with zero-page teardown. The
 [user-supplied compiler report also matches](../research/sgx545/d2500hn-intel-abi.json).
-The next test is [initializer staging and ownership handoff](SGX545-STAGING-TESTING.md).
-These historical instructions target 0.8.1; current builds report 0.9.0.
+[Initializer staging and ownership handoff also passed](SGX545-STAGING-TESTING.md).
+The earlier audit did not measure enumeration: its tests used the community
+200-byte reply. Services **0.9.1** adds the original **328-byte enumeration**
+reply and expands the compiler audit. Use the
+[current testing instructions](SGX545-ENUMERATION-TESTING.md).
+The commands below describe the historical 0.8.1 checkpoint.
 
 Both services 0.8.0 device-memory modes [passed on the D2500HN](../research/sgx545/d2500hn-device-memory.json).
 All three heaps preserved neighboring allocations and CPU mappings, and both
@@ -16,6 +20,8 @@ diagnostic payloads remain supported. This does not enable GPU execution.
 | Payload | Original Intel 20120717 i386 | Community 1.7 compatibility i386 |
 | --- | ---: | ---: |
 | CONNECT reply | 8 bytes | 12 bytes |
+| Enumeration reply (added in 0.9.1) | 328 bytes | 200 bytes |
+| Device identifier (added in 0.9.1) | 20 bytes | 12 bytes |
 | Device-free request | 60 bytes | 12 bytes |
 | Device-free reply | 8 bytes | 4 bytes |
 | Initializer part-2 request | 2,068 bytes | 2,068 bytes |

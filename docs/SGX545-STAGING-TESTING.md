@@ -1,5 +1,11 @@
 # Initializer translation and ownership handoff
 
+**Hardware result:** [both staging modes passed on the D2500HN](../research/sgx545/d2500hn-initializer-staging.json).
+The retained stage held eleven buffers and eighteen data pages after all client
+files closed. Both unloads released every tracked page with zero errors and no
+blocked hardware accesses. These instructions describe the 0.9.0 checkpoint;
+current services 0.9.1 also fixes [original Intel enumeration](SGX545-ENUMERATION-TESTING.md).
+
 The [original Intel payload test passed on the Atom](../research/sgx545/d2500hn-intel-abi.json),
 and the supplied compiler report matches the expected i386/amd64 layouts.
 Services **0.9.0** adds a project-only initializer staging interface. It translates
@@ -52,7 +58,7 @@ modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
 ```
 
 Choose a new output directory if that one exists. Expected module version is
-`0.9.0`; selftest includes `stage=32 control=24`. The builder runs the actual
+`0.9.1`; selftest includes `stage=32 control=24 ENUMERATE=328/200`. The builder runs the actual
 translator against real native DDK structures with an OS type shim, for both
 compile profiles, in addition to the existing MMU and layout tests. Cloud tests
 never load a module or execute the GPU.

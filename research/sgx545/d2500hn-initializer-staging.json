@@ -1,0 +1,37 @@
+{
+  "source": "User-supplied SSH transcript",
+  "checkpoint": "7e1e89a / services 0.9.0 staging feature set",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, Linux 6.12.117+deb13-amd64, VGA",
+  "transcript_sha256": "e4721979296cc8f2e46f6fecc246849cd3ddd4e2a6e86f2b0e7e48e0877e4c1a",
+  "cases": [
+    {
+      "mode": "--init-stage",
+      "result": "PASS: i386 initializer staging, native snapshot, ownership rollback, creator-close lifetime and explicit staged abort",
+      "status_after_client": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+      "final_cleanup": [
+        "[ 4914.821447] gma3600 SGX buffers stopped: buffers=0 pages=0 maps=0 errors=0 (live VMAs defer release)",
+        "[ 4914.821462] gma3600 SGX bridge stopped: files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+        "[ 4914.839511] gma3600_sgx_services.gma3600_sgx_services gma3600.sgx.0: services cleanup: result=0 pages_live=0 blocked_hw_accesses=0"
+      ]
+    },
+    {
+      "mode": "--init-stage-close",
+      "result": "PASS: i386 initializer staging, native snapshot, ownership rollback, creator-close lifetime and driver-owned retention for unload",
+      "status_after_client": "state=prepared devices=1 pages_live=24 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=11 buffer_pages=18 buffer_maps=0 buffer_errors=0 device_allocations=11 device_pages=18 device_errors=0 stages=1 staged_buffers=11 staged_pages=18 stage_errors=0",
+      "final_cleanup": [
+        "[ 4933.412963] gma3600 SGX buffers stopped: buffers=0 pages=0 maps=0 errors=0 (live VMAs defer release)",
+        "[ 4933.412977] gma3600 SGX bridge stopped: files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+        "[ 4933.427590] gma3600_sgx_services.gma3600_sgx_services gma3600.sgx.0: services cleanup: result=0 pages_live=0 blocked_hw_accesses=0"
+      ]
+    }
+  ],
+  "retained_buffers": 11,
+  "retained_data_pages": 18,
+  "tracked_pages_with_retained_stage": 24,
+  "all_resources_zero_after_each_unload": true,
+  "blocked_hardware_accesses": 0,
+  "errors_observed": 0,
+  "gpu_execution_enabled": false,
+  "firmware_executed": false,
+  "visual_desktop_observation_in_transcript": "not explicitly supplied"
+}

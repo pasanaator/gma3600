@@ -59,7 +59,7 @@
     "--init-stage",
     "--init-stage-close"
   ],
-  "hardware_status": "pending",
+  "hardware_status": "passed",
   "staging_transport": "Project-only ioctl; not successful legacy command 99",
   "legacy_command_99_enabled": false,
   "native_memory_snapshots_registered_with_BM_or_ResMan": false,
@@ -72,5 +72,6 @@
     "AddressSanitizer",
     "UndefinedBehaviorSanitizer"
   ],
-  "guide": "docs/SGX545-STAGING-TESTING.md"
+  "guide": "docs/SGX545-STAGING-TESTING.md",
+  "hardware_result": "d2500hn-initializer-staging.json"
 }

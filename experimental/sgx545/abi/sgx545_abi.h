@@ -86,6 +86,15 @@ struct sgx545_enumerate_out {
 	__u32 error, count;
 	struct sgx545_device_id devices[SGX545_MAX_DEVICES];
 };
+/* Original Intel identifiers include two PDump name pointers. Never expose
+ * native addresses: these unused i386 pointer slots are always zero. */
+struct sgx545_intel_device_id32 {
+	__u32 type, device_class, index, pdump_device_name, pdump_register_name;
+};
+struct sgx545_intel_enumerate_out32 {
+	__u32 error, count;
+	struct sgx545_intel_device_id32 devices[SGX545_MAX_DEVICES];
+};
 struct sgx545_handle_out { __u32 error, handle; };
 struct sgx545_heap32 { __u32 id, handle, base, size, attributes, tile_stride; };
 struct sgx545_init_info_out {

@@ -49,7 +49,7 @@ def decode_manifest(data, names):
     if len(data) != len(names) * 4:
         raise ValueError("Incorrect ABI section length")
     result = dict(zip(names, struct.unpack("<" + "I" * len(names), data)))
-    if result.get("magic") != 0x53475841 or result.get("version") != 1:
+    if result.get("magic") != 0x53475841 or result.get("version") != 2:
         raise ValueError("Unknown ABI manifest magic/version")
     return result
 
@@ -72,6 +72,8 @@ def compare(reference, compat, native):
     supported_aliases = {}
     for field, wire_field, original_bytes, compat_bytes in (
         ("connect_reply_bytes", "wire_connect_reply_bytes", 8, 12),
+        ("enumerate_reply_bytes", "wire_enumerate_reply_bytes", 328, 200),
+        ("device_identifier_bytes", "wire_device_identifier_bytes", 20, 12),
         ("device_free_request_bytes", "wire_device_free_request_bytes", 60, 12),
         ("device_free_reply_bytes", "wire_device_free_reply_bytes", 8, 4),
     ):

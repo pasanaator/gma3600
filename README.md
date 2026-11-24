@@ -26,8 +26,10 @@ all ten scatter/boundary/reuse cases. The
 services 0.8.0, including native VA/PTE lifetimes, neighboring allocations, WC
 coherence and both CPU mapping cleanup paths. Version 0.8.1 adds the
 [original Intel CONNECT/free forms and initializer ABI audit](docs/SGX545-INTEL-ABI.md).
-The original Intel payload test has now passed on the Atom. Services 0.9.0
-adds [initializer translation and ownership staging](docs/SGX545-STAGING-TESTING.md).
+The original Intel CONNECT/free test and both
+[initializer ownership staging tests](docs/SGX545-STAGING-TESTING.md) passed on the Atom.
+Services 0.9.1 fixes another original Intel ABI difference:
+[328-byte enumeration replies](docs/SGX545-ENUMERATION-TESTING.md).
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

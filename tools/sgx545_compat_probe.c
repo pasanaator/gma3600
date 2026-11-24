@@ -10,6 +10,7 @@ _Static_assert(sizeof(void *) == 4, "Build this client with -m32");
 _Static_assert(sizeof(struct sgx545_bridge32) == 28, "i386 envelope");
 _Static_assert(sizeof(struct sgx545_connect_out) == 12, "i386 CONNECT");
 _Static_assert(sizeof(struct sgx545_enumerate_out) == 200, "i386 ENUMERATE");
+_Static_assert(sizeof(struct sgx545_intel_enumerate_out32) == 328, "Intel i386 ENUMERATE");
 _Static_assert(sizeof(struct sgx545_handle_out) == 8, "i386 ACQUIRE/DISCONNECT");
 _Static_assert(sizeof(struct sgx545_heap32) == 24, "i386 heap");
 _Static_assert(sizeof(struct sgx545_init_info_out) == 776, "i386 initializer info");
@@ -82,6 +83,36 @@ static struct sgx545_bridge32 package(unsigned cmd, unsigned services,
 static int call(int fd, struct sgx545_bridge32 *wire)
 {
 	return sys3(54, fd, SGX545_IOCTL_SERVICES, ptr(wire));
+}
+static void enumerate_devices(int fd, unsigned services, struct sgx545_enumerate_out *devices)
+{
+	struct { struct sgx545_intel_enumerate_out32 reply; unsigned guard; } intel = {0};
+	struct sgx545_bridge32 w;
+	unsigned i;
+
+	intel.guard = 0xa5a5a5a5;
+	w = package(0, services, 0, 0, &intel.reply, sizeof(intel.reply));
+	w.out_size -= 4;
+	expect("truncated Intel enumeration rejected", call(fd, &w), -22);
+	w.out_size += 4;
+	expect("Intel enumeration alias ioctl", sys3(54, fd, SGX545_IOCTL_SERVICES_ALIAS, ptr(&w)), 0);
+	if (intel.reply.error || intel.reply.count > SGX545_MAX_DEVICES || intel.guard != 0xa5a5a5a5)
+		fail("Intel enumeration header/guard", intel.reply.error);
+	for (i = 0; i < SGX545_MAX_DEVICES; i++) {
+		struct sgx545_intel_device_id32 *id = &intel.reply.devices[i];
+		if (id->pdump_device_name || id->pdump_register_name ||
+		    (i >= intel.reply.count && (id->type || id->device_class || id->index)))
+			fail("Intel enumeration unused fields", i);
+	}
+	w = package(0, services, 0, 0, devices, sizeof(*devices));
+	expect("compact enumeration ioctl", call(fd, &w), 0);
+	if (devices->error || devices->count != intel.reply.count)
+		fail("enumeration forms disagree on count", devices->count);
+	for (i = 0; i < devices->count; i++)
+		if (devices->devices[i].type != intel.reply.devices[i].type ||
+		    devices->devices[i].device_class != intel.reply.devices[i].device_class ||
+		    devices->devices[i].index != intel.reply.devices[i].index)
+			fail("enumeration forms disagree on identifier", i);
 }
 static int open_bridge(const char *path)
 {
@@ -467,8 +498,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		free_in[1] = 0; free_in[2] = 7;
 		{
 			struct sgx545_enumerate_out devices = {0};
-			w = package(0, other, 0, 0, &devices, sizeof(devices));
-			expect("other file device enumeration", call(fd2, &w), 0);
+			enumerate_devices(fd2, other, &devices);
 			if (devices.error || devices.count != 1) fail("other file device count", devices.error);
 			free_in[1] = devices.devices[0].index;
 		}
@@ -692,7 +722,7 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 ENUMERATE=200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
 	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | device-path]\n"); return 2; }
@@ -727,12 +757,13 @@ int probe_main(unsigned *initial_stack)
 	services = connect_bridge(fd);
 	expect("repeat CONNECT reuses connection", connect_bridge(fd), services);
 
+	enumerate_devices(fd, services, &devices);
 	w = package(0, services, 0, 0, &devices, sizeof(devices));
-	expect("ENUMERATE alias ioctl", sys3(54, fd, SGX545_IOCTL_SERVICES_ALIAS, ptr(&w)), 0);
 	if (devices.error || devices.count != 1 || devices.devices[0].type != 7 ||
 	    devices.devices[0].device_class != 0)
 		fail("SGX device enumeration", devices.error);
 	say("PASS: real DDK device index="); number(devices.devices[0].index); say(" type=SGX\n");
+	say("PASS: Intel ENUMERATE=328 and compact ENUMERATE=200 agree; unused pointer slots are zero\n");
 	w.bridge_id = SGX545_COMMAND(2);
 	expect("GPU command blocked", call(fd, &w), -95);
 	w.bridge_id = SGX545_COMMAND(0); w.services = services + 1;
@@ -774,7 +805,7 @@ int probe_main(unsigned *initial_stack)
 		}
 		if (init_mode >= 6) {
 			device_test(fd, services, device, path, init_mode == 7);
-			if (original_intel_abi) say("PASS: original Intel CONNECT=8 FREE_DEVICE_IN=60 FREE_DEVICE_OUT=8 payload forms\n");
+			if (original_intel_abi) say("PASS: original Intel CONNECT=8 ENUMERATE=328 FREE_DEVICE_IN=60 FREE_DEVICE_OUT=8 payload forms\n");
 			return 0;
 		}
 		if (init_mode >= 3) {

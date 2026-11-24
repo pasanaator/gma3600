@@ -1,0 +1,313 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.9.1",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "manifest_schema": 2,
+  "previous_hardware_result": "d2500hn-initializer-staging.json",
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_services_client_build": "passed",
+      "real_DDK_source_translation_MMU_and_i386_fixtures": "passed",
+      "services_compiler_warnings": 0,
+      "services_sha256": "753185ba37f0a2d8b43c9287d449cebc7b874d470d911fbf153aa2d15a0905c4",
+      "ELF32_QEMU_selftest": "passed",
+      "compiler_audit": "passed",
+      "audit_sha256": "f7e3fd12e71c9929a4ee157151eb819b1bad0d3fe6b68d29e6940c86ca780433",
+      "assessment": {
+        "selected_i386_wire_layout_matches": false,
+        "i386_wire_differences": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          },
+          "device_identifier_bytes": {
+            "reference": 20,
+            "other": 12
+          },
+          "enumerate_reply_bytes": {
+            "reference": 328,
+            "other": 200
+          }
+        },
+        "supported_protocol_forms": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "enumerate_reply_bytes": {
+            "reference": 328,
+            "other": 200
+          },
+          "device_identifier_bytes": {
+            "reference": 20,
+            "other": 12
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          }
+        },
+        "selected_i386_wire_supported": true,
+        "unsupported_i386_wire_differences": {},
+        "selected_firmware_control_layouts_match": true,
+        "firmware_control_differences": {},
+        "raw_build_option_xor": 3145728,
+        "masked_build_option_xor": 0,
+        "masked_build_options_match": true,
+        "native_requires_translation": true,
+        "native_translation_differences": {
+          "bridge_package_bytes": {
+            "reference": 28,
+            "other": 48
+          },
+          "init2_command": {
+            "reference": 3223086947,
+            "other": 3224397667
+          },
+          "init2_request_bytes": {
+            "reference": 2068,
+            "other": 2192
+          },
+          "init2_info_offset": {
+            "reference": 8,
+            "other": 16
+          },
+          "init2_info_bytes": {
+            "reference": 2060,
+            "other": 2176
+          },
+          "init2_scripts_offset": {
+            "reference": 68,
+            "other": 92
+          },
+          "init2_options_offset": {
+            "reference": 1796,
+            "other": 1820
+          },
+          "init2_sizes_offset": {
+            "reference": 1800,
+            "other": 1824
+          },
+          "init2_hwperf_offset": {
+            "reference": 1852,
+            "other": 1880
+          },
+          "init2_tasig_offset": {
+            "reference": 1856,
+            "other": 1888
+          },
+          "init2_edm_task_offset": {
+            "reference": 1864,
+            "other": 1904
+          },
+          "init2_dev_data_offset": {
+            "reference": 1892,
+            "other": 1932
+          },
+          "init2_mem_handles_offset": {
+            "reference": 1988,
+            "other": 2032
+          }
+        },
+        "firmware_revision_or_execution_verified": false
+      }
+    },
+    {
+      "profile": "10141",
+      "host_probe_services_client_build": "passed",
+      "real_DDK_source_translation_MMU_and_i386_fixtures": "passed",
+      "services_compiler_warnings": 0,
+      "services_sha256": "7e3cc9173239c1c5fe9f18f1df8b314762883e8100d7a322409ae24d72007e25",
+      "ELF32_QEMU_selftest": "passed",
+      "compiler_audit": "passed",
+      "audit_sha256": "afa36b253715fa38151db238121ad0eb547042d1e68f61076ef02964b4be8d21",
+      "assessment": {
+        "selected_i386_wire_layout_matches": false,
+        "i386_wire_differences": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          },
+          "device_identifier_bytes": {
+            "reference": 20,
+            "other": 12
+          },
+          "enumerate_reply_bytes": {
+            "reference": 328,
+            "other": 200
+          }
+        },
+        "supported_protocol_forms": {
+          "connect_reply_bytes": {
+            "reference": 8,
+            "other": 12
+          },
+          "enumerate_reply_bytes": {
+            "reference": 328,
+            "other": 200
+          },
+          "device_identifier_bytes": {
+            "reference": 20,
+            "other": 12
+          },
+          "device_free_request_bytes": {
+            "reference": 60,
+            "other": 12
+          },
+          "device_free_reply_bytes": {
+            "reference": 8,
+            "other": 4
+          }
+        },
+        "selected_i386_wire_supported": true,
+        "unsupported_i386_wire_differences": {},
+        "selected_firmware_control_layouts_match": true,
+        "firmware_control_differences": {},
+        "raw_build_option_xor": 3145728,
+        "masked_build_option_xor": 0,
+        "masked_build_options_match": true,
+        "native_requires_translation": true,
+        "native_translation_differences": {
+          "bridge_package_bytes": {
+            "reference": 28,
+            "other": 48
+          },
+          "init2_command": {
+            "reference": 3223086947,
+            "other": 3224397667
+          },
+          "init2_request_bytes": {
+            "reference": 2068,
+            "other": 2192
+          },
+          "init2_info_offset": {
+            "reference": 8,
+            "other": 16
+          },
+          "init2_info_bytes": {
+            "reference": 2060,
+            "other": 2176
+          },
+          "init2_scripts_offset": {
+            "reference": 68,
+            "other": 92
+          },
+          "init2_options_offset": {
+            "reference": 1796,
+            "other": 1820
+          },
+          "init2_sizes_offset": {
+            "reference": 1800,
+            "other": 1824
+          },
+          "init2_hwperf_offset": {
+            "reference": 1852,
+            "other": 1880
+          },
+          "init2_tasig_offset": {
+            "reference": 1856,
+            "other": 1888
+          },
+          "init2_edm_task_offset": {
+            "reference": 1864,
+            "other": 1904
+          },
+          "init2_dev_data_offset": {
+            "reference": 1892,
+            "other": 1932
+          },
+          "init2_mem_handles_offset": {
+            "reference": 1988,
+            "other": 2032
+          }
+        },
+        "firmware_revision_or_execution_verified": false
+      }
+    }
+  ],
+  "reference_package": {
+    "name": "cedarview-drm_20120717-0ubuntu1_i386.deb",
+    "size": 2539960,
+    "sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "url": "https://old-releases.ubuntu.com/ubuntu/pool/multiverse/c/cedarview-drm-drivers/cedarview-drm_20120717-0ubuntu1_i386.deb"
+  },
+  "expanded_reference_i386_measurements": {
+    "connect_request_bytes": 8,
+    "connect_reply_bytes": 8,
+    "enumerate_reply_bytes": 328,
+    "device_identifier_bytes": 20,
+    "device_identifier_index_offset": 8,
+    "max_devices": 16,
+    "acquire_request_bytes": 12,
+    "acquire_reply_bytes": 8,
+    "init_abort_request_bytes": 8,
+    "shared_alloc_request_bytes": 12,
+    "shared_alloc_reply_bytes": 56,
+    "shared_free_request_bytes": 56,
+    "shared_free_reply_bytes": 4,
+    "map_info_request_bytes": 8,
+    "map_info_reply_bytes": 20,
+    "init_info_request_bytes": 8,
+    "init_info_reply_bytes": 776,
+    "heap_info_bytes": 24
+  },
+  "expanded_compat_i386_measurements": {
+    "connect_request_bytes": 8,
+    "connect_reply_bytes": 12,
+    "enumerate_reply_bytes": 200,
+    "device_identifier_bytes": 12,
+    "device_identifier_index_offset": 8,
+    "max_devices": 16,
+    "acquire_request_bytes": 12,
+    "acquire_reply_bytes": 8,
+    "init_abort_request_bytes": 8,
+    "shared_alloc_request_bytes": 12,
+    "shared_alloc_reply_bytes": 56,
+    "shared_free_request_bytes": 56,
+    "shared_free_reply_bytes": 4,
+    "map_info_request_bytes": 8,
+    "map_info_reply_bytes": 20,
+    "init_info_request_bytes": 8,
+    "init_info_reply_bytes": 776,
+    "heap_info_bytes": 24
+  },
+  "host_c_suites": 11,
+  "python_unittests": 13,
+  "focused_protocol_sanitizers": [
+    "AddressSanitizer",
+    "UndefinedBehaviorSanitizer"
+  ],
+  "enumeration_cases": [
+    "zero, two and sixteen devices",
+    "exact 200/328-byte forms; invalid/truncated/native sizes rejected",
+    "correct per-device stride and zero Intel PDump pointer slots",
+    "unused entries zeroed; bytes beyond reply untouched",
+    "backend errors, excessive counts and failed copyout"
+  ],
+  "hardware_status": "pending for 0.9.1 enumeration change",
+  "gpu_execution_enabled": false,
+  "proprietary_libraries_executed": false,
+  "display_parent_changed": false,
+  "guide": "docs/SGX545-ENUMERATION-TESTING.md"
+}

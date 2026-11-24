@@ -1,6 +1,6 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-The hybrid port now has an **initializer staging checkpoint**. It builds
+The hybrid port now has **initializer staging and original Intel enumeration**. It builds
 against Debian `6.12.117+deb13-amd64`. Hardware 3D is **not enabled yet**.
 The first rendering target is an i386 EGL/GLES2 offscreen process on the amd64
 kernel. The available Intel libraries do not accelerate amd64 applications.
@@ -21,8 +21,10 @@ including both free and deferred-close lifetimes.
 including neighboring mappings, alignment, WC coherence and deferred close.
 Version 0.8.1 adds [original Intel payload support and an initializer ABI audit](../../docs/SGX545-INTEL-ABI.md).
 The [original payload test and on-target ABI report passed](../../research/sgx545/d2500hn-intel-abi.json).
-Services 0.9.0 adds [initializer translation and staged ownership](../../docs/SGX545-STAGING-TESTING.md),
-with hardware execution still disabled.
+[Both initializer staging modes passed](../../research/sgx545/d2500hn-initializer-staging.json),
+including retained allocations released on unload. Services 0.9.1 fixes the
+[original Intel enumeration reply](../../docs/SGX545-ENUMERATION-TESTING.md).
+Hardware execution remains disabled.
 
 ## D2500HN hardware result
 

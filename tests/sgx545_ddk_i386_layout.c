@@ -10,9 +10,23 @@ _Static_assert(sizeof(void *) == 4, "genuine i386 compilation");
 _Static_assert(sizeof(PVRSRV_BRIDGE_PACKAGE) == sizeof(struct sgx545_bridge32), "envelope");
 #ifdef SGX545_ORIGINAL_INTEL
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_CONNECT_SERVICES) == 8, "original Intel CONNECT size");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_ENUMDEVICE) == sizeof(struct sgx545_intel_enumerate_out32), "original Intel enumeration reply");
+_Static_assert(sizeof(PVRSRV_DEVICE_IDENTIFIER) == sizeof(struct sgx545_intel_device_id32), "original Intel device identifier");
+_Static_assert(__builtin_offsetof(PVRSRV_DEVICE_IDENTIFIER, pszPDumpDevName) == 12, "original Intel PDump device slot");
+_Static_assert(__builtin_offsetof(PVRSRV_DEVICE_IDENTIFIER, pszPDumpRegName) == 16, "original Intel PDump register slot");
 #else
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_CONNECT_SERVICES) == 12, "compatibility CONNECT size");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_ENUMDEVICE) == sizeof(struct sgx545_enumerate_out), "compatibility enumeration reply");
+_Static_assert(sizeof(PVRSRV_DEVICE_IDENTIFIER) == sizeof(struct sgx545_device_id), "compatibility device identifier");
 #endif
+_Static_assert(PVRSRV_MAX_DEVICES == SGX545_MAX_DEVICES, "enumeration device count");
+_Static_assert(__builtin_offsetof(PVRSRV_DEVICE_IDENTIFIER, eDeviceType) == 0, "identifier type");
+_Static_assert(__builtin_offsetof(PVRSRV_DEVICE_IDENTIFIER, eDeviceClass) == 4, "identifier class");
+_Static_assert(__builtin_offsetof(PVRSRV_DEVICE_IDENTIFIER, ui32DeviceIndex) == 8, "identifier index");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_ENUMDEVICE, asDeviceIdentifier) == 8, "enumeration array");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_CONNECT_SERVICES) == 8, "connect request");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_ACQUIRE_DEVICEINFO) == 12, "acquire request");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_ACQUIRE_DEVICEINFO) == sizeof(struct sgx545_handle_out), "acquire reply");
 _Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_CONNECT_SERVICES, hKernelServices) == 4, "CONNECT alignment");
 _Static_assert(sizeof(PVRSRV_BRIDGE_IN_INITSRV_DISCONNECT) == 8, "abort request");
 _Static_assert(sizeof(PVRSRV_BRIDGE_IN_SGXINFO_FOR_SRVINIT) == 8, "init info request");
@@ -34,9 +48,11 @@ _Static_assert(SGX_SHARED_3DPARAMETERS_HEAP_SIZE == 0, "per-context profile disa
 _Static_assert(SGX_PERCONTEXT_3DPARAMETERS_HEAP_SIZE > 0, "per-context PB remains active");
 _Static_assert(sizeof(PVRSRV_CLIENT_MEM_INFO) == sizeof(struct sgx545_client_mem32), "client memory record");
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_ALLOC_SHARED_SYS_MEM) == sizeof(struct sgx545_alloc_shared_out), "shared allocation reply");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_ALLOC_SHARED_SYS_MEM) == 12, "shared allocation request");
 _Static_assert(sizeof(PVRSRV_BRIDGE_IN_FREE_SHARED_SYS_MEM) == 56, "shared free request");
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_FREE_SHARED_SYS_MEM) == 4, "shared free reply");
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_MHANDLE_TO_MMAP_DATA) == sizeof(struct sgx545_map_info_out), "map metadata reply");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_MHANDLE_TO_MMAP_DATA) == 8, "map metadata request");
 _Static_assert(PVRSRV_BRIDGE_ALLOC_SHARED_SYS_MEM == SGX545_COMMAND(SGX545_CMD_ALLOC_SHARED), "shared alloc command");
 _Static_assert(PVRSRV_BRIDGE_FREE_SHARED_SYS_MEM == SGX545_COMMAND(SGX545_CMD_FREE_SHARED), "shared free command");
 _Static_assert(PVRSRV_BRIDGE_MHANDLE_TO_MMAP_DATA == SGX545_COMMAND(SGX545_CMD_MAP_INFO), "map metadata command");

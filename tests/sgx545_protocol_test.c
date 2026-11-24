@@ -12,6 +12,7 @@ struct fake {
 	unsigned token, connects, acquires, releases, disconnects, enumerates;
 	int fail_in, fail_out, fail_connect, fail_acquire, fail_release, fail_disconnect;
 	unsigned count;
+	int fail_enumerate;
 	unsigned init_connects, init_aborts, infos, info_releases, rollbacks;
 	int fail_init, fail_abort, fail_info, fail_info_release;
 	unsigned buffers, buffer_frees, device_buffers, device_frees;
@@ -35,10 +36,12 @@ static int acquire(void *ctx, unsigned index, unsigned type, unsigned *token)
 static int enumerate(void *ctx, struct sgx545_enumerate_out *out)
 {
 	struct fake *f = ctx;
+	unsigned i;
 	f->enumerates++;
 	out->count = f->count;
-	out->devices[0] = (struct sgx545_device_id){7, 0, 42};
-	return 0;
+	for (i = 0; i < f->count && i < SGX545_MAX_DEVICES; i++)
+		out->devices[i] = (struct sgx545_device_id){7 + i, i, 42 + i};
+	return f->fail_enumerate;
 }
 static int release(void *ctx)
 {
@@ -338,6 +341,52 @@ static void original_intel_protocol(void)
     assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -ENOENT);
 }
 
+static void enumeration_protocol(void)
+{
+    struct fake f = {0};
+    struct sgx545_session s = {.services = 1};
+    struct sgx545_bridge_request r = request(0, 1);
+    const unsigned sizes[] = {200, 328};
+    const unsigned counts[] = {0, 2, 16};
+    const unsigned invalid[] = {0, 196, 204, 324, 332, 520};
+    unsigned shape, n, i, j, stride, before;
+
+    for (shape = 0; shape < 2; shape++) {
+        r.out_size = sizes[shape]; stride = shape ? 5 : 3;
+        for (n = 0; n < 3; n++) {
+            f.count = counts[n];
+            memset(f.out, 0xa5, sizeof(f.out));
+            assert(!sgx545_bridge_execute(&s, &ops, &f, &r));
+            assert(!word(&f, 0) && word(&f, 1) == f.count);
+            for (i = 0; i < f.count; i++) {
+                j = 2 + stride * i;
+                assert(word(&f, j) == 7 + i && word(&f, j + 1) == i && word(&f, j + 2) == 42 + i);
+                if (shape) assert(!word(&f, j + 3) && !word(&f, j + 4));
+            }
+            for (i = 8 + stride * 4 * f.count; i < r.out_size; i++) assert(!f.out[i]);
+            for (i = r.out_size; i < sizeof(f.out); i++) assert(f.out[i] == 0xa5);
+        }
+        f.fail_out = 1;
+        assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EFAULT);
+        f.fail_out = 0; f.count = 17;
+        assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EOVERFLOW);
+        f.count = 0; f.fail_enumerate = -EIO;
+        assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EIO);
+        f.fail_enumerate = 17;
+        assert(!sgx545_bridge_execute(&s, &ops, &f, &r) && word(&f, 0) == 17 && !word(&f, 1));
+        f.fail_enumerate = 0; r.in_size = 4;
+        assert(!sgx545_bridge_execute(&s, &ops, &f, &r));
+        r.in_size = 8; before = f.enumerates;
+        assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL && f.enumerates == before);
+        r.in_size = 0;
+    }
+    before = f.enumerates;
+    for (i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        r.out_size = invalid[i];
+        assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL && f.enumerates == before);
+    }
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -420,6 +469,7 @@ int main(void)
 	buffer_protocol();
 	device_protocol();
 	original_intel_protocol();
+	enumeration_protocol();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }
