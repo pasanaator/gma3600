@@ -131,6 +131,27 @@ static unsigned connect_bridge(int fd)
 		fail("CONNECT payload", out.error);
 	return out.services_lo;
 }
+
+static void connect_flags_test(int fd)
+{
+	unsigned input[2] = {0xfefefefe, 0}, flags, bytes;
+	struct sgx545_connect_out reply = {0};
+	struct sgx545_handle_out closed = {0};
+	struct sgx545_bridge32 wire;
+	for (bytes = 8; bytes <= 12; bytes += 4) {
+		for (flags = 0; flags <= SGX545_CONNECT_PDUMP_FLAGS; flags++) {
+			input[1] = flags;
+			wire = package(12, 0, input, 8, &reply, bytes);
+			expect("CONNECT reserved word and PDump flags", call(fd, &wire), 0);
+			if (reply.error || !reply.services_lo || reply.services_hi)
+				fail("CONNECT flag reply", reply.error);
+			wire = package(13, reply.services_lo, input, 4, &closed, 8);
+			expect("DISCONNECT reserved word", call(fd, &wire), 0);
+			expect("DISCONNECT flag test payload", closed.error, 0);
+		}
+	}
+	say("PASS: reserved bridge words and PDump-only CONNECT flags; original and compact replies\n");
+}
 static void disconnect_bridge(int fd, unsigned services)
 {
 	struct sgx545_handle_out out = {0};
@@ -750,10 +771,11 @@ int probe_main(unsigned *initial_stack)
 	expect("native padded CONNECT rejected", call(fd, &w), -22);
 	w.out_size = 12; w.param_in = 1;
 	expect("bad nested input", call(fd, &w), -14);
-	w.param_in = ptr(in); in[1] = 1;
+	w.param_in = ptr(in); in[1] = 4;
 	expect("unsupported CONNECT flags", call(fd, &w), -95);
 	in[1] = 0; w.param_out = 1;
 	expect("CONNECT copyout rollback", call(fd, &w), -14);
+	connect_flags_test(fd);
 	services = connect_bridge(fd);
 	expect("repeat CONNECT reuses connection", connect_bridge(fd), services);
 

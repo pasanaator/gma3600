@@ -180,7 +180,7 @@ static unsigned word(struct fake *f, unsigned n)
 
 static void initializer_protocol(void)
 {
-	struct fake f = {0};
+	struct fake f = {.in = {0xdeadbeef}};
 	struct sgx545_session s = {0};
 	struct sgx545_bridge_request r;
 	unsigned old;
@@ -229,7 +229,7 @@ static void initializer_protocol(void)
 }
 static void buffer_protocol(void)
 {
-	struct fake f = {0};
+	struct fake f = {.in = {0x12345678}};
 	struct sgx545_session s = {0};
 	unsigned token;
 
@@ -263,7 +263,7 @@ static void buffer_protocol(void)
 
 static void device_protocol(void)
 {
-    struct fake f = {0};
+    struct fake f = {.in = {0x89abcdef}};
     struct sgx545_session s = {.services = 1, .device = 2};
     struct sgx545_bridge_request r;
     unsigned i, token;
@@ -343,7 +343,7 @@ static void original_intel_protocol(void)
 
 static void enumeration_protocol(void)
 {
-    struct fake f = {0};
+    struct fake f = {.in = {0xffffffff}};
     struct sgx545_session s = {.services = 1};
     struct sgx545_bridge_request r = request(0, 1);
     const unsigned sizes[] = {200, 328};
@@ -387,6 +387,32 @@ static void enumeration_protocol(void)
     }
 }
 
+static void connect_flags_protocol(void)
+{
+    struct fake f = {.in = {0xfefefefe}};
+    struct sgx545_session s = {0};
+    struct sgx545_bridge_request r = request(12, 0);
+    unsigned flags, shape, before, token, bit;
+
+    for (shape = 8; shape <= 12; shape += 4) {
+        r.out_size = shape;
+        for (flags = 0; flags <= SGX545_CONNECT_PDUMP_FLAGS; flags++) {
+            f.in[1] = flags; f.fail_out = 1;
+            assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EFAULT && !s.services);
+            f.fail_out = 0;
+            assert(!sgx545_bridge_execute(&s, &ops, &f, &r) && s.services);
+            token = s.services; before = f.connects;
+            assert(!sgx545_bridge_execute(&s, &ops, &f, &r) && s.services == token && f.connects == before);
+            assert(!run(&s, &f, 13) && !s.services);
+        }
+    }
+    before = f.connects;
+    for (bit = 2; bit < 32; bit++) {
+        f.in[1] = 1U << bit;
+        assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EOPNOTSUPP && f.connects == before);
+    }
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -409,9 +435,7 @@ int main(void)
 	r = request(12, 0);
 	r.in_size = 4;
 	assert(sgx545_bridge_execute(&s, &ops, &f, &r) == -EINVAL);
-	f.in[0] = 1;
-	assert(run(&s, &f, 12) == -EOPNOTSUPP);
-	f.in[0] = 0; f.in[1] = 1;
+	f.in[1] = 4;
 	assert(run(&s, &f, 12) == -EOPNOTSUPP);
 	f.in[1] = 0; f.fail_in = 1;
 	assert(run(&s, &f, 12) == -EFAULT && f.connects == 0);
@@ -470,6 +494,7 @@ int main(void)
 	device_protocol();
 	original_intel_protocol();
 	enumeration_protocol();
+	connect_flags_protocol();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }

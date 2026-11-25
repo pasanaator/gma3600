@@ -114,7 +114,11 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		if (ret)
 			return ret;
 	}
-	if (in[0] || (cmd == SGX545_CMD_CONNECT && in[1]))
+	/* Intel's ui32BridgeFlags word is reserved and ignored by its handlers.
+	 * CONNECT's documented service flags affect only PDump, which is absent
+	 * from this port. Keep rejecting unknown service bits rather than inventing
+	 * their semantics. Neither field selects commands or grants privileges. */
+	if (cmd == SGX545_CMD_CONNECT && (in[1] & ~SGX545_CONNECT_PDUMP_FLAGS))
 		return -EOPNOTSUPP;
 
 	switch (cmd) {

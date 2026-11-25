@@ -24,6 +24,7 @@
     "services": "[2664.923624] result=0 pages_live=0 blocked_hw_accesses=0"
   },
   "fix": "Transport 0.1.1 accepts the exact observed PCI selector, rejects other devices and logs open fd/errors.",
-  "hardware_status_after_fix": "pending",
-  "GPU_execution_enabled": false
+  "hardware_status_after_fix": "PCI-only open passed; real initializer reached bridge CONNECT and stopped with EOPNOTSUPP",
+  "GPU_execution_enabled": false,
+  "hardware_result": "d2500hn-initializer-connect.json"
 }

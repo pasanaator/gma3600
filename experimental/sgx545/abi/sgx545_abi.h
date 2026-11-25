@@ -60,6 +60,9 @@ struct sgx545_bridge_request {
 #define SGX545_CMD_INIT_INFO        98U
 #define SGX545_MAX_DEVICES          16U
 #define SGX545_DEVICE_TYPE          7U
+#define SGX545_CONNECT_PDUMP_PERSIST 1U
+#define SGX545_CONNECT_PDUMP_ACTIVE  2U
+#define SGX545_CONNECT_PDUMP_FLAGS   3U
 #define SGX545_MAX_HEAPS            32U
 #define SGX545_UNDEFINED_HEAP       0xffffffffU
 #define SGX545_BUFFER_WC            0x00004000U

@@ -28,8 +28,9 @@
     "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
     "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
   },
-  "hardware_capture_after_fix": "pending",
+  "hardware_capture_after_fix": "PCI-only open passed; real initializer reached bridge CONNECT and stopped with EOPNOTSUPP",
   "GPU_execution_enabled": false,
   "kernel_or_display_driver_changed": false,
-  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
+  "hardware_result": "d2500hn-initializer-connect.json"
 }

@@ -79,6 +79,10 @@ int main(void)
 	wire.bridge_id = SGX545_COMMAND(6); wire.in_size = 24;
 	input[2] = 0x11; input[3] = 0x400b; input[4] = 8192; input[5] = 4096;
 	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == before + 2);
+	wire.bridge_id = SGX545_COMMAND(12); wire.in_size = 8;
+	input[0] = 0xfefefefe; input[1] = SGX545_CONNECT_PDUMP_PERSIST;
+	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == before + 3);
+	assert(input[0] == 0xfefefefe && input[1] == SGX545_CONNECT_PDUMP_PERSIST); /* logged, never rewritten */
 	wire.in_size = 4097;
 	assert(drmCommandWrite(fd, 0x12, &wire, 28) == -EINVAL);
 	wire.in_size = 8; wire.param_in = 0xfffffffc;
@@ -86,6 +90,7 @@ int main(void)
 	requests = 4096; before = ioctls;
 	assert(drmCommandWrite(fd, 0x12, &wire, 28) == -E2BIG && ioctls == before);
 	requests = 0;
+	input[0] = 0;
 	assert(!drmCommandWrite(fd, 0x16, input, 4) && !input[0]);
 	input[0] = 1;
 	assert(drmCommandWrite(fd, 0x16, input, 4) == -EOPNOTSUPP);

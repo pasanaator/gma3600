@@ -7,6 +7,8 @@
 #include "sgx545_abi.h"
 
 _Static_assert(sizeof(void *) == 4, "genuine i386 compilation");
+_Static_assert(SRV_FLAGS_PERSIST == SGX545_CONNECT_PDUMP_PERSIST, "PDump persistence flag");
+_Static_assert(SRV_FLAGS_PDUMP_ACTIVE == SGX545_CONNECT_PDUMP_ACTIVE, "PDump active flag");
 _Static_assert(sizeof(PVRSRV_BRIDGE_PACKAGE) == sizeof(struct sgx545_bridge32), "envelope");
 #ifdef SGX545_ORIGINAL_INTEL
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_CONNECT_SERVICES) == 8, "original Intel CONNECT size");

@@ -1,12 +1,22 @@
 # Capture the real Intel initializer's requests
 
-**Current transport: 0.1.1.** The first real capture loaded the Intel libraries
-but stopped at `drmOpen(NULL, "pci:0000:00:02.0")`: transport 0.1.0 rejected PCI-only
-opens. No bridge commands ran, and the supplied unload log confirmed zero pages
-and blocked accesses. Version 0.1.1 accepts this exact integrated-GPU selector,
-keeps rejecting other devices, and logs the opened fd or open error. Rebuild the
-private bundle before repeating capture; the kernel modules stay at 0.9.1.
-See the [hardware report](../research/sgx545/d2500hn-initializer-open.json).
+**Current services: 0.9.2; transport: 0.1.2.** The PCI-only open now works, and
+the real Intel initializer [reached CONNECT](../research/sgx545/d2500hn-initializer-connect.json).
+Services 0.9.1 rejected it with `EOPNOTSUPP`. That check rejects a nonzero
+reserved bridge word or any nonzero CONNECT flags; the old trace did not record
+their values, so which word triggered it is not yet confirmed.
+
+Intel's original handlers ignore the reserved `ui32BridgeFlags` word. CONNECT's
+documented service flags, `SRV_FLAGS_PERSIST=1` and `SRV_FLAGS_PDUMP_ACTIVE=2`,
+only affect PDump builds. Services 0.9.2 matches that release behavior: it ignores
+the reserved word and accepts combinations of those two bits as no-ops. Unknown
+service bits are still rejected, and the kernel explicitly refuses a PDUMP
+build. These flags do not make allocations or files persistent. Permission,
+ownership, size and command checks remain in force. Transport 0.1.2 records
+the reserved word and CONNECT flags without rewriting them.
+
+Rebuild both the services module and private initializer bundle for this
+checkpoint. The display parent remains the working host2 build.
 
 The [0.9.1 hardware tests passed](../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic invokes the **unmodified Intel `SrvInit()`** with the
@@ -43,26 +53,34 @@ From the repository root on the Atom:
 ```sh
 git pull --ff-only
 bash tests/run.sh
+sgx_build="$HOME/Desktop/gma3600-sgx-connect-$(date +%Y%m%d-%H%M%S)"
+python3 tools/sgx545_hybrid_build.py \
+  --kdir /lib/modules/$(uname -r)/build \
+  --source "$HOME/.cache/gma3600/openpvrsgx" \
+  --sgx-rev 10131 --output "$sgx_build"
+modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
 init_build="$HOME/Desktop/gma3600-sgx-initializer-$(date +%Y%m%d-%H%M%S)"
 python3 tools/sgx545_initializer_build.py --output "$init_build"
 python3 tools/sgx545_initializer_run.py --bundle "$init_build" --selftest
 ```
 
 The final line must be `PASS: private i386 loader, project-owned fixture and
-limited libdrm transport`, with `transport=0.1.1` in the loader line. This selftest
+limited libdrm transport`, with `transport=0.1.2` in the loader line. The module
+must report version `0.9.2`. This selftest
 checks the observed PCI-only selector and rejects other devices without opening
 hardware. It executes only the open-source fixture,
 including in cloud validation under QEMU. It does not initialize the GPU.
 The pinned dependency list and validation results are recorded in
 [the build record](../research/sgx545/initializer-capture-build.json).
-The [0.1.1 validation record](../research/sgx545/initializer-pci-selector-build.json)
-also covers PCI open, master check and bridge forwarding with a mocked backend.
+The [current validation record](../research/sgx545/connect-flags-6.12-build.json)
+covers both kernel profiles, original Intel flag definitions, supported flag
+combinations, ignored reserved words, rejected unknown bits and lifetime tests.
 
 ## Capture on the Atom, using a fresh services child
 
 Keep the working host2 display parent loaded and SSH connected. Reuse
-`$sgx_build` from the successful 0.9.1 test; it points to that existing build.
-The kernel/display modules do not need rebuilding for this tool.
+`$sgx_build` from the new 0.9.2 build above. Load only the new services child;
+the working display parent stays loaded.
 
 ```sh
 modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
@@ -73,6 +91,7 @@ if [ -d /sys/module/gma3600_sgx_probe ]; then
   sudo rmmod gma3600_sgx_probe
 fi
 sudo insmod "$sgx_build/core/gma3600_sgx_services.ko" prepare=1 bridge=1
+sudo "$sgx_build/sgx545-compat-probe"
 sudo python3 tools/sgx545_initializer_run.py \
   --bundle "$init_build" --capture \
   --report "$init_build/initializer-report.json"
@@ -81,14 +100,19 @@ sudo rmmod gma3600_sgx_services
 sudo dmesg | grep -Ei 'SGX buffers|SGX bridge|services cleanup|blocked hardware|BUG:|Oops' | tail -10
 ```
 
+The plain probe must pass its reserved-word/PDump-flag checks before capture.
+It does not consume the one-shot initializer attempt. Stop if it fails.
 The helper verifies the Intel PCI vendor/device, `gma3600` parent ownership,
-host2/services 0.9.1 versions, fresh initialization state and zero live resources.
+host2/services 0.9.2 versions, fresh initialization state and zero live resources.
 It refuses capture through QEMU or on a different GPU. It checks the bundle
 hashes before execution and uses only the private runtime/library path. The
 capture has a 25-second timeout and saves the initializer output and before/after
 resource counts in JSON. A nonzero initializer return with clean resources is
 a completed capture, not successful GPU initialization. A crash, timeout,
 unexpected success or leftover resources is marked `inspect_report`.
+CONNECT trace lines now include `reserved=... service_flags=...`. Return those
+values even if CONNECT is still rejected; unrecognized service bits remain
+unsupported rather than being silently stripped.
 
 After process exit, expect `pages_live=4`, `gpu_execution=disabled`, and zero
 file, allocation, mapping, stage, error and blocked-access counters. `init_ran`

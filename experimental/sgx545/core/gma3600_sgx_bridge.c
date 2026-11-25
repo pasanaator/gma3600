@@ -31,6 +31,11 @@
 #if !defined(PVR_SECURE_HANDLES)
 #error The diagnostic bridge requires DDK secure handles
 #endif
+#if defined(PDUMP)
+#error PDump CONNECT flags need a real implementation before enabling PDUMP
+#endif
+static_assert(SRV_FLAGS_PERSIST == SGX545_CONNECT_PDUMP_PERSIST);
+static_assert(SRV_FLAGS_PDUMP_ACTIVE == SGX545_CONNECT_PDUMP_ACTIVE);
 static_assert(PVRSRV_MAX_DEVICES == SGX545_MAX_DEVICES);
 static_assert(sizeof(PVRSRV_DEVICE_IDENTIFIER) == sizeof(struct sgx545_device_id));
 static_assert(sizeof(PVRSRV_BRIDGE_OUT_CONNECT_SERVICES) == 16);
