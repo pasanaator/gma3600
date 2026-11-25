@@ -27,13 +27,15 @@ including retained allocations released on unload. Services 0.9.1 fixes the
 [The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
 using a private runtime and limited libdrm transport with the existing child.
-The [latest hardware run](../../research/sgx545/d2500hn-buffer-contents.json)
-verified 97,660 bytes in 15 buffers, including populated code, unchanged across
-handoff with clean teardown. Services 0.12.0 and transport 0.4.0 implement the
-legacy CPU mapping-release protocol with counted leases, independent aliases
-and reply-copy rollback. The capture now checks that CPU VMAs have closed while
-staged contents and native PTEs remain valid. Rebuild the child and private
-bundle; native hardware bring-up remains unfinished.
+The [latest hardware run](../../research/sgx545/d2500hn-mapping-release.json)
+passed all 15 Intel CPU mapping releases. All 97,660 bytes remained unchanged
+with no CPU VMAs, valid native PTEs and clean teardown. Services 0.13.0 and
+transport 0.5.0 now test the actual native CPU `InitDevInfo` prefix: bind the
+staged buffers, write/readback/restore one empty CCB slot, call `DeinitDevInfo`,
+and restore the entire native device state. No command is published or kicked.
+The cleanup routine now uses the same heap as allocation and clears its freed
+pointer. Rebuild the child and private bundle; this cycle awaits Atom testing.
+Native BM/resource integration and hardware bring-up remain unfinished.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result
@@ -247,13 +249,12 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Test explicit abort and unload cleanup of staged initializer buffers. The
-   original Intel payload forms and on-target layout audit have passed, along
-   with preparation, bridge, initializer, shared-buffer, offline MMU and both
-   persistent-allocation tests.
-2. Extend explicit nested-payload translation to remaining initializer memory
-   and mapping commands, retaining ownership and rollback.
-   Add the necessary DRM transport after validating the diagnostic subset.
+1. Verify the native CPU bind/CCB write/readback/restore/unbind cycle on the
+   Atom, both with synthetic buffers and the real initializer. Explicit abort,
+   unload, content and CPU mapping-release hardware tests have already passed.
+2. Establish persistent native ownership with bounded BM/resource integration,
+   rollback and disconnect/detach lifetimes. Current snapshots and transient
+   binding must never reach full native part 2 or native memory-free paths.
 3. Port device DMA ownership, match the initializer/microkernel build, and
    connect the legacy ISR through the parent's interrupt API. Design bounded
    power/reset/recovery before allowing GPU execution.

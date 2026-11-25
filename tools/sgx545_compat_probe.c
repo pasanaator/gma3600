@@ -27,6 +27,7 @@ _Static_assert(sizeof(struct sgx545_init_requirements) == 104, "initializer requ
 _Static_assert(sizeof(struct sgx545_init_stage) == 32, "initializer staging ABI");
 _Static_assert(sizeof(struct sgx545_init_control) == 24, "initializer control ABI");
 _Static_assert(sizeof(struct sgx545_init_content) == 48, "initializer content ABI");
+_Static_assert(sizeof(struct sgx545_native_cycle) == 48, "native CPU cycle ABI");
 static int original_intel_abi;
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
@@ -732,7 +733,7 @@ static struct sgx545_init_content content_query(int fd, unsigned services, unsig
 	return content;
 }
 
-static void stage_test(int fd, unsigned services, unsigned device, const char *path, int leave_staged)
+static void stage_test(int fd, unsigned services, unsigned device, const char *path, int leave_staged, int native_mode)
 {
 	struct sgx545_init_requirements caps = {.services = services, .device = device};
 	struct sgx545_init_info_out info = {0};
@@ -804,7 +805,8 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	expected_content[0] = sgx545_measure_content((const void *)memory, first_size, first_size);
 	for (i = 1; i < 11; i++) {
 		unsigned size = allocations[i].mem.alloc_size;
-		volatile unsigned *mapped = device_mapping(fd, services, &allocations[i], 0x55667700U + i);
+		volatile unsigned *mapped = native_mode && (i == 1 || i == 2) ?
+            map_buffer(fd, size, allocations[i].kernel_mem) : device_mapping(fd, services, &allocations[i], 0x55667700U + i);
 		expected_content[i] = sgx545_measure_content((const void *)mapped, size, size);
 		if (i == 9) code_memory = mapped;
 		else expect("unmap populated initializer buffer", sys3(91, ptr((const void *)mapped), size, 0), 0);
@@ -899,6 +901,33 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 		struct sgx545_init_content content = content_query(control_fd, other, message.stage, 0);
 		if (content.flags || content.current_hash != expected_content[0].hash) fail("content survives creator close/unmap", content.flags);
 	}
+	if (native_mode) {
+        struct sgx545_handle_out acquired = {0};
+        struct sgx545_native_cycle cycle;
+        unsigned acquire[3] = {0, 0, 0};
+        w = package(1, other, acquire, 12, &acquired, 8);
+        expect("native controller acquire", call(control_fd, &w), 0);
+        if (acquired.error || !acquired.handle) fail("native controller device handle", acquired.error);
+        cycle = (struct sgx545_native_cycle){.services = other, .stage = message.stage, .device = 0xffffffff};
+        expect("native cycle rejects unknown device", sys3(54, control_fd, SGX545_IOCTL_NATIVE_CYCLE, ptr(&cycle)), -2);
+        cycle.device = acquired.handle;
+        temporary = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+        if (temporary >= 0xfffff001U) fail("native copyout page", temporary);
+        *(volatile struct sgx545_native_cycle *)temporary = cycle;
+        expect("native copyout mprotect", sys3(125, temporary, 4096, 1), 0);
+        expect("native cycle restores state before copyout fault", sys3(54, control_fd, SGX545_IOCTL_NATIVE_CYCLE, temporary), -14);
+        expect("native copyout munmap", sys3(91, temporary, 4096, 0), 0);
+        expect("native bind CCB roundtrip and restore", sys3(54, control_fd, SGX545_IOCTL_NATIVE_CYCLE, ptr(&cycle)), 0);
+        if (cycle.bound != 1 || cycle.restored != 1 || cycle.flags != SGX545_NATIVE_CCB_ROUNDTRIP ||
+            cycle.ccb_bytes != 8192 || cycle.slots != 256 || cycle.read_offset || cycle.write_offset ||
+            cycle.buffers != 11 || cycle.pages != total_pages) fail("native CPU cycle reply", cycle.flags);
+        for (i = 0; i < 11; i++) {
+            struct sgx545_init_content content = content_query(control_fd, other, message.stage, i);
+            if (content.flags || content.current_hash != expected_content[i].hash)
+                fail("native cycle preserved all staged bytes", i);
+        }
+        say("PASS: actual native CPU bind, 32-byte CCB write/readback/restore, unbind, copyout fault and unchanged staged contents; GPU execution disabled\n");
+    }
 	if (!leave_staged) {
 		control = (struct sgx545_init_control){other, message.stage, SGX545_STAGE_ABORT, 0, 0, 0};
 		expect("explicit staged initializer abort", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), 0);
@@ -946,10 +975,10 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 native_cycle=48 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | --native-cycle | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
@@ -961,6 +990,7 @@ int probe_main(unsigned *initial_stack)
 		else if (same(argv[1], "--device-intel")) { init_mode = 6; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage")) { init_mode = 8; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage-close")) { init_mode = 9; original_intel_abi = 1; }
+		else if (same(argv[1], "--native-cycle")) { init_mode = 11; original_intel_abi = 1; }
 		else if (same(argv[1], "--map-release")) { init_mode = 10; original_intel_abi = 1; }
 		else path = argv[1];
 	}
@@ -1036,7 +1066,7 @@ int probe_main(unsigned *initial_stack)
 			return 0;
 		}
 		if (init_mode >= 8) {
-			stage_test(fd, services, device, path, init_mode == 9);
+			stage_test(fd, services, device, path, init_mode == 9, init_mode == 11);
 			return 0;
 		}
 		if (init_mode >= 6) {

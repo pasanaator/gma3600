@@ -32,11 +32,12 @@ The services 0.9.1 [original Intel enumeration and allocation tests](docs/SGX545
 also passed on the Atom. A new [private initializer capture tool](docs/SGX545-INITIALIZER-CAPTURE.md)
 can now observe the unmodified i386 Intel initializer's real requests on that hardware.
 The real initializer now allocates coherent/EDM buffers and obtains mapping metadata.
-The latest Atom run verified the real initializer's populated buffers across
-handoff: 15 buffers, 97,660 bytes, no changes and clean teardown. Services 0.12.0
-and transport 0.4.0 add reference-counted CPU mapping release, alias isolation and
-verification that staged content/PTEs survive actual CPU unmapping. Rebuild both
-the services child and private bundle for this checkpoint.
+The latest Atom run passed all 15 Intel CPU mapping releases: 97,660 bytes
+remained unchanged after every CPU VMA closed, with clean teardown.
+Services 0.13.0 and transport 0.5.0 add an audited native CPU bind/unbind cycle:
+actual DDK command-buffer pointers, a 32-byte slot write/readback/restore, and
+complete device-state restoration. Rebuild the child and private bundle; this
+new cycle awaits hardware testing.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

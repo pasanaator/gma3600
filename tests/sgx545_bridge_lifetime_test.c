@@ -102,6 +102,16 @@ static int gma_sgx_init_translate(const struct sgx545_init2_in32 *wire,
 static int gma_sgx_init_check(const struct gma_sgx_native_init *out,
     const struct gma_sgx_init_memory *memory, u32 count)
 { assert(out->count == count); return memcmp(out->memory, memory, count * sizeof(*memory)) ? -EIO : 0; }
+static unsigned native_calls;
+static int fail_native;
+static int gma3600_sgx_native_cycle(void *device, struct gma_sgx_native_init *snapshot, struct sgx545_native_cycle *out)
+{
+    assert(device == &fake_device && snapshot->count == 9); native_calls++;
+    if (fail_native) return fail_native;
+    out->bound = out->restored = 1; out->flags = SGX545_NATIVE_CCB_ROUNDTRIP;
+    out->ccb_bytes = 8192; out->slots = 256;
+    return 0;
+}
 struct list_head { struct list_head *next, *prev; };
 #define container_of(p, type, member) ((type *)((char *)(p) - offsetof(type, member)))
 #define INIT_LIST_HEAD(h) ((h)->next = (h)->prev = (h))
@@ -610,6 +620,21 @@ static void initializer_stage_lifetime(void)
         controller->owner = &foreign;
         assert(stage_control(controller, &control) == -EPERM); controller->owner = &current_pid;
         assert(!stage_control(controller, &control) && control.buffers == 9 && control.pages == 36);
+        attach_device(controller); controller->session.device = 1000;
+        {
+            struct sgx545_native_cycle native = {.services = controller->session.services, .stage = message.stage, .device = 1000};
+            struct mock_buffer *backing = b->stage->allocations->pin;
+            unsigned before_calls = native_calls;
+            backing->content.mapped_vmas = 1;
+            assert(stage_native_cycle(controller, &native) == -EBUSY && native_calls == before_calls);
+            backing->content.mapped_vmas = 0; backing->content.hash ^= 1;
+            assert(stage_native_cycle(controller, &native) == -EUCLEAN && native_calls == before_calls);
+            backing->content.hash ^= 1;
+            fail_native = -ENOMEM;
+            assert(stage_native_cycle(controller, &native) == -ENOMEM && !b->stage->dirty);
+            fail_native = 0;
+            assert(!stage_native_cycle(controller, &native) && native.bound && native.restored && native.buffers == 9 && native.pages == 36);
+        }
         {
             struct sgx545_init_content content = {.services = controller->session.services, .stage = message.stage};
             struct mock_buffer *backing = b->stage->allocations->pin;

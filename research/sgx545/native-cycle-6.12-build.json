@@ -1,0 +1,75 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.13.0",
+  "private_transport_version": "0.5.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-mapping-release.json",
+  "changes": [
+    "Add private 48-byte NATIVE_CYCLE ioctl, restricted to existing stage-owner process and a valid secure SGX device handle",
+    "Require no live CPU VMAs, unchanged contents and valid staged native metadata/PTEs before and after the native CPU transaction",
+    "Call actual native InitDevInfo against the live SGX device, validate the native CCB pointer graph, perform a bounded 32-byte write/readback/restore at the empty write slot without changing offsets or kicker",
+    "Call actual DeinitDevInfo and restore all device pointer/scalar state before returning, including both allocation-failure paths and prior MMU cache-control bits",
+    "Fix DeinitDevInfo to free from the matching NON_PAGEABLE heap and clear the freed CCB pointer",
+    "Keep full native part 2 blocked; no BM/resource registration, power, IRQ, script, firmware or job execution is enabled",
+    "Integrate native transaction before real initializer content readback and abort; require a verified native cycle in successful report outcome",
+    "Add --native-cycle i386 hardware test, including ioctl copyout fault, repeat bind/restore and unchanged populated staging data"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 25,
+    "actual_native_DDK_source": "Real sgxinfokm.h types plus extracted actual InitDevInfo/DeinitDevInfo bodies; OS allocation/barrier seams and outer device wrapper mocked; ASan/UBSan for both profiles",
+    "native_cases": [
+      "empty ring slots 0 and 255",
+      "out-of-range and nonempty ring rejection",
+      "both allocation failures",
+      "existing binding rejection",
+      "forged metadata pointer and GPU-read-only runtime buffer rejection",
+      "all CCB bytes preserved and full live device restored"
+    ],
+    "bridge_lifetimes": "actual bridge functions with mocked DDK/provider; reject live CPU VMAs/changed content before binding, failure cleanup and successful counts; existing stage/mmap/teardown suite passes",
+    "actual_ELF32_transport_mock": "QEMU passed native-cycle success, ioctl error, malformed restoration reply, content/query errors and unconditional staged abort; exact original 32-bit wire types",
+    "private_runtime_fixture": "0.5.0 project-owned i386 loader/fixture passed under QEMU; proprietary initializer not executed",
+    "report_gates": "missing/duplicate/incomplete native cycle, bad ring bounds, mismatched stage counts and retained content/mapping/resource failures cannot produce native verified outcome",
+    "updated_common_i386_client": "built separately after adding native_cycle=48 selftest output; QEMU selftest passed"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed; final common client selftest-only update rebuilt separately",
+      "services_compiler_warnings": 0,
+      "compiled_core_inputs_match_final_repository": true,
+      "actual_native_CPU_MMU_and_translator_tests": "ASan/UBSan passed for both profiles",
+      "original_Intel_ABI_audit": "passed; 2068-byte i386 versus 2192-byte native handoff remains explicitly translated",
+      "services_sha256": "10e3f23c78bbc943ce8860f7eb32886c1e0dc6068ecb88d737bd0984ee90a613"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed; final common client selftest-only update rebuilt separately",
+      "services_compiler_warnings": 0,
+      "compiled_core_inputs_match_final_repository": true,
+      "actual_native_CPU_MMU_and_translator_tests": "ASan/UBSan passed for both profiles",
+      "original_Intel_ABI_audit": "passed; 2068-byte i386 versus 2192-byte native handoff remains explicitly translated",
+      "services_sha256": "6cc861c48bf6f6c10f9bca288d49548e6f41af42946b6b32dbed0ee8be9a316f"
+    }
+  ],
+  "updated_common_client_sha256": "cac9a8ce52df9b86223e8a62764368cdc5f1e23e95f05e497b6cf9442fccdd6c",
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "77dd74fd5b8b57818f3e3c516d56f6ab09d97c36acc5fbf5480972c5c8ce1a6a",
+    "lib/libdrm.so.2": "321a0e0e53e4c0ca95589519b30df91933c7d8a30b9b6e542993148fa8788037",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending: --native-cycle and real Intel initializer native CPU capture",
+  "GPU_execution_enabled": false,
+  "GPU_DMA_or_firmware_compatibility_verified": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

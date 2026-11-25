@@ -5,6 +5,8 @@
 /* Include after the DDK headers. These wrappers are metadata snapshots only:
  * they have no native BM/resource-manager registration and MUST NOT be passed
  * to DevInitSGXPart2KM, native free, power, or command-submission functions.
+ * The audited gma3600_sgx_native_cycle may borrow them for InitDevInfo's
+ * CPU-only prefix, then immediately remove every live native reference.
  */
 struct gma_sgx_init_memory {
 	__u32 token, address, bytes, flags;
@@ -20,4 +22,6 @@ int gma_sgx_init_translate(const struct sgx545_init2_in32 *wire,
 	const struct gma_sgx_init_memory *memory, __u32 count, struct gma_sgx_native_init *out);
 int gma_sgx_init_check(const struct gma_sgx_native_init *snapshot,
 	const struct gma_sgx_init_memory *memory, __u32 count);
+int gma3600_sgx_native_cycle(void *device_node, struct gma_sgx_native_init *snapshot,
+	struct sgx545_native_cycle *out);
 #endif

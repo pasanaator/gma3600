@@ -82,6 +82,14 @@ metadata translation and driver-owned buffer lifetime, with no GPU execution.
 [Both build profiles and host lifetime/translation tests passed](staging-6.12-build.json);
 the two staging hardware modes are pending.
 
+The [mapping-release hardware checkpoint](d2500hn-mapping-release.json) passed
+all 15 Intel releases, with no live CPU VMAs at staging, unchanged populated
+buffers, valid native PTEs and clean teardown. Services 0.13.0 / transport 0.5.0
+add a bounded actual native `InitDevInfo`/`DeinitDevInfo` CPU cycle and a CCB slot
+write/readback/restore; see [the build record](native-cycle-6.12-build.json).
+GPU firmware execution, hardware DMA, native resource registration and rendering
+remain unverified.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

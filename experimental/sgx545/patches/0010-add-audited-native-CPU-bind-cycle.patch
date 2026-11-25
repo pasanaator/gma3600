@@ -1,0 +1,23 @@
+--- a/services4/srvkm/devices/sgx/sgxinit.c
++++ b/services4/srvkm/devices/sgx/sgxinit.c
+@@ -177,7 +177,8 @@
+ 		/*
+ 			Free CCB info.
+ 		*/
+-		OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP, sizeof(PVRSRV_SGX_CCB_INFO), psDevInfo->psKernelCCBInfo, IMG_NULL);
++		OSFreeMem(PVRSRV_OS_NON_PAGEABLE_HEAP, sizeof(PVRSRV_SGX_CCB_INFO), psDevInfo->psKernelCCBInfo, IMG_NULL);
++		psDevInfo->psKernelCCBInfo = IMG_NULL;
+ 	}
+ 
+ 	return PVRSRV_OK;
+@@ -316,6 +317,10 @@
+ 
+ 
+ 
++
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++#include "gma3600_sgx_native.inc"
++#endif
+ 
+ static PVRSRV_ERROR SGXRunScript(PVRSRV_SGXDEV_INFO *psDevInfo, SGX_INIT_COMMAND *psScript, IMG_UINT32 ui32NumInitCommands)
+ {

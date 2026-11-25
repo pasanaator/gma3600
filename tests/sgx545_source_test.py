@@ -59,6 +59,8 @@ def main():
                     str(core), str(output / "initializer")], check=True)
     subprocess.run([sys.executable, str(root / "tests/sgx545_mmu_source_test.py"),
                     str(core), str(output / "mmu")], check=True)
+    subprocess.run([sys.executable, str(root / "tests/sgx545_native_source_test.py"),
+                    str(core), str(output / "native")], check=True)
 
 
 if __name__ == "__main__":

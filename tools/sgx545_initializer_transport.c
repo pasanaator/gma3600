@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.4.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.5.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -152,6 +152,7 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	struct sgx545_init_stage validation, stage;
 	struct sgx545_init_requirements caps = {0};
 	struct sgx545_init_control control = {0};
+	struct sgx545_native_cycle native = {0};
 	unsigned roles[SGX545_INIT_MAX_BUFFERS], token_count = SGX545_INIT_ROLES, i, buffers = 0, pages = 0;
 	int slot = descriptor_slot(fd), error = 0, validated = 0, staged = 0, queried = 0, aborted = 0;
 
@@ -200,7 +201,20 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	else if (control.services != wire->services || control.stage != stage.stage || control.operation != SGX545_STAGE_QUERY ||
 		 control.buffers != buffers || control.pages != pages || control.flags) error = EPROTO;
 	else queried = 1;
-	if (queried) error = content_readback(fd, wire->services, stage.stage, roles, buffers);
+	if (queried) {
+		native.services = wire->services; native.stage = stage.stage; native.device = request.device;
+		if (transport_ioctl(fd, SGX545_IOCTL_NATIVE_CYCLE, &native) < 0) error = errno;
+		else if (native.services != wire->services || native.stage != stage.stage || native.device != request.device ||
+			 native.flags != SGX545_NATIVE_CCB_ROUNDTRIP || native.bound != 1 || native.restored != 1 ||
+			 native.buffers != buffers || native.pages != pages || native.ccb_bytes != 8192 || native.slots != 256 ||
+			 native.read_offset >= native.slots || native.write_offset != native.read_offset) error = EPROTO;
+		if (error) fprintf(stderr, "NATIVE errno=%d\n", error);
+		else {
+			fprintf(stderr, "NATIVE bound=%u restored=%u ccb_bytes=%u slots=%u read=%u write=%u roundtrip=1 buffers=%u pages=%u gpu_execution=disabled\n",
+				native.bound, native.restored, native.ccb_bytes, native.slots, native.read_offset, native.write_offset, native.buffers, native.pages);
+			error = content_readback(fd, wire->services, stage.stage, roles, buffers);
+		}
+	}
 	/* Always attempt cleanup after a delivered STAGE, including query failure. */
 	control = (struct sgx545_init_control){.services = wire->services, .stage = stage.stage, .operation = SGX545_STAGE_ABORT};
 	if (transport_ioctl(fd, SGX545_IOCTL_INIT_CONTROL, &control) < 0) error = errno;

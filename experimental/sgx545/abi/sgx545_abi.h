@@ -201,6 +201,14 @@ struct sgx545_init_content {
 	__u32 services, stage, index, token, bytes, address, memory_flags;
 	__u32 baseline_hash, current_hash, nonzero_bytes, padding_nonzero, flags;
 };
+/* Audited CPU prefix of native initialization, immediately unbound/restored.
+ * No power, registration, script, command publication or hardware kick. */
+#define SGX545_IOCTL_NATIVE_CYCLE 0xc0304709U
+#define SGX545_NATIVE_CCB_ROUNDTRIP 1U
+struct sgx545_native_cycle {
+	__u32 services, stage, device, flags, buffers, pages;
+	__u32 ccb_bytes, slots, read_offset, write_offset, bound, restored;
+};
 struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero, mapped_vmas; };
 static inline struct sgx545_content_measure sgx545_measure_content(const void *linear,
 	__u32 bytes, __u32 mapped_bytes)

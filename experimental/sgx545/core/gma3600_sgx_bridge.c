@@ -70,6 +70,7 @@ static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_STAGE) == sizeof(struct sgx545_init_st
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_VALIDATE) == sizeof(struct sgx545_init_stage));
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTROL) == sizeof(struct sgx545_init_control));
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTENT) == sizeof(struct sgx545_init_content));
+static_assert(_IOC_SIZE(SGX545_IOCTL_NATIVE_CYCLE) == sizeof(struct sgx545_native_cycle));
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -710,6 +711,45 @@ static int stage_content(struct gma_sgx_file *f, struct sgx545_init_content *mes
 	return 0;
 }
 
+static int stage_native_verify(struct gma_sgx_file *f, u32 id)
+{
+	struct sgx545_init_control control = {.services = f->session.services, .stage = id};
+	u32 i;
+	int ret = stage_control(f, &control);
+
+	if (ret) return ret;
+	for (i = 0; i < control.buffers; i++) {
+		struct sgx545_init_content content = {.services = f->session.services, .stage = id, .index = i};
+		ret = stage_content(f, &content);
+		if (ret) return ret;
+		if (content.flags & SGX545_CONTENT_MAPPED) return -EBUSY;
+		if (content.flags & SGX545_CONTENT_CHANGED) return -EUCLEAN;
+	}
+	return 0;
+}
+
+static int stage_native_cycle(struct gma_sgx_file *f, struct sgx545_native_cycle *message)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	void *node;
+	int ret;
+
+	if (message->flags || message->buffers || message->pages || message->ccb_bytes || message->slots ||
+	    message->read_offset || message->write_offset || message->bound || message->restored) return -EINVAL;
+	if (!f->session.services || message->services != f->session.services || !f->session.device ||
+	    message->device != f->session.device || !f->device_handle) return -ENOENT;
+	ret = stage_native_verify(f, message->stage);
+	if (ret) return ret;
+	ret = PVRSRVLookupHandle(f->handles, &node, f->device_handle, PVRSRV_HANDLE_TYPE_DEV_NODE);
+	if (ret) return -ENOENT;
+	ret = gma3600_sgx_native_cycle(node, &b->stage->snapshot, message);
+	if (ret) return ret;
+	ret = stage_native_verify(f, message->stage);
+	if (ret) return ret;
+	message->buffers = b->stats.staged_buffers; message->pages = b->stats.staged_pages;
+	return 0;
+}
+
 static int backend_disconnect(void *ctx)
 {
 	struct gma_sgx_file *f = ctx;
@@ -954,10 +994,12 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 		struct sgx545_init_stage stage;
 		struct sgx545_init_control control;
 		struct sgx545_init_content content;
+		struct sgx545_native_cycle native;
 	} message;
 	u32 size = cmd == SGX545_IOCTL_INIT_REQUIREMENTS ? sizeof(message.caps) :
 		(cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_VALIDATE) ? sizeof(message.stage) :
-		cmd == SGX545_IOCTL_INIT_CONTENT ? sizeof(message.content) : sizeof(message.control);
+		cmd == SGX545_IOCTL_INIT_CONTENT ? sizeof(message.content) :
+		cmd == SGX545_IOCTL_NATIVE_CYCLE ? sizeof(message.native) : sizeof(message.control);
 	int ret;
 
 	if (copy_from_user(&message, (void __user *)arg, size)) return -EFAULT;
@@ -977,6 +1019,7 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 		ret = stage_publish(f, wire, &message.stage, stage_copy_result, (void __user *)arg);
 	else if (cmd == SGX545_IOCTL_INIT_VALIDATE) ret = stage_validate(f, wire, &message.stage);
 	else if (cmd == SGX545_IOCTL_INIT_CONTENT) ret = stage_content(f, &message.content);
+	else if (cmd == SGX545_IOCTL_NATIVE_CYCLE) ret = stage_native_cycle(f, &message.native);
 	else ret = stage_control(f, &message.control);
 	/* STAGE copies its result transactionally. QUERY/ABORT own no new resource. */
 	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
@@ -997,11 +1040,11 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
 	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK && cmd != SGX545_IOCTL_INIT_REQUIREMENTS &&
-	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT)
+	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_NATIVE_CYCLE)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
-	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT)
+	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT || cmd == SGX545_IOCTL_NATIVE_CYCLE)
 		return bridge_init_ioctl(f, cmd, arg);
 	if (cmd == SGX545_IOCTL_DEVICE_CHECK) {
 		struct sgx545_device_check check;
