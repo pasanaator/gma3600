@@ -6,7 +6,7 @@ struct device;
 struct gma_sgx_bridge;
 struct gma_sgx_bridge_stats {
 	u32 files, connections, errors, heap_handles, init_running, init_ran;
-	u32 buffers, buffer_pages, buffer_maps, buffer_errors;
+	u32 buffers, buffer_pages, buffer_maps, buffer_errors, map_leases;
 	u32 device_allocations, device_pages, device_errors;
 	u32 stages, staged_buffers, staged_pages, stage_errors;
 };

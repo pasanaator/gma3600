@@ -56,12 +56,13 @@
     "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
     "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
   },
-  "hardware_status": "pending for new populated-content tests and actual initializer readback",
+  "hardware_status": "passed all 11 synthetic writes/change/restore and real 15-buffer content measurement with clean teardown",
   "GPU_execution_enabled": false,
   "firmware_authentication_or_GPU_DMA_verified": false,
   "proprietary_libraries_executed_in_cloud": false,
   "display_parent_changed": false,
   "private_initializer_bundle_rebuild_required": true,
   "legacy_release_mmap_command_27_supported": false,
-  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
+  "hardware_result": "d2500hn-buffer-contents.json"
 }

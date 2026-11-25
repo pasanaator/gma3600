@@ -27,14 +27,13 @@ including retained allocations released on unload. Services 0.9.1 fixes the
 [The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
 using a private runtime and limited libdrm transport with the existing child.
-The [latest hardware run](../../research/sgx545/d2500hn-real-handoff.json) passed
-the real initializer's complete 15-buffer/36-page CPU handoff and clean abort.
-Services 0.11.0 and transport 0.3.0 measure populated buffer contents before and
-after transfer, retaining GPU permissions and reporting hashes/byte counts.
-The updated synthetic staging test writes all 11 buffers and detects/restores
-CPU changes in staged GPU-read-only code. Rebuild both the child and private
-bundle. Legacy command 27 release-mapping support and hardware bring-up remain
-unfinished; content checks do not authenticate firmware or prove GPU access.
+The [latest hardware run](../../research/sgx545/d2500hn-buffer-contents.json)
+verified 97,660 bytes in 15 buffers, including populated code, unchanged across
+handoff with clean teardown. Services 0.12.0 and transport 0.4.0 implement the
+legacy CPU mapping-release protocol with counted leases, independent aliases
+and reply-copy rollback. The capture now checks that CPU VMAs have closed while
+staged contents and native PTEs remain valid. Rebuild the child and private
+bundle; native hardware bring-up remains unfinished.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result

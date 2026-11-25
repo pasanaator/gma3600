@@ -17,6 +17,7 @@ _Static_assert(sizeof(struct sgx545_init_info_out) == 776, "i386 initializer inf
 _Static_assert(sizeof(struct sgx545_client_mem32) == 48, "i386 client memory");
 _Static_assert(sizeof(struct sgx545_alloc_shared_out) == 56, "i386 shared allocation");
 _Static_assert(sizeof(struct sgx545_map_info_out) == 20, "i386 mmap metadata");
+_Static_assert(sizeof(struct sgx545_release_map_out) == 16, "i386 release mmap metadata");
 _Static_assert(sizeof(struct sgx545_alloc_device_out) == 76, "i386 device allocation");
 _Static_assert(sizeof(struct sgx545_device_check) == 24, "device diagnostic message");
 _Static_assert(sizeof(struct sgx545_mmu_check) == 40, "MMU diagnostic message");
@@ -36,6 +37,12 @@ static int sys3(unsigned nr, unsigned a, unsigned b, unsigned c)
 	int result;
 	__asm__ volatile("int $0x80" : "=a"(result) : "0"(nr), "b"(a), "c"(b), "d"(c)
 			 : "memory", "cc");
+	return result;
+}
+static int sys5(unsigned nr, unsigned a, unsigned b, unsigned c, unsigned d, unsigned e)
+{
+	int result;
+	__asm__ volatile("int $0x80" : "=a"(result) : "0"(nr), "b"(a), "c"(b), "d"(c), "S"(d), "D"(e) : "memory", "cc");
 	return result;
 }
 static unsigned ptr(const void *p) { return (unsigned)p; }
@@ -312,7 +319,82 @@ static void mmu_test(int fd, unsigned services, unsigned device, unsigned buffer
 	say("PASS: native DDK offline MMU scatter mappings, PT boundary crossings, repeated free and zero remaining page tables\n");
 }
 
-static void buffer_test(int fd, unsigned services, unsigned device, const char *path, int close_only, int mmu_mode)
+static void mapping_release_test(int fd, unsigned services)
+{
+	struct sgx545_alloc_shared_out allocation = {0};
+	struct sgx545_map_info_out map = {0};
+	struct sgx545_release_map_out released = {0};
+	struct sgx545_bridge32 w;
+	unsigned in[3] = {0xffffffff, SGX545_BUFFER_WC, 8193}, token, target, readonly, free_input[14] = {0};
+	volatile unsigned *primary, *alias, *fragment;
+	int moved;
+
+	w = package(63, services, in, 12, &allocation, 56);
+	expect("mapping test shared allocation", call(fd, &w), 0);
+	if (allocation.error || !allocation.kernel_mem) fail("mapping test allocation payload", allocation.error);
+	token = allocation.kernel_mem; in[1] = token;
+	readonly = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+	if (readonly >= 0xfffff001U) fail("mapping output-fault page", readonly);
+	expect("mapping reply mprotect", sys3(125, readonly, 4096, 1), 0);
+	w = package(11, services, in, 8, (void *)readonly, 20);
+	expect("MAP_INFO output-fault lease rollback", call(fd, &w), -14);
+	w = package(27, services, in, 8, &released, 16);
+	expect("undelivered MAP_INFO creates no lease", call(fd, &w), -2);
+	w = package(11, services, in, 8, &map, 20);
+	expect("first mapping metadata lease", call(fd, &w), 0);
+	if (map.error || map.user_address || map.real_size != 12288) fail("first mapping reply", map.error);
+	primary = map_buffer(fd, 12288, token); alias = map_buffer(fd, 12288, token);
+	if (primary == alias) fail("independent mapping aliases", ptr((const void *)primary));
+	for (unsigned i = 0; i < 12288 / 4; i++) primary[i] = 0xaabbccddU ^ i;
+	__asm__ volatile("sfence" ::: "memory");
+	check_words(alias, 12288, 0xaabbccddU);
+	expect("reuse canonical mapping address", call(fd, &w), 0);
+	if (map.error || map.user_address != ptr((const void *)primary)) fail("canonical address reply", map.user_address);
+	w = package(27, services, in, 8, (void *)readonly, 16);
+	expect("RELEASE_MAP output-fault lease rollback", call(fd, &w), -14);
+	w.param_out = ptr(&released);
+	expect("first of two mapping leases released", call(fd, &w), 0);
+	if (released.error || released.unmap || released.user_address || released.real_size) fail("nonfinal release must not unmap", released.unmap);
+	target = probe_mmap2(~0U, 12288, 3, 0x22, 0);
+	if (target >= 0xfffff001U) fail("mremap target reservation", target);
+	expect("release mremap target reservation", sys3(91, target, 12288, 0), 0);
+	moved = sys5(163, ptr((const void *)primary), 12288, 12288, 3, target);
+	if (moved >= 0 || (unsigned)moved < 0xfffff001U) fail("canonical mapping move must be rejected", moved);
+	check_words(primary, 12288, 0xaabbccddU);
+	expect("last mapping lease released", call(fd, &w), 0);
+	if (released.error || released.unmap != 1 || released.user_address != ptr((const void *)primary) || released.real_size != 12288)
+		fail("final release must name only canonical alias", released.user_address);
+	check_words(primary, 12288, 0xaabbccddU); check_words(alias, 12288, 0xaabbccddU);
+	expect("duplicate mapping release rejected", call(fd, &w), -2);
+	w = package(11, services, in, 8, &map, 20);
+	expect("reuse blocked until returned range is unmapped", call(fd, &w), -16);
+	expect("userspace unmaps returned range", sys3(91, ptr((const void *)primary), 12288, 0), 0);
+	check_words(alias, 12288, 0xaabbccddU);
+	expect("new lease does not adopt raw alias", call(fd, &w), 0);
+	if (map.error || map.user_address) fail("raw alias must not be returned by release protocol", map.user_address);
+	w = package(27, services, in, 8, &released, 16);
+	expect("release lease without a canonical VMA", call(fd, &w), 0);
+	if (released.error || released.unmap || released.user_address || released.real_size) fail("no canonical VMA release reply", released.unmap);
+	w = package(11, services, in, 8, &map, 20);
+	expect("fragmentation test metadata", call(fd, &w), 0);
+	fragment = map_buffer(fd, 12288, token);
+	expect("partial canonical unmap", sys3(91, ptr((const void *)fragment) + 8192, 4096, 0), 0);
+	w = package(27, services, in, 8, &released, 16);
+	expect("fragmented canonical mapping has no releasable full range", call(fd, &w), -16);
+	expect("unmap remaining canonical fragment", sys3(91, ptr((const void *)fragment), 8192, 0), 0);
+	expect("release metadata after complete manual unmap", call(fd, &w), 0);
+	if (released.error || released.unmap) fail("manual unmap release reply", released.unmap);
+	free_input[1] = token;
+	w = package(64, services, free_input, sizeof(free_input), &allocation.error, 4);
+	expect("free handle while independent alias lives", call(fd, &w), 0);
+	if (allocation.error) fail("mapping test free payload", allocation.error);
+	check_words(alias, 12288, 0xaabbccddU);
+	expect("unmap final independent alias", sys3(91, ptr((const void *)alias), 12288, 0), 0);
+	expect("unmap output-fault page", sys3(91, readonly, 4096, 0), 0);
+	say("PASS: Intel mapping leases, canonical address reuse, copyout rollback, final-release range, alias isolation and partial-unmap rejection\n");
+}
+
+static void buffer_test(int fd, unsigned services, unsigned device, const char *path, int close_only, int mmu_mode, int release_only)
 {
 	struct sgx545_handle_out result = {0};
 	struct sgx545_alloc_shared_out allocation = {0};
@@ -330,6 +412,15 @@ static void buffer_test(int fd, unsigned services, unsigned device, const char *
 	w = package(67, services, 0, 0, &result, 8);
 	expect("buffer initializer CONNECT ioctl", call(fd, &w), 0);
 	expect("buffer initializer CONNECT payload (reload services for a fresh attempt)", result.error, 0);
+	if (release_only) {
+		mapping_release_test(fd, services);
+		in[1] = 0; w = package(68, services, in, 8, &result, 8);
+		expect("mapping test initializer abort", call(fd, &w), 0);
+		if (result.error) fail("mapping test abort payload", result.error);
+		disconnect_bridge(fd, services); expect("mapping test close", sys3(6, fd, 0, 0), 0);
+		say("Check sysfs: map_leases=0 buffer_maps=0 buffers=0 buffer_pages=0 files=0 connections=0\n");
+		return;
+	}
 	w = package(63, services, in, 12, &allocation, 56);
 	in[1] = 0;
 	expect("unsupported buffer cache flags", call(fd, &w), -95);
@@ -760,7 +851,7 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	stage_query(control_fd, other, message.stage, 11, total_pages);
 	for (i = 0; i < 11; i++) {
 		struct sgx545_init_content content = content_query(control_fd, other, message.stage, i);
-		if (content.flags || content.token != allocations[i].kernel_mem || content.bytes != allocations[i].mem.alloc_size ||
+		if (content.flags != (i == 0 || i == 9 ? SGX545_CONTENT_MAPPED : 0) || content.token != allocations[i].kernel_mem || content.bytes != allocations[i].mem.alloc_size ||
 		    content.address != allocations[i].mem.device_address || content.memory_flags != allocations[i].mem.flags ||
 		    content.baseline_hash != expected_content[i].hash || content.current_hash != expected_content[i].hash ||
 		    content.nonzero_bytes != expected_content[i].nonzero || content.padding_nonzero)
@@ -771,12 +862,12 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 		code_memory[0] ^= 0x01000000;
 		__asm__ volatile("sfence" ::: "memory");
 		content = content_query(control_fd, other, message.stage, 9);
-		if (content.flags != SGX545_CONTENT_CHANGED || content.baseline_hash != expected_content[9].hash ||
+		if (content.flags != (SGX545_CONTENT_CHANGED | SGX545_CONTENT_MAPPED) || content.baseline_hash != expected_content[9].hash ||
 		    content.current_hash == content.baseline_hash) fail("staged GPU-read-only code CPU write detection", content.flags);
 		code_memory[0] ^= 0x01000000;
 		__asm__ volatile("sfence" ::: "memory");
 		content = content_query(control_fd, other, message.stage, 9);
-		if (content.flags || content.current_hash != expected_content[9].hash) fail("restored staged content", content.flags);
+		if (content.flags != SGX545_CONTENT_MAPPED || content.current_hash != expected_content[9].hash) fail("restored staged content", content.flags);
 		expect("unmap staged code CPU mapping", sys3(91, ptr((const void *)code_memory), allocations[9].mem.alloc_size, 0), 0);
 	}
 	say("PASS: CPU writes to 11 initializer buffers survive handoff; staged GPU-read-only code detects changes and restoration\n");
@@ -858,7 +949,7 @@ int probe_main(unsigned *initial_stack)
 		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
@@ -870,6 +961,7 @@ int probe_main(unsigned *initial_stack)
 		else if (same(argv[1], "--device-intel")) { init_mode = 6; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage")) { init_mode = 8; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage-close")) { init_mode = 9; original_intel_abi = 1; }
+		else if (same(argv[1], "--map-release")) { init_mode = 10; original_intel_abi = 1; }
 		else path = argv[1];
 	}
 	fd = open_bridge(path);
@@ -939,6 +1031,10 @@ int probe_main(unsigned *initial_stack)
 		fail("second file device handle", acquired.error);
 	expect("close implicitly disconnects second file", sys3(6, fd2, 0, 0), 0);
 	if (init_mode) {
+		if (init_mode == 10) {
+			buffer_test(fd, services, device, path, 0, 0, 1);
+			return 0;
+		}
 		if (init_mode >= 8) {
 			stage_test(fd, services, device, path, init_mode == 9);
 			return 0;
@@ -949,7 +1045,7 @@ int probe_main(unsigned *initial_stack)
 			return 0;
 		}
 		if (init_mode >= 3) {
-			buffer_test(fd, services, device, path, init_mode == 4, init_mode == 5);
+			buffer_test(fd, services, device, path, init_mode == 4, init_mode == 5, 0);
 			return 0;
 		}
 		initializer_test(fd, services, device, path, init_mode == 2);

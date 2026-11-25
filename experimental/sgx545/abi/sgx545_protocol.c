@@ -33,6 +33,7 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		struct sgx545_init_info_out init_info;
 		struct sgx545_alloc_shared_out allocated;
 		struct sgx545_map_info_out mapped;
+		struct sgx545_release_map_out released;
 		struct sgx545_alloc_device_out device;
 	} out = {0};
 	__u32 in[15] = {0}, cmd, token = 0, out_size, i;
@@ -79,6 +80,10 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		out_size = sizeof(out.mapped);
 		if (r->in_size != 8)
 			return -EINVAL;
+		break;
+	case SGX545_CMD_RELEASE_MAP:
+		out_size = sizeof(out.released);
+		if (r->in_size != 8) return -EINVAL;
 		break;
 	case SGX545_CMD_INIT_INFO:
 		out_size = sizeof(out.init_info);
@@ -251,6 +256,11 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			return ret;
 		out.mapped.error = ret;
 		break;
+	case SGX545_CMD_RELEASE_MAP:
+		ret = ops->release_map(ctx, in[1], &out.released);
+		if (ret < 0) return ret;
+		out.released.error = ret;
+		break;
 	case SGX545_CMD_ALLOC_DEVICE:
 		if (!s->initializer || !s->init_info)
 			return -EACCES;
@@ -280,6 +290,10 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		break;
 	}
 	copied = ops->copy_out(ctx, r->param_out, &out, out_size);
+	if (copied && !ret && (cmd == SGX545_CMD_MAP_INFO || cmd == SGX545_CMD_RELEASE_MAP)) {
+		rollback = ops->undo_map(ctx, in[1], cmd == SGX545_CMD_RELEASE_MAP);
+		if (rollback) return -EIO;
+	}
 	if (copied && created) {
 		if (cmd == SGX545_CMD_CONNECT)
 			rollback = ops->disconnect(ctx);

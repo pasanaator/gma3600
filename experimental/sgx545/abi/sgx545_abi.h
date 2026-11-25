@@ -51,6 +51,7 @@ struct sgx545_bridge_request {
 #define SGX545_CMD_ALLOC_DEVICE     6U
 #define SGX545_CMD_FREE_DEVICE      7U
 #define SGX545_CMD_MAP_INFO         11U
+#define SGX545_CMD_RELEASE_MAP      27U
 #define SGX545_CMD_CONNECT          12U
 #define SGX545_CMD_DISCONNECT       13U
 #define SGX545_CMD_INIT_CONNECT     67U
@@ -149,6 +150,7 @@ struct sgx545_alloc_device_out {
 	__u32 sync[5]; /* NO_SYNCOBJ: all fields remain zero. */
 };
 struct sgx545_map_info_out { __u32 error, offset, byte_offset, real_size, user_address; };
+struct sgx545_release_map_out { __u32 error, unmap, user_address, real_size; };
 
 /* Audited Intel 20120717 release initializer layout: i386, SGX545, HWPERF,
  * recovery, no PDUMP/debug. This is a wire model only; command 99 is disabled.
@@ -194,16 +196,17 @@ struct sgx545_init_control { __u32 services, stage, operation, buffers, pages, f
  * authentication. Existing user mappings may still modify staged RAM. */
 #define SGX545_IOCTL_INIT_CONTENT 0xc0304708U
 #define SGX545_CONTENT_CHANGED 1U
+#define SGX545_CONTENT_MAPPED 2U
 struct sgx545_init_content {
 	__u32 services, stage, index, token, bytes, address, memory_flags;
 	__u32 baseline_hash, current_hash, nonzero_bytes, padding_nonzero, flags;
 };
-struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero; };
+struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero, mapped_vmas; };
 static inline struct sgx545_content_measure sgx545_measure_content(const void *linear,
 	__u32 bytes, __u32 mapped_bytes)
 {
 	const volatile unsigned char *data = linear;
-	struct sgx545_content_measure result = {2166136261U, 0, 0};
+	struct sgx545_content_measure result = {2166136261U, 0, 0, 0};
 	__u32 i;
 	for (i = 0; i < mapped_bytes; i++) {
 		unsigned char value = data[i];
@@ -236,6 +239,9 @@ struct sgx545_bridge_ops {
 		struct sgx545_alloc_shared_out *out);
 	int (*free_shared)(void *ctx, __u32 token);
 	int (*map_info)(void *ctx, __u32 token, struct sgx545_map_info_out *out);
+	int (*release_map)(void *ctx, __u32 token, struct sgx545_release_map_out *out);
+	/* Undo only a successful MAP_INFO/RELEASE_MAP whose reply was not delivered. */
+	int (*undo_map)(void *ctx, __u32 token, int release);
 	int (*alloc_device)(void *ctx, __u32 heap, __u32 flags, __u32 bytes,
 		__u32 alignment, struct sgx545_alloc_device_out *out);
 	int (*free_device)(void *ctx, __u32 token);

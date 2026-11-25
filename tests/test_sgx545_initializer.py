@@ -27,8 +27,9 @@ def content_trace():
     lines = ["HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=40 errno=0 gpu_execution=disabled"]
     for i in range(11):
         lines.append(f"CONTENT index={i} handle={0x100+i:08x} bytes=4 address={0xf2000000+i*4096:08x} memory_flags=0202420b "
-                     "baseline=12345678 current=12345678 nonzero=1 padding_nonzero=0 changed=0")
-    lines.append("CONTENT_SUMMARY checked=11 buffers=11 bytes=44 nonzero_bytes=11 populated=11 changed=0 errno=0")
+                     "baseline=12345678 current=12345678 nonzero=1 padding_nonzero=0 changed=0 mapped=0")
+        lines.append(f"MAP_RELEASE handle={0x100+i:08x} unmap=1 address={0x70000000+i*4096:08x} bytes=4096")
+    lines.append("CONTENT_SUMMARY checked=11 buffers=11 bytes=44 nonzero_bytes=11 populated=11 changed=0 errno=0 mapped=0")
     return "\n".join(lines) + "\n"
 
 
@@ -59,7 +60,7 @@ class InitializerTests(unittest.TestCase):
     def test_runtime_and_intel_artifact_hashes_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = {"schema": 1, "transport_version": "0.3.0", "artifact_sha256": {}}
+            manifest = {"schema": 1, "transport_version": "0.4.0", "artifact_sha256": {}}
             for name in runner.ARTIFACTS:
                 file = folder / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -68,7 +69,7 @@ class InitializerTests(unittest.TestCase):
             (folder / "bundle.json").write_text(json.dumps(manifest))
             runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps({**manifest, "transport_version": "0.1.0"}))
-            with self.assertRaisesRegex(ValueError, "Rebuild.*0.3.0"):
+            with self.assertRaisesRegex(ValueError, "Rebuild.*0.4.0"):
                 runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps(manifest))
             (folder / "sysroot/lib/i386-linux-gnu/libc.so.6").write_bytes(b"changed")
@@ -80,7 +81,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host2",
-            "module/gma3600_sgx_services/version": "0.11.0",
+            "module/gma3600_sgx_services/version": "0.12.0",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -90,7 +91,7 @@ class InitializerTests(unittest.TestCase):
         (root / "bus/pci/devices/0000:00:02.0/driver").symlink_to(driver)
         status = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled", "pages_live": "4"}
         status.update({key: "0" for key in ("blocked_hw_accesses", "init_ran", "files", "connections", "bridge_errors",
-            "heap_handles", "init_running", "buffers", "buffer_pages", "buffer_maps", "buffer_errors",
+            "heap_handles", "init_running", "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases",
             "device_allocations", "device_pages", "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors")})
         p = root / "bus/auxiliary/devices/gma3600.sgx.0/services"
         p.parent.mkdir(parents=True)
@@ -104,7 +105,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.11.0")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.12.0")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1")):
                 self.write_status(path, {**status, key: value})
@@ -129,7 +130,7 @@ class InitializerTests(unittest.TestCase):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
             (root / "module/gma3600_sgx_services/version").write_text("0.9.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.11.0"):
+            with self.assertRaisesRegex(ValueError, "services 0.12.0"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):
@@ -186,13 +187,27 @@ class InitializerTests(unittest.TestCase):
         self.assertFalse(runner.content_status(partial, handoff)["verified"])
         self.assertFalse(runner.content_status("", handoff)["verified"])
 
+    def test_mapping_release_requires_kernel_observed_unmapped_buffers(self):
+        trace = content_trace()
+        contents = runner.content_status(trace, runner.handoff_status(trace))
+        self.assertTrue(runner.mapping_release_status(trace, contents)["all_staged_cpu_mappings_released"])
+        for old, new in (("unmap=1", "unmap=0"), ("address=70000000", "address=70000001"),
+                         ("bytes=4096", "bytes=8192"), ("MAP_RELEASE handle=00000101", "MAP_RELEASE handle=00000100")):
+            self.assertFalse(runner.mapping_release_status(trace.replace(old, new, 1), contents)["all_staged_cpu_mappings_released"])
+        mapped = trace.replace("changed=0 mapped=0", "changed=0 mapped=1", 1).replace("errno=0 mapped=0", "errno=0 mapped=1")
+        updated = runner.content_status(mapped, runner.handoff_status(mapped))
+        self.assertTrue(updated["verified"])
+        self.assertFalse(runner.mapping_release_status(mapped, updated)["all_staged_cpu_mappings_released"])
+        missing = "\n".join(line for line in trace.splitlines() if not line.startswith("MAP_RELEASE "))
+        self.assertFalse(runner.mapping_release_status(missing, contents)["all_staged_cpu_mappings_released"])
+
     def test_capture_reserves_report_before_execution_and_records_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             status_path, status = self.target(folder / "sys")
             report = folder / "report.json"
             argv = ["run", "--bundle", str(folder), "--capture", "--report", str(report)]
-            manifest = {"transport_version": "0.3.0", "artifact_sha256": {"fixture": "mock"}}
+            manifest = {"transport_version": "0.4.0", "artifact_sha256": {"fixture": "mock"}}
             def child(*args, **kwargs):
                 self.assertEqual(json.loads(report.read_text())["outcome"], "capture_pending")
                 self.assertNotIn("LD_PRELOAD", kwargs["env"])
@@ -220,6 +235,7 @@ class InitializerTests(unittest.TestCase):
                 self.assertEqual(result["outcome"], "cpu_handoff_content_verified_with_clean_resources")
                 self.assertTrue(result["handoff"]["cpu_cycle_passed"])
                 self.assertTrue(result["contents"]["verified"])
+                self.assertTrue(result["mapping_releases"]["all_staged_cpu_mappings_released"])
                 argv[-1] = str(folder / "dirty-handoff.json")
                 with patch.object(runner, "services_status", return_value={**status, "stages": "1"}):
                     self.assertEqual(runner.main(), 1)

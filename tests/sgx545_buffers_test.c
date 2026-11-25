@@ -78,6 +78,7 @@ struct vm_operations_struct {
     void (*open)(struct vm_area_struct *);
     void (*close)(struct vm_area_struct *);
     vm_fault_t (*fault)(struct vm_fault *);
+    int (*mremap)(struct vm_area_struct *);
 };
 static void vm_flags_set(struct vm_area_struct *v, unsigned long bits) { v->vm_flags |= bits; }
 static void vm_flags_clear(struct vm_area_struct *v, unsigned long bits) { v->vm_flags &= ~bits; }
@@ -195,6 +196,70 @@ static void ownership_transfer(void)
     vma.vm_ops->close(&vma); empty();
 }
 
+static void mapping_leases(void)
+{
+    struct gma_sgx_buffers *p = gma_sgx_buffers_create();
+    struct sgx545_alloc_shared_out allocation;
+    struct sgx545_map_info_out map;
+    struct sgx545_release_map_out released;
+    struct vm_area_struct primary = area(77, 12288), alias = area(77, 12288), split;
+    struct gma_sgx_buffer *b;
+    int owner, foreign;
+    alias.vm_start = 0x20000000; alias.vm_end = alias.vm_start + 12288;
+    assert(!gma_sgx_buffer_alloc(p, &owner, 77, SGX545_BUFFER_WC, 8193, &allocation));
+    assert(gma_sgx_buffer_release_map(p, &owner, 77, &released) == -ENOENT);
+    assert(!gma_sgx_buffer_map_info(p, &owner, 77, &map) && !map.user_address && p->stats.leases == 1);
+    assert(!gma_sgx_buffer_mmap(p, &owner, &primary));
+    assert(!gma_sgx_buffer_mmap(p, &owner, &alias));
+    b = ((struct gma_sgx_mapping *)primary.vm_private_data)->buffer;
+    assert(primary.vm_private_data != alias.vm_private_data && b->refs == 3);
+    assert(primary.vm_ops->mremap(&primary) == -EOPNOTSUPP && !alias.vm_ops->mremap(&alias));
+    split = primary; split.vm_start = 0x30000000; split.vm_end = split.vm_start + 12288;
+    split.vm_ops->open(&split); /* copy_vma before a rejected mremap */
+    assert(split.vm_ops->mremap(&split) == -EOPNOTSUPP);
+    split.vm_ops->close(&split);
+    assert(b->mapping->complete && b->mapping->vmas == 1);
+    assert(!gma_sgx_buffer_map_info(p, &owner, 77, &map) && map.user_address == primary.vm_start && p->stats.leases == 2);
+    assert(gma_sgx_buffer_release_map(p, &foreign, 77, &released) == -ENOENT && p->stats.leases == 2);
+    assert(!gma_sgx_buffer_release_map(p, &owner, 77, &released) && !released.unmap && !released.user_address && !released.real_size);
+    assert(!gma_sgx_buffer_release_map(p, &owner, 77, &released) && released.unmap == 1 && released.user_address == primary.vm_start && released.real_size == 12288);
+    assert(!p->stats.leases && p->stats.maps == 2 && pages_live == 3); /* no unmap or GPU free occurs in the command */
+    assert(gma_sgx_buffer_map_info(p, &owner, 77, &map) == -EBUSY);
+    assert(!gma_sgx_buffer_undo_map(p, &owner, 77, 1) && p->stats.leases == 1 && !b->release_pending);
+    assert(!gma_sgx_buffer_map_info(p, &owner, 77, &map) && p->stats.leases == 2);
+    assert(!gma_sgx_buffer_undo_map(p, &owner, 77, 0) && p->stats.leases == 1);
+    assert(!gma_sgx_buffer_release_map(p, &owner, 77, &released) && released.unmap == 1);
+    primary.vm_ops->close(&primary);
+    assert(!b->mapping && p->stats.maps == 1 && pages_live == 3);
+    assert(!gma_sgx_buffer_map_info(p, &owner, 77, &map) && !map.user_address); /* independent alias is never returned */
+    assert(!gma_sgx_buffer_release_map(p, &owner, 77, &released) && !released.unmap && !released.user_address);
+    assert(!gma_sgx_buffer_free(p, &owner, 77));
+    alias.vm_ops->close(&alias); gma_sgx_buffers_stop(p); empty();
+
+    p = gma_sgx_buffers_create(); primary = area(1, 8192);
+    assert(!gma_sgx_buffer_alloc(p, &owner, 1, SGX545_BUFFER_WC, 8192, &allocation));
+    assert(!gma_sgx_buffer_map_info(p, &owner, 1, &map));
+    fail_alloc = 1;
+    assert(gma_sgx_buffer_mmap(p, &owner, &primary) == -ENOMEM && !p->stats.maps);
+    assert(!gma_sgx_buffer_mmap(p, &owner, &primary));
+    split = primary; split.vm_start += 4096; split.vm_pgoff++;
+    split.vm_ops->open(&split);
+    split.vm_ops->close(&split); /* A hole, or an ambiguous merge, invalidates the full range. */
+    assert(gma_sgx_buffer_release_map(p, &owner, 1, &released) == -EBUSY && p->stats.leases == 1);
+    assert(gma_sgx_buffer_map_info(p, &owner, 1, &map) == -EBUSY);
+    primary.vm_ops->close(&primary);
+    assert(!gma_sgx_buffer_release_map(p, &owner, 1, &released) && !released.unmap && !p->stats.leases);
+    assert(!gma_sgx_buffer_free(p, &owner, 1)); gma_sgx_buffers_stop(p); empty();
+
+    p = gma_sgx_buffers_create(); primary = area(1, 4096);
+    assert(!gma_sgx_buffer_alloc(p, &owner, 1, SGX545_BUFFER_WC, 4096, &allocation));
+    assert(!gma_sgx_buffer_map_info(p, &owner, 1, &map));
+    primary.vm_start = 0x100000000UL; primary.vm_end = primary.vm_start + 4096;
+    assert(gma_sgx_buffer_mmap(p, &owner, &primary) == -EOVERFLOW);
+    assert(!gma_sgx_buffer_release_map(p, &owner, 1, &released) && !released.unmap);
+    gma_sgx_buffers_stop(p); empty();
+}
+
 int main(void)
 {
     int owner, other;
@@ -240,7 +305,7 @@ int main(void)
     assert(!gma_sgx_buffer_mmap(p, &owner, &vma));
     assert((vma.vm_flags & (VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP)) ==
         (VM_DONTCOPY | VM_DONTEXPAND | VM_DONTDUMP) && !(vma.vm_flags & VM_MAYEXEC));
-    b = vma.vm_private_data; assert(b->refs == 2 && pages_live == 3);
+    b = ((struct gma_sgx_mapping *)vma.vm_private_data)->buffer; assert(b->refs == 2 && pages_live == 3);
     assert(gma_sgx_buffer_visit(p, &other, 42, visit_pages, b) == -ENOENT);
     assert(gma_sgx_buffer_visit(p, &owner, 42, visit_pages, b) == 17);
     data = b->linear;
@@ -278,7 +343,7 @@ int main(void)
     assert(!gma_sgx_buffer_alloc(p, &owner, 1, SGX545_BUFFER_WC, 4096, &out));
     vma = area(1, 4096);
     assert(!gma_sgx_buffer_mmap(p, &owner, &vma));
-    b = vma.vm_private_data;
+    b = ((struct gma_sgx_mapping *)vma.vm_private_data)->buffer;
     gma_sgx_buffers_stop(p);
     assert(!b->owner && b->refs == 1 && pages_live == 1);
     fault = (struct vm_fault){&vma, vma.vm_start, vma.vm_pgoff};
@@ -321,6 +386,7 @@ int main(void)
     gma_sgx_buffers_stop(p); empty();
     pinned_buffer_lifetime();
     ownership_transfer();
+    mapping_leases();
     puts("SGX buffer tests passed: independent mapping pins, ownership, zeroing, WC aliases, VMA split/detach lifetime, quotas and cache-failure retention");
     return 0;
 }

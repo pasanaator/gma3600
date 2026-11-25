@@ -1,0 +1,70 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.12.0",
+  "private_transport_version": "0.4.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-buffer-contents.json",
+  "original_Intel_reference": {
+    "package_sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "reference": "services4/srvkm/env/linux/mmap.c: PVRMMapOSMemHandleToMMapData and PVRMMapReleaseMMapData increment/decrement per-process references and return the existing address or last-release range"
+  },
+  "changes": [
+    "Implement Intel command 27 with exact i386 8-byte request/16-byte reply and copyout rollback for MAP_INFO and RELEASE_MAP",
+    "Track a canonical mapping group separately from raw aliases; VMA splits share their group while each VMA independently owns RAM",
+    "Return only the final canonical range; the user process performs munmap, and CPU metadata release never removes GPU PTEs or frees device memory",
+    "Reject incomplete/fragmented canonical ranges and canonical mremap; preserve the original group when a temporary mremap destination is rejected",
+    "Retire remaining leases on handle/free/disconnect/detach and export map_leases",
+    "Use a bridge trylock in mmap to avoid mmap_lock/bridge-lock inversion against ioctl reply faults",
+    "Capture returned release ranges and actual per-buffer VMA presence; require matching final releases and no CPU mappings at staging while contents/PTEs still verify"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 24,
+    "actual_buffer_provider": "ASan/UBSan; repeated requests, nonfinal/final release, rollback, duplicate/foreign release, raw alias lifetime, partial-close rejection, rejected move destination cleanup, mapping allocation faults and 32-bit range checks",
+    "actual_bridge_lifetimes": "ASan/UBSan; mmap returns EAGAIN under bridge contention and ENODEV after detach, preserving existing stage/content/close tests",
+    "protocol": "reference-count rollback after both MAP_INFO and RELEASE_MAP copyout faults; malformed/unsupported request validation remains in force",
+    "actual_ELF32_transport_mock": "release command routing plus existing handoff/content/error/abort cases passed under QEMU",
+    "private_runtime_fixture": "0.4.0 bundle loader/open-source fixture passed under QEMU; proprietary initializer not executed",
+    "mapping_report": "requires final release for every staged token with matching rounded size and kernel-observed mapped=0; missing/duplicate/bad ranges or retained mappings cannot report success",
+    "updated_common_i386_client": "built separately after help text update and QEMU selftest passed; adds --map-release hardware mode; this client is independent of SGX revision profile"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "compiled_core_inputs_match_final_repository": true,
+      "actual_DDK_MMU_and_translator_tests": "passed for both profiles",
+      "original_Intel_ABI_audit": "passed, including command 27, request/reply sizes and reply field offsets",
+      "services_sha256": "f0d3a9457edd7df6163bf0fa064bf30eab72d835c8a84e2c55e7de1351aa6f54"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "compiled_core_inputs_match_final_repository": true,
+      "actual_DDK_MMU_and_translator_tests": "passed for both profiles",
+      "original_Intel_ABI_audit": "passed, including command 27, request/reply sizes and reply field offsets",
+      "services_sha256": "191fc47c582b390b644e2b79f3f3ed12051d9f5183455eeb14740e2c0d20e41d"
+    }
+  ],
+  "updated_common_client_sha256": "1a636d38dbb9e65f436e18c2168019c831fcc3783557402ddfd914c31f8fa2cf",
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "914492d89668bc648ee09763e58ea203bf8d004a0355a453a1e4266a6292ce4d",
+    "lib/libdrm.so.2": "7b465b7bbd4e636ffd3b370b5a0d17c0cb241a6460e9369a81bfe08897ee2a19",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending: --map-release, --buffers and actual initializer unmap-before-staging capture",
+  "GPU_execution_enabled": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

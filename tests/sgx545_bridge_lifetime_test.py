@@ -32,6 +32,7 @@ def main():
         "static int stage_control(", "static int stage_content(", "static int backend_disconnect(", "static void bridge_free(struct kref *ref)\n{",
         "static void bridge_file_free(", "static int bridge_open(",
         "static int bridge_release(", "static void bridge_stop(",
+        "static int bridge_mmap(",
         "int gma3600_sgx_bridge_register(",
         "static int bridge_mmu_visit(", "static int bridge_mmu_check(",
     ):

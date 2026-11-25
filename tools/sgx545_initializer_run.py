@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.3.0":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.3.0 is required")
+    if manifest.get("transport_version") != "0.4.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.4.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,13 +54,13 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.11.0":
-        raise ValueError("Capture currently requires host2 and tested services 0.11.0")
+    if host != "1.0.4-sgx-host2" or child != "0.12.0":
+        raise ValueError("Capture currently requires host2 and tested services 0.12.0")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
     required.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
-                    "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "device_allocations", "device_pages",
+                    "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
                     "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors")})
     if any(status.get(key) != value for key, value in required.items()):
         raise ValueError("Services must be fresh, idle and prepare-only; unload/reload the child after any initializer test")
@@ -70,7 +70,7 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
 def clean_status(status):
     expected = {"state": "prepared", "gpu_execution": "disabled", "blocked_hw_accesses": "0", "pages_live": "4"}
     expected.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
-                    "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "device_allocations", "device_pages",
+                    "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
                     "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors")})
     return all(status.get(key) == value for key, value in expected.items())
 
@@ -115,14 +115,14 @@ def first_failed_request(stderr):
 def content_status(stderr, handoff):
     rows = []
     for match in re.finditer(r"^CONTENT index=(\d+) handle=([0-9a-f]+) bytes=(\d+) address=([0-9a-f]+) memory_flags=([0-9a-f]+) "
-                             r"baseline=([0-9a-f]+) current=([0-9a-f]+) nonzero=(\d+) padding_nonzero=(\d+) changed=(\d+)$", stderr, re.M):
+                             r"baseline=([0-9a-f]+) current=([0-9a-f]+) nonzero=(\d+) padding_nonzero=(\d+) changed=(\d+) mapped=([01])$", stderr, re.M):
         values = [int(value, 16 if i in (1, 3, 4, 5, 6) else 10) for i, value in enumerate(match.groups())]
         rows.append(dict(zip(("index", "handle", "bytes", "address", "memory_flags", "baseline_hash", "current_hash",
-                              "nonzero_bytes", "padding_nonzero", "changed"), values)))
-    summaries = re.findall(r"^CONTENT_SUMMARY checked=(\d+) buffers=(\d+) bytes=(\d+) nonzero_bytes=(\d+) populated=(\d+) changed=(\d+) errno=(\d+)$", stderr, re.M)
+                              "nonzero_bytes", "padding_nonzero", "changed", "mapped"), values)))
+    summaries = re.findall(r"^CONTENT_SUMMARY checked=(\d+) buffers=(\d+) bytes=(\d+) nonzero_bytes=(\d+) populated=(\d+) changed=(\d+) errno=(\d+) mapped=(\d+)$", stderr, re.M)
     if not summaries:
         return {"buffers": rows, "summary": None, "verified": False}
-    summary = dict(zip(("checked", "buffers", "bytes", "nonzero_bytes", "populated", "changed", "errno"), map(int, summaries[-1])))
+    summary = dict(zip(("checked", "buffers", "bytes", "nonzero_bytes", "populated", "changed", "errno", "mapped"), map(int, summaries[-1])))
     verified = bool(handoff and handoff["cpu_cycle_passed"] and not summary["errno"] and not summary["changed"] and
                     summary["checked"] == summary["buffers"] == handoff["buffers"] == len(rows) and
                     [r["index"] for r in rows] == list(range(len(rows))) and
@@ -130,9 +130,27 @@ def content_status(stderr, handoff):
                     sum(r["bytes"] for r in rows) == summary["bytes"] and
                     sum(r["nonzero_bytes"] for r in rows) == summary["nonzero_bytes"] and
                     sum(r["nonzero_bytes"] != 0 for r in rows) == summary["populated"] and
+                    sum(r["mapped"] for r in rows) == summary["mapped"] and
                     all(not r["changed"] and r["baseline_hash"] == r["current_hash"] and
                         0 <= r["nonzero_bytes"] <= r["bytes"] for r in rows))
     return {"buffers": rows, "summary": summary, "verified": verified, "checksum": "FNV-1a-32; change detection only"}
+
+
+def mapping_release_status(stderr, contents):
+    releases = []
+    for match in re.finditer(r"^MAP_RELEASE handle=([0-9a-f]+) unmap=([01]) address=([0-9a-f]+) bytes=(\d+)$", stderr, re.M):
+        releases.append(dict(zip(("handle", "unmap", "address", "bytes"),
+                                 (int(value, 16 if i in (0, 2) else 10) for i, value in enumerate(match.groups())))))
+    rows = contents["buffers"]
+    tokens = {row["handle"] for row in rows}
+    verified = bool(contents["verified"] and contents["summary"]["mapped"] == 0 and len(releases) == len(rows) and
+                    {r["handle"] for r in releases} == tokens and
+                    all(r["unmap"] == 1 and r["address"] and r["bytes"] > 0 and
+                        not (r["address"] & 4095) and not (r["bytes"] & 4095) for r in releases))
+    if verified:
+        sizes = {row["handle"]: (row["bytes"] + 4095) & ~4095 for row in rows}
+        verified = all(release["bytes"] == sizes[release["handle"]] for release in releases)
+    return {"releases": releases, "all_staged_cpu_mappings_released": verified}
 
 
 def command(bundle, selftest=False, qemu=None):
@@ -195,14 +213,16 @@ def main():
         outcome = "initializer_returned_failure_with_clean_resources" if code == 3 and cleanup_ok else "inspect_report"
         handoff = handoff_status(stderr)
         contents = content_status(stderr, handoff)
+        mappings = mapping_release_status(stderr, contents)
         if outcome != "inspect_report" and handoff and handoff["cpu_cycle_passed"]:
-            outcome = "cpu_handoff_content_verified_with_clean_resources" if contents["verified"] else "inspect_report"
+            outcome = "cpu_handoff_content_verified_with_clean_resources" if mappings["all_staged_cpu_mappings_released"] else "inspect_report"
         if contents["summary"] and not contents["verified"]:
             outcome = "inspect_report"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
                   "contents": contents,
+                  "mapping_releases": mappings,
                   "first_failed_request": first_failed_request(stderr),
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
@@ -215,7 +235,11 @@ def main():
         print("Initializer diagnostic report:", args.report)
         if outcome == "cpu_handoff_content_verified_with_clean_resources":
             print("CPU buffer contents, staging, PTE query and abort verified:", contents["summary"])
+            print("Legacy CPU mappings released; staged RAM and GPU PTEs remained valid.")
             print("The Intel initializer is deliberately returned a failure after that diagnostic cycle.")
+        elif contents["verified"] and not mappings["all_staged_cpu_mappings_released"]:
+            print("CPU mapping release audit incomplete: released records=", len(mappings["releases"]),
+                  "staged buffers=", len(contents["buffers"]), "remaining mapped=", contents["summary"]["mapped"])
         elif contents["summary"]:
             print("Buffer content audit incomplete or changed:", contents["summary"])
         elif report["first_failed_request"]:

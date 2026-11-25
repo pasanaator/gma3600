@@ -118,6 +118,7 @@ static void list_del(struct list_head *n)
 struct mutex { int locked; };
 static void mutex_init(struct mutex *m) { m->locked = 0; }
 static void mutex_lock(struct mutex *m) { assert(!m->locked); m->locked = 1; }
+static int mutex_trylock(struct mutex *m) { if (m->locked) return 0; m->locked = 1; return 1; }
 static void mutex_unlock(struct mutex *m) { assert(m->locked); m->locked = 0; }
 static struct mutex gPVRSRVLock;
 #define PVRSRV_LOCK_CLASS_BRIDGE 1
@@ -166,6 +167,9 @@ static void *kcalloc(size_t n, size_t size, int flags) { return kzalloc(n * size
 static void kfree(void *p);
 static struct gma_sgx_buffers *gma_sgx_buffers_create(void)
 { return kzalloc(sizeof(struct gma_sgx_buffers), 0); }
+struct vm_area_struct { int unused; };
+static int gma_sgx_buffer_mmap(struct gma_sgx_buffers *p, void *owner, struct vm_area_struct *vma)
+{ assert(p && owner && vma); return 0; }
 static int gma_sgx_buffer_alloc(struct gma_sgx_buffers *p, void *owner, u32 token, u32 flags,
     u32 bytes, struct sgx545_alloc_shared_out *out)
 {
@@ -743,6 +747,17 @@ int main(void)
     assert(!bridge_release(NULL, &file));
     stop(&dev); empty();
     assert(freed_bases == 5);
+    {
+        struct vm_area_struct vma = {0};
+        b = start(&dev); f = open_(b, &file);
+        mutex_lock(&b->lock);
+        assert(bridge_mmap(&file, &vma) == -EAGAIN); /* mmap_lock must not wait for an ioctl's copy fault */
+        mutex_unlock(&b->lock);
+        assert(!bridge_mmap(&file, &vma));
+        stop(&dev);
+        assert(bridge_mmap(&file, &vma) == -ENODEV);
+        assert(!bridge_release(NULL, &file)); empty();
+    }
     initializer_lifetime();
     mmu_bridge_validation();
     device_allocation_lifetime();

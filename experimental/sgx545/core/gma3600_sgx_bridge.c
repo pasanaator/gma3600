@@ -704,8 +704,9 @@ static int stage_content(struct gma_sgx_file *f, struct sgx545_init_content *mes
 	message->address = a->binding.address; message->memory_flags = a->flags;
 	message->baseline_hash = s->content[index].hash; message->current_hash = measured.hash;
 	message->nonzero_bytes = measured.nonzero; message->padding_nonzero = measured.padding_nonzero;
+	if (measured.mapped_vmas) message->flags |= SGX545_CONTENT_MAPPED;
 	if (measured.hash != s->content[index].hash || measured.nonzero != s->content[index].nonzero ||
-	    measured.padding_nonzero != s->content[index].padding_nonzero) message->flags = SGX545_CONTENT_CHANGED;
+	    measured.padding_nonzero != s->content[index].padding_nonzero) message->flags |= SGX545_CONTENT_CHANGED;
 	return 0;
 }
 
@@ -769,6 +770,16 @@ static int backend_map_info(void *ctx, u32 token, struct sgx545_map_info_out *ou
 
 	return gma_sgx_buffer_map_info(f->bridge->buffers, f, token, out);
 }
+static int backend_release_map(void *ctx, u32 token, struct sgx545_release_map_out *out)
+{
+	struct gma_sgx_file *f = ctx;
+	return gma_sgx_buffer_release_map(f->bridge->buffers, f, token, out);
+}
+static int backend_undo_map(void *ctx, u32 token, int release)
+{
+	struct gma_sgx_file *f = ctx;
+	return gma_sgx_buffer_undo_map(f->bridge->buffers, f, token, release);
+}
 
 static int bridge_copy_in(void *ctx, void *dst, u64 src, u32 size)
 {
@@ -787,6 +798,7 @@ static const struct sgx545_bridge_ops bridge_ops = {
 	.init_connect = backend_init_connect, .init_abort = backend_init_abort,
 	.init_info = backend_init_info, .release_init_info = backend_release_init_info,
 	.alloc_shared = backend_alloc_shared, .free_shared = backend_free_shared, .map_info = backend_map_info,
+	.release_map = backend_release_map, .undo_map = backend_undo_map,
 	.alloc_device = backend_alloc_device, .free_device = backend_free_device,
 };
 
@@ -1063,7 +1075,10 @@ static int bridge_mmap(struct file *file, struct vm_area_struct *vma)
 
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
-	mutex_lock(&b->lock);
+	/* mmap already holds mmap_lock for writing. An ioctl may hold b->lock
+	 * while faulting a userspace reply; waiting here would invert the locks.
+	 * Return a retryable error instead of blocking the fault's mmap read lock. */
+	if (!mutex_trylock(&b->lock)) return -EAGAIN;
 	if (!b->online) ret = -ENODEV;
 	else ret = gma_sgx_buffer_mmap(b->buffers, f, vma);
 	mutex_unlock(&b->lock);
@@ -1165,5 +1180,6 @@ void gma3600_sgx_bridge_stats(struct gma_sgx_bridge *b, struct gma_sgx_bridge_st
 	stats->buffer_pages = buffers.pages;
 	stats->buffer_maps = buffers.maps;
 	stats->buffer_errors = buffers.errors;
+	stats->map_leases = buffers.leases;
 	mutex_unlock(&b->lock);
 }

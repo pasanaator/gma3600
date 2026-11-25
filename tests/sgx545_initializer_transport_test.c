@@ -195,6 +195,10 @@ int main(void)
 	input[1] = 0; input[2] = SGX545_DEVICE_TYPE_UNKNOWN;
 	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == before + 4);
 	assert(input[0] == 0xfefefefe && input[1] == 0 && input[2] == SGX545_DEVICE_TYPE_UNKNOWN);
+	wire.bridge_id = SGX545_COMMAND(27); wire.in_size = 8;
+	wire.out_size = 16; wire.param_out = (unsigned)(unsigned long)(input + 800);
+	memset(input + 800, 0, 16);
+	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == before + 5);
 	wire.in_size = 4097;
 	assert(drmCommandWrite(fd, 0x12, &wire, 28) == -EINVAL);
 	wire.in_size = 8; wire.param_in = 0xfffffffc;

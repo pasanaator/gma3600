@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.3.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.4.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -119,7 +119,7 @@ static void script_metadata(const char *name, const struct sgx545_init_command32
 static int content_readback(int fd, unsigned services, unsigned stage,
 	const unsigned *tokens, unsigned count)
 {
-	unsigned i, checked = 0, bytes = 0, nonzero = 0, populated = 0, changed = 0;
+	unsigned i, checked = 0, bytes = 0, nonzero = 0, populated = 0, changed = 0, mapped = 0;
 	int error = 0;
 
 	for (i = 0; i < count; i++) {
@@ -129,15 +129,16 @@ static int content_readback(int fd, unsigned services, unsigned stage,
 		    !content.bytes || content.bytes > SGX545_BUFFER_MAX_BYTES || content.nonzero_bytes > content.bytes ||
 		    content.padding_nonzero > ((content.bytes + 4095) & ~4095U) - content.bytes ||
 		    !content.address || (content.address & 4095) || !sgx545_device_effective_flags_valid(content.memory_flags) ||
-		    (content.flags & ~SGX545_CONTENT_CHANGED)) { error = EPROTO; break; }
-		fprintf(stderr, "CONTENT index=%u handle=%08x bytes=%u address=%08x memory_flags=%08x baseline=%08x current=%08x nonzero=%u padding_nonzero=%u changed=%u\n",
+		    (content.flags & ~(SGX545_CONTENT_CHANGED | SGX545_CONTENT_MAPPED))) { error = EPROTO; break; }
+		fprintf(stderr, "CONTENT index=%u handle=%08x bytes=%u address=%08x memory_flags=%08x baseline=%08x current=%08x nonzero=%u padding_nonzero=%u changed=%u mapped=%u\n",
 			i, content.token, content.bytes, content.address, content.memory_flags, content.baseline_hash, content.current_hash,
-			content.nonzero_bytes, content.padding_nonzero, content.flags);
+			content.nonzero_bytes, content.padding_nonzero, !!(content.flags & SGX545_CONTENT_CHANGED), !!(content.flags & SGX545_CONTENT_MAPPED));
 		checked++; bytes += content.bytes; nonzero += content.nonzero_bytes; populated += content.nonzero_bytes != 0;
-		if (content.flags || content.baseline_hash != content.current_hash) { changed++; error = EUCLEAN; break; }
+		mapped += !!(content.flags & SGX545_CONTENT_MAPPED);
+		if ((content.flags & SGX545_CONTENT_CHANGED) || content.baseline_hash != content.current_hash) { changed++; error = EUCLEAN; break; }
 	}
-	fprintf(stderr, "CONTENT_SUMMARY checked=%u buffers=%u bytes=%u nonzero_bytes=%u populated=%u changed=%u errno=%d\n",
-		checked, count, bytes, nonzero, populated, changed, error);
+	fprintf(stderr, "CONTENT_SUMMARY checked=%u buffers=%u bytes=%u nonzero_bytes=%u populated=%u changed=%u errno=%d mapped=%u\n",
+		checked, count, bytes, nonzero, populated, changed, error, mapped);
 	return error;
 }
 
@@ -257,7 +258,7 @@ EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned l
 	case SGX545_CMD_CONNECT: case SGX545_CMD_DISCONNECT:
 	case SGX545_CMD_INIT_CONNECT: case SGX545_CMD_INIT_INFO:
 	case SGX545_CMD_ALLOC_SHARED: case SGX545_CMD_FREE_SHARED:
-	case SGX545_CMD_MAP_INFO: case SGX545_CMD_ALLOC_DEVICE: case SGX545_CMD_FREE_DEVICE:
+	case SGX545_CMD_MAP_INFO: case SGX545_CMD_RELEASE_MAP: case SGX545_CMD_ALLOC_DEVICE: case SGX545_CMD_FREE_DEVICE:
 		break;
 	case SGX545_CMD_INIT_DISCONNECT:
 		if (wire->in_size != 8 || !wire->param_in) return -EINVAL;
@@ -287,6 +288,12 @@ EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned l
 			*(unsigned *)(unsigned long)wire->param_out);
 		if (number == SGX545_CMD_DISCONNECT && !*(unsigned *)(unsigned long)wire->param_out)
 			aborted_services[descriptor_slot(fd)] = 0;
+		if (number == SGX545_CMD_RELEASE_MAP && wire->in_size == 8 && wire->out_size == sizeof(struct sgx545_release_map_out)) {
+			const struct sgx545_release_map_out *out = (void *)(unsigned long)wire->param_out;
+			if (!out->error)
+				fprintf(stderr, "MAP_RELEASE handle=%08x unmap=%u address=%08x bytes=%u\n",
+					((unsigned *)(unsigned long)wire->param_in)[1], out->unmap, out->user_address, out->real_size);
+		}
 		if (number == SGX545_CMD_ALLOC_DEVICE && wire->out_size == sizeof(struct sgx545_alloc_device_out)) {
 			const struct sgx545_alloc_device_out *out = (void *)(unsigned long)wire->param_out;
 			if (!out->error)

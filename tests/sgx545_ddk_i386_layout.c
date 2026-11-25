@@ -66,6 +66,17 @@ _Static_assert(sizeof(PVRSRV_BRIDGE_IN_ALLOC_SHARED_SYS_MEM) == 12, "shared allo
 _Static_assert(sizeof(PVRSRV_BRIDGE_IN_FREE_SHARED_SYS_MEM) == 56, "shared free request");
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_FREE_SHARED_SYS_MEM) == 4, "shared free reply");
 _Static_assert(sizeof(PVRSRV_BRIDGE_OUT_MHANDLE_TO_MMAP_DATA) == sizeof(struct sgx545_map_info_out), "map metadata reply");
+_Static_assert(PVRSRV_BRIDGE_RELEASE_MMAP_DATA == SGX545_COMMAND(SGX545_CMD_RELEASE_MAP), "release mmap command");
+_Static_assert(sizeof(PVRSRV_BRIDGE_IN_RELEASE_MMAP_DATA) == 8, "release mmap request");
+_Static_assert(sizeof(PVRSRV_BRIDGE_OUT_RELEASE_MMAP_DATA) == sizeof(struct sgx545_release_map_out), "release mmap reply");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_RELEASE_MMAP_DATA, bMUnmap) == 4, "release mmap unmap field");
+#ifdef SGX545_ORIGINAL_INTEL
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_RELEASE_MMAP_DATA, ui32UserVAddr) == 8, "release mmap address field");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_RELEASE_MMAP_DATA, ui32RealByteSize) == 12, "release mmap size field");
+#else
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_RELEASE_MMAP_DATA, uiUserVAddr) == 8, "release mmap address field");
+_Static_assert(__builtin_offsetof(PVRSRV_BRIDGE_OUT_RELEASE_MMAP_DATA, uiRealByteSize) == 12, "release mmap size field");
+#endif
 _Static_assert(sizeof(PVRSRV_BRIDGE_IN_MHANDLE_TO_MMAP_DATA) == 8, "map metadata request");
 _Static_assert(PVRSRV_BRIDGE_ALLOC_SHARED_SYS_MEM == SGX545_COMMAND(SGX545_CMD_ALLOC_SHARED), "shared alloc command");
 _Static_assert(PVRSRV_BRIDGE_FREE_SHARED_SYS_MEM == SGX545_COMMAND(SGX545_CMD_FREE_SHARED), "shared free command");

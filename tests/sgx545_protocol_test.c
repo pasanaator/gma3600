@@ -18,6 +18,7 @@ struct fake {
 	unsigned buffers, buffer_frees, device_buffers, device_frees;
 	int fail_device_free, fail_device;
 	unsigned last_alignment;
+	unsigned map_refs, map_undos;
 };
 static int connect_(void *ctx, unsigned *token)
 {
@@ -126,7 +127,22 @@ static int map_info(void *ctx, unsigned token, struct sgx545_map_info_out *out)
 	if (token != f->token || !f->buffers) return -ENOENT;
 	out->offset = token;
 	out->real_size = 4096;
+	f->map_refs++;
 	return 0;
+}
+static int release_map(void *ctx, unsigned token, struct sgx545_release_map_out *out)
+{
+    struct fake *f = ctx;
+    if (token != f->token || !f->map_refs) return -ENOENT;
+    if (!--f->map_refs) { out->unmap = 1; out->user_address = 0x12345000; out->real_size = 4096; }
+    return 0;
+}
+static int undo_map(void *ctx, unsigned token, int release)
+{
+    struct fake *f = ctx;
+    assert(token == f->token);
+    if (release) f->map_refs++; else { assert(f->map_refs); f->map_refs--; }
+    f->map_undos++; return 0;
 }
 static int alloc_device(void *ctx, unsigned heap, unsigned flags, unsigned bytes,
     unsigned alignment, struct sgx545_alloc_device_out *out)
@@ -157,6 +173,7 @@ static const struct sgx545_bridge_ops ops = {
 	.init_connect = init_connect, .init_abort = init_abort,
 	.init_info = init_info, .release_init_info = release_init_info,
 	.alloc_shared = alloc_shared, .free_shared = free_shared, .map_info = map_info,
+	.release_map = release_map, .undo_map = undo_map,
 	.alloc_device = alloc_device, .free_device = free_device,
 };
 static struct sgx545_bridge_request request(unsigned cmd, unsigned service)
@@ -164,8 +181,8 @@ static struct sgx545_bridge_request request(unsigned cmd, unsigned service)
 	return (struct sgx545_bridge_request) {
 		.param_in = 0x1234, .param_out = 0x5678,
 		.bridge_id = SGX545_COMMAND(cmd), .services = service,
-		.in_size = cmd == 6 ? 24 : cmd == 7 ? 12 : cmd == 64 ? 56 : cmd == 12 || cmd == 68 || cmd == 98 || cmd == 11 ? 8 : cmd == 1 || cmd == 63 ? 12 : 0,
-		.out_size = cmd == 6 ? 76 : cmd == 7 ? 4 : cmd == 63 ? 56 : cmd == 64 ? 4 : cmd == 11 ? 20 : cmd == 98 ? 776 : cmd == 12 ? 12 : cmd == 0 ? 200 : 8,
+		.in_size = cmd == 6 ? 24 : cmd == 7 ? 12 : cmd == 64 ? 56 : cmd == 12 || cmd == 68 || cmd == 98 || cmd == 11 || cmd == 27 ? 8 : cmd == 1 || cmd == 63 ? 12 : 0,
+		.out_size = cmd == 6 ? 76 : cmd == 7 ? 4 : cmd == 63 ? 56 : cmd == 64 ? 4 : cmd == 27 ? 16 : cmd == 11 ? 20 : cmd == 98 ? 776 : cmd == 12 ? 12 : cmd == 0 ? 200 : 8,
 	};
 }
 static int run(struct sgx545_session *s, struct fake *f, unsigned cmd)
@@ -254,6 +271,12 @@ static void buffer_protocol(void)
 	assert(!word(&f, 2) && !word(&f, 3) && !word(&f, 4) && !word(&f, 5));
 	f.in[1] = token;
 	assert(!run(&s, &f, 11) && word(&f, 1) == token && word(&f, 3) == 4096);
+	f.fail_out = 1;
+	assert(run(&s, &f, 11) == -EFAULT && f.map_refs == 1 && f.map_undos == 1);
+	assert(run(&s, &f, 27) == -EFAULT && f.map_refs == 1 && f.map_undos == 2);
+	f.fail_out = 0;
+	assert(!run(&s, &f, 27) && word(&f, 1) == 1 && word(&f, 2) == 0x12345000 && word(&f, 3) == 4096);
+	assert(run(&s, &f, 27) == -ENOENT && !f.map_refs);
 	f.in[1]++;
 	assert(run(&s, &f, 11) == -ENOENT);
 	f.in[1] = token; f.in[3] = 0xffffffff; /* never follow trailing legacy pointers */
@@ -505,7 +528,7 @@ int main(void)
 
 	assert(run(&s, &f, 0) == -ENOENT);
 	for (i = 0; i < 256; i++) {
-		if (i == 0 || i == 1 || i == 6 || i == 7 || i == 11 || i == 12 || i == 13 || i == 63 || i == 64 || i == 67 || i == 68 || i == 98)
+		if (i == 0 || i == 1 || i == 6 || i == 7 || i == 11 || i == 12 || i == 13 || i == 27 || i == 63 || i == 64 || i == 67 || i == 68 || i == 98)
 			continue;
 		assert(run(&s, &f, i) == -EOPNOTSUPP);
 	}
