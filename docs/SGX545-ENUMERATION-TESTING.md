@@ -1,5 +1,10 @@
 # Original Intel enumeration compatibility
 
+**Hardware result:** [both 0.9.1 tests passed on the D2500HN](../research/sgx545/d2500hn-enumeration.json).
+Both enumeration forms agreed, all three device heaps passed, and unload released
+every tracked page with no errors or blocked hardware accesses. The next step is
+[capturing real Intel initializer requests](SGX545-INITIALIZER-CAPTURE.md).
+
 Both initializer staging tests [passed on the Atom](../research/sgx545/d2500hn-initializer-staging.json).
 The driver retained eleven allocations after creator close and released every
 tracked page on unload, without errors or blocked register accesses.

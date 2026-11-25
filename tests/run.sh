@@ -47,4 +47,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_buffers_test.py
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
     -Iexperimental/sgx545/abi -Itools tests/sgx545_heap_test.c -o "$test_binary"
 "$test_binary"
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
+    -Iexperimental/sgx545/abi tests/sgx545_initializer_transport_test.c -o "$test_binary"
+"$test_binary" 2>/dev/null
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_sgx545_*.py' -v

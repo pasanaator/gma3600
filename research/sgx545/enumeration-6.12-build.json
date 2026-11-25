@@ -305,9 +305,10 @@
     "unused entries zeroed; bytes beyond reply untouched",
     "backend errors, excessive counts and failed copyout"
   ],
-  "hardware_status": "pending for 0.9.1 enumeration change",
+  "hardware_status": "passed",
   "gpu_execution_enabled": false,
   "proprietary_libraries_executed": false,
   "display_parent_changed": false,
-  "guide": "docs/SGX545-ENUMERATION-TESTING.md"
+  "guide": "docs/SGX545-ENUMERATION-TESTING.md",
+  "hardware_result": "d2500hn-enumeration.json"
 }

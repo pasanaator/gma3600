@@ -1,0 +1,42 @@
+{
+  "source": "User-supplied SSH transcript in chat",
+  "checkpoint": "62a2920 / services 0.9.1",
+  "target_from_session": "Intel D2500HN, Debian 13 amd64, Linux 6.12.117+deb13-amd64, VGA",
+  "module_version_observed": "0.9.1",
+  "ELF32_selftest": "passed; ENUMERATE=328/200",
+  "plain_bridge_test": "passed",
+  "original_Intel_device_test": "passed",
+  "enumeration_result": "PASS: Intel ENUMERATE=328 and compact ENUMERATE=200 agree; unused pointer slots are zero",
+  "payload_forms": "CONNECT=8 ENUMERATE=328 FREE_DEVICE_IN=60 FREE_DEVICE_OUT=8",
+  "heaps": [
+    {
+      "id": "0x07000002",
+      "pages": 4,
+      "aligned_va": "0xf2010000",
+      "sibling_free": "preserved",
+      "CPU_mapping": "preserved"
+    },
+    {
+      "id": "0x07000003",
+      "pages": 4,
+      "aligned_va": "0xf4010000",
+      "sibling_free": "preserved",
+      "CPU_mapping": "preserved"
+    },
+    {
+      "id": "0x07000008",
+      "pages": 4,
+      "aligned_va": "0xef010000",
+      "sibling_free": "preserved",
+      "CPU_mapping": "preserved"
+    }
+  ],
+  "status_after_clients": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+  "final_cleanup": {
+    "buffers": "[865.293957] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[865.293971] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+    "services": "[865.307780] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "gpu_execution_enabled": false,
+  "visual_desktop_observation_in_transcript": "not explicitly supplied"
+}

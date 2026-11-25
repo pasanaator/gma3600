@@ -24,6 +24,9 @@ The [original payload test and on-target ABI report passed](../../research/sgx54
 [Both initializer staging modes passed](../../research/sgx545/d2500hn-initializer-staging.json),
 including retained allocations released on unload. Services 0.9.1 fixes the
 [original Intel enumeration reply](../../docs/SGX545-ENUMERATION-TESTING.md).
+[The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
+The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
+using a private runtime and limited libdrm transport with the existing child.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result

@@ -1,0 +1,65 @@
+{
+  "target": "i386 initializer on Debian 13 amd64; existing tested services 0.9.1",
+  "transport_version": "0.1.0",
+  "previous_hardware_result": "d2500hn-enumeration.json",
+  "cloud_results": {
+    "private_i386_bundle_build": "passed, no compiler/linker warnings",
+    "project_owned_fixture_with_private_loader_under_QEMU": "passed",
+    "native_transport_sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "host_C_suites": 12,
+    "python_unittests": 20,
+    "proprietary_libraries_loaded_or_executed": false,
+    "kernel_modules_loaded": false,
+    "private_pthread_and_timer_dependencies": "passed with project-owned fixture"
+  },
+  "packages": [
+    {
+      "name": "cedarview-graphics-drivers",
+      "version": "20120717-0ubuntu1",
+      "architecture": "i386",
+      "url": "https://old-releases.ubuntu.com/ubuntu/pool/multiverse/c/cedarview-graphics-drivers/cedarview-graphics-drivers_20120717-0ubuntu1_i386.deb",
+      "size": 3187994,
+      "sha256": "819254e7d78d078b90d6b22c6ec19f6fba470ad13f1e9a0eae366d51cbcdf46b",
+      "filename": "cedarview-graphics-drivers_20120717-0ubuntu1_i386.deb"
+    },
+    {
+      "filename": "libc6_2.15-0ubuntu10.23_i386.deb",
+      "size": 3941814,
+      "sha256": "ad863081a45dd42701eb05c5ff8aeb09a0f4036bb85e35e02130cc24956d1753",
+      "url": "https://old-releases.ubuntu.com/ubuntu/pool/main/e/eglibc/libc6_2.15-0ubuntu10.23_i386.deb"
+    },
+    {
+      "filename": "libc6-dev_2.15-0ubuntu10.23_i386.deb",
+      "size": 5111720,
+      "sha256": "a93db17cd08cbbf12a7f1761d4f7c6ba067f54038cd36c4e8a245eb8754d28f0",
+      "url": "https://old-releases.ubuntu.com/ubuntu/pool/main/e/eglibc/libc6-dev_2.15-0ubuntu10.23_i386.deb"
+    }
+  ],
+  "package_index_provenance": {
+    "index": "precise-updates/main/binary-i386/Packages.bz2",
+    "size": 1110557,
+    "sha256": "08266b2f312418cbb92e744e61fa5e33c4dc73a4eba21b55bf10e8fc837f13ba",
+    "verification": "Index length and SHA256 match the cached signed Ubuntu precise-updates Release, whose signature verification is recorded in cedarview-20120717.json"
+  },
+  "SrvInit_public_controller_reference": "https://github.com/maemo-leste/sgx-ddk-um/blob/master/pvrsrvinit/pvrsrvinit.c",
+  "transport_reference": "Verified original Intel GPL kernel source: pvr_drm_shared.h, pvr_drm.c and pvr_bridge_k.c",
+  "artifact_sha256": {
+    "sgx545-initializer": "13d27ed896aefc5881db9a0ccac11b8a28992a13fa4af8f12f5ae2ccd04a06db",
+    "lib/libdrm.so.2": "1d523342a278a33bae21d356ec4d9be142697385d269f2ec67ae9d7232007bf7",
+    "lib/libsgx545_initializer_fixture.so": "096118c6fbc4d72d402264077e1d08e6cb7002513747245e9aee8561903ed805",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "real_initializer_capture": "pending on user hardware",
+  "GPU_execution_enabled": false,
+  "native_BM_resource_integration_added": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}
