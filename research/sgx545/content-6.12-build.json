@@ -1,0 +1,67 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.11.0",
+  "private_transport_version": "0.3.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-real-handoff.json",
+  "changes": [
+    "Read-only project INIT_CONTENT ioctl over staged buffers, with process/privilege ownership and native PTE checks",
+    "Measure logical-byte FNV-1a hash/nonzero count and nonzero padding before transfer and during readback, without copying buffer bytes to userspace",
+    "Use a CPU memory barrier before observing WC buffer aliases; measurements do not freeze other writers or synchronize GPU execution",
+    "Private transport checks every staged buffer identity/size/permissions and content baseline; attempts abort after content mismatch, malformed replies or ioctl failure",
+    "Synthetic client populates all 11 referenced buffers, verifies contents after transfer, detects and restores a CPU write in staged GPU-read-only code, and rechecks content after creator close/unmap",
+    "JSON verifies complete rows, summary totals and cleanup before reporting cpu_handoff_content_verified_with_clean_resources"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 23,
+    "actual_buffer_provider": "ASan/UBSan; known FNV-1a hello vector, final logical/padding byte boundaries, measurement does not write RAM, owner isolation, ownership transfer and post-detach rejection",
+    "actual_bridge_functions": "ASan/UBSan; content query, foreign PID/index rejection, changed hash/padding detection without dirtying resources, restoration and existing rollback/abort/close/detach cases",
+    "native_transport_mock": "ASan/UBSan; complete content cycle and all prior failures; mid-readback error, content change and malformed identity always followed by abort",
+    "actual_ELF32_transport_mock": "same content/routing/failure suite passed under QEMU using the private runtime",
+    "private_runtime_fixture": "transport 0.3.0 loader and open-source fixture passed under QEMU; proprietary initializer not called",
+    "hardware_client": "compiled and selftested; all-buffer content, staged CPU write/change/restore, cross-process rejection and stale-stage checks await Atom run"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "actual_DDK_MMU_and_translator_source_tests": "passed for both profiles",
+      "original_Intel_ABI_audit": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "594e107fbfaf631bfb9fd23996e10f8a27fd294ea8c0f396ac3d5a527d8c00ce",
+      "client_sha256": "00ab97e6bd79a7097a5243c6ab76548945de36d3e347ee8541f67cee4ef206a0"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "actual_DDK_MMU_and_translator_source_tests": "passed for both profiles",
+      "original_Intel_ABI_audit": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "b99119c42da9f75d3930d1f223ca80e87f8bf495c0e4fd9a754722001bf1a51c",
+      "client_sha256": "00ab97e6bd79a7097a5243c6ab76548945de36d3e347ee8541f67cee4ef206a0"
+    }
+  ],
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "8f63fe8559e15abe6d31500133d659f7f7d607d70dc54d9f104cd8e665ae0bf2",
+    "lib/libdrm.so.2": "8a5f29c3c494fff5ad0b4411e2f8f93c2c67e590aa35d7ddcdb771b091a2e04e",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending for new populated-content tests and actual initializer readback",
+  "GPU_execution_enabled": false,
+  "firmware_authentication_or_GPU_DMA_verified": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "legacy_release_mmap_command_27_supported": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

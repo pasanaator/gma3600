@@ -190,6 +190,31 @@ struct sgx545_init_stage {
 #define SGX545_STAGE_ABORT 1U
 struct sgx545_init_control { __u32 services, stage, operation, buffers, pages, flags; };
 
+/* Read-only CPU content observation. FNV-1a is a change detector, not firmware
+ * authentication. Existing user mappings may still modify staged RAM. */
+#define SGX545_IOCTL_INIT_CONTENT 0xc0304708U
+#define SGX545_CONTENT_CHANGED 1U
+struct sgx545_init_content {
+	__u32 services, stage, index, token, bytes, address, memory_flags;
+	__u32 baseline_hash, current_hash, nonzero_bytes, padding_nonzero, flags;
+};
+struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero; };
+static inline struct sgx545_content_measure sgx545_measure_content(const void *linear,
+	__u32 bytes, __u32 mapped_bytes)
+{
+	const volatile unsigned char *data = linear;
+	struct sgx545_content_measure result = {2166136261U, 0, 0};
+	__u32 i;
+	for (i = 0; i < mapped_bytes; i++) {
+		unsigned char value = data[i];
+		if (i < bytes) {
+			result.hash = (result.hash ^ value) * 16777619U;
+			result.nonzero += value != 0;
+		} else result.padding_nonzero += value != 0;
+	}
+	return result;
+}
+
 /* Diagnostic subset, scoped to an open file. Backend objects never cross ABI. */
 struct sgx545_session {
 	__u32 services, device, device_index, device_type;

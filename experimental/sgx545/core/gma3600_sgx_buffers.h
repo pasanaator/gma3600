@@ -7,6 +7,9 @@ struct gma_sgx_buffers;
 struct sgx545_alloc_shared_out;
 struct sgx545_map_info_out;
 struct page;
+struct sgx545_content_measure;
+int gma_sgx_buffer_measure(struct gma_sgx_buffers *pool, void *owner, u32 token,
+	struct sgx545_content_measure *out);
 struct gma_sgx_buffer_stats { u32 buffers, pages, maps, errors; };
 struct gma_sgx_buffers *gma_sgx_buffers_create(void);
 /* Stop invalidates file ownership, but existing VMAs keep their pages alive. */

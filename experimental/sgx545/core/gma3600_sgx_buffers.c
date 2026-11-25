@@ -209,6 +209,27 @@ int gma_sgx_buffer_map_info(struct gma_sgx_buffers *p, void *owner, u32 token,
 	return ret;
 }
 
+int gma_sgx_buffer_measure(struct gma_sgx_buffers *p, void *owner, u32 token,
+	struct sgx545_content_measure *out)
+{
+	struct gma_sgx_buffer *b;
+	int ret = 0;
+
+	memset(out, 0, sizeof(*out));
+	mutex_lock(&p->lock);
+	b = buffer_find(p, owner, token);
+	if (!p->online) ret = -ENODEV;
+	else if (!b || !b->linear) ret = -ENOENT;
+	else {
+		/* Complete CPU WC writes before reading through the kernel alias.
+		 * This does not synchronize an active GPU or freeze other CPU writers. */
+		mb();
+		*out = sgx545_measure_content(b->linear, b->bytes, b->size);
+	}
+	mutex_unlock(&p->lock);
+	return ret;
+}
+
 static void buffer_vma_open(struct vm_area_struct *vma)
 {
 	struct gma_sgx_buffer *b = vma->vm_private_data;

@@ -126,6 +126,7 @@
     },
     "scope": "Unmodified Intel initializer and userspace services; private libdrm transport; GPU execution disabled"
   },
-  "hardware_status_after_fix": "pending with services 0.10.1; existing transport 0.2.0 bundle reusable",
-  "GPU_execution_enabled": false
+  "hardware_status_after_fix": "passed exact read-only/write-only allocation tests and real 15-buffer/36-page handoff cycle, with clean teardown",
+  "GPU_execution_enabled": false,
+  "hardware_result_after_fix": "d2500hn-real-handoff.json"
 }

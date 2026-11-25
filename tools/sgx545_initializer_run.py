@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.2.0":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.2.0 is required")
+    if manifest.get("transport_version") != "0.3.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.3.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,8 +54,8 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.10.1":
-        raise ValueError("Capture currently requires host2 and tested services 0.10.1")
+    if host != "1.0.4-sgx-host2" or child != "0.11.0":
+        raise ValueError("Capture currently requires host2 and tested services 0.11.0")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
@@ -110,6 +110,29 @@ def first_failed_request(stderr):
             if handoff and handoff["errno"]:
                 return {**current, "errno": handoff["errno"], "phase": "cpu_handoff"}
     return None
+
+
+def content_status(stderr, handoff):
+    rows = []
+    for match in re.finditer(r"^CONTENT index=(\d+) handle=([0-9a-f]+) bytes=(\d+) address=([0-9a-f]+) memory_flags=([0-9a-f]+) "
+                             r"baseline=([0-9a-f]+) current=([0-9a-f]+) nonzero=(\d+) padding_nonzero=(\d+) changed=(\d+)$", stderr, re.M):
+        values = [int(value, 16 if i in (1, 3, 4, 5, 6) else 10) for i, value in enumerate(match.groups())]
+        rows.append(dict(zip(("index", "handle", "bytes", "address", "memory_flags", "baseline_hash", "current_hash",
+                              "nonzero_bytes", "padding_nonzero", "changed"), values)))
+    summaries = re.findall(r"^CONTENT_SUMMARY checked=(\d+) buffers=(\d+) bytes=(\d+) nonzero_bytes=(\d+) populated=(\d+) changed=(\d+) errno=(\d+)$", stderr, re.M)
+    if not summaries:
+        return {"buffers": rows, "summary": None, "verified": False}
+    summary = dict(zip(("checked", "buffers", "bytes", "nonzero_bytes", "populated", "changed", "errno"), map(int, summaries[-1])))
+    verified = bool(handoff and handoff["cpu_cycle_passed"] and not summary["errno"] and not summary["changed"] and
+                    summary["checked"] == summary["buffers"] == handoff["buffers"] == len(rows) and
+                    [r["index"] for r in rows] == list(range(len(rows))) and
+                    len({r["handle"] for r in rows}) == len(rows) and
+                    sum(r["bytes"] for r in rows) == summary["bytes"] and
+                    sum(r["nonzero_bytes"] for r in rows) == summary["nonzero_bytes"] and
+                    sum(r["nonzero_bytes"] != 0 for r in rows) == summary["populated"] and
+                    all(not r["changed"] and r["baseline_hash"] == r["current_hash"] and
+                        0 <= r["nonzero_bytes"] <= r["bytes"] for r in rows))
+    return {"buffers": rows, "summary": summary, "verified": verified, "checksum": "FNV-1a-32; change detection only"}
 
 
 def command(bundle, selftest=False, qemu=None):
@@ -171,11 +194,15 @@ def main():
             after, cleanup_ok = {"status_error": str(error)}, False
         outcome = "initializer_returned_failure_with_clean_resources" if code == 3 and cleanup_ok else "inspect_report"
         handoff = handoff_status(stderr)
+        contents = content_status(stderr, handoff)
         if outcome != "inspect_report" and handoff and handoff["cpu_cycle_passed"]:
-            outcome = "cpu_handoff_cycle_passed_with_clean_resources"
+            outcome = "cpu_handoff_content_verified_with_clean_resources" if contents["verified"] else "inspect_report"
+        if contents["summary"] and not contents["verified"]:
+            outcome = "inspect_report"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
+                  "contents": contents,
                   "first_failed_request": first_failed_request(stderr),
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
@@ -186,9 +213,11 @@ def main():
         report_stream.truncate()
         report_stream.close()
         print("Initializer diagnostic report:", args.report)
-        if outcome == "cpu_handoff_cycle_passed_with_clean_resources":
-            print("CPU handoff validation, staging, query and abort passed.")
+        if outcome == "cpu_handoff_content_verified_with_clean_resources":
+            print("CPU buffer contents, staging, PTE query and abort verified:", contents["summary"])
             print("The Intel initializer is deliberately returned a failure after that diagnostic cycle.")
+        elif contents["summary"]:
+            print("Buffer content audit incomplete or changed:", contents["summary"])
         elif report["first_failed_request"]:
             print("First compatibility failure:", json.dumps(report["first_failed_request"], sort_keys=True))
         print("GPU execution remains disabled.")

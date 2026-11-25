@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.2.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.3.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -116,6 +116,31 @@ static void script_metadata(const char *name, const struct sgx545_init_command32
 	fprintf(stderr, "SCRIPT name=%s writes=%u halt=0\n", name, count);
 }
 
+static int content_readback(int fd, unsigned services, unsigned stage,
+	const unsigned *tokens, unsigned count)
+{
+	unsigned i, checked = 0, bytes = 0, nonzero = 0, populated = 0, changed = 0;
+	int error = 0;
+
+	for (i = 0; i < count; i++) {
+		struct sgx545_init_content content = {.services = services, .stage = stage, .index = i};
+		if (transport_ioctl(fd, SGX545_IOCTL_INIT_CONTENT, &content) < 0) { error = errno; break; }
+		if (content.services != services || content.stage != stage || content.index != i || content.token != tokens[i] ||
+		    !content.bytes || content.bytes > SGX545_BUFFER_MAX_BYTES || content.nonzero_bytes > content.bytes ||
+		    content.padding_nonzero > ((content.bytes + 4095) & ~4095U) - content.bytes ||
+		    !content.address || (content.address & 4095) || !sgx545_device_effective_flags_valid(content.memory_flags) ||
+		    (content.flags & ~SGX545_CONTENT_CHANGED)) { error = EPROTO; break; }
+		fprintf(stderr, "CONTENT index=%u handle=%08x bytes=%u address=%08x memory_flags=%08x baseline=%08x current=%08x nonzero=%u padding_nonzero=%u changed=%u\n",
+			i, content.token, content.bytes, content.address, content.memory_flags, content.baseline_hash, content.current_hash,
+			content.nonzero_bytes, content.padding_nonzero, content.flags);
+		checked++; bytes += content.bytes; nonzero += content.nonzero_bytes; populated += content.nonzero_bytes != 0;
+		if (content.flags || content.baseline_hash != content.current_hash) { changed++; error = EUCLEAN; break; }
+	}
+	fprintf(stderr, "CONTENT_SUMMARY checked=%u buffers=%u bytes=%u nonzero_bytes=%u populated=%u changed=%u errno=%d\n",
+		checked, count, bytes, nonzero, populated, changed, error);
+	return error;
+}
+
 /* Exercise the CPU-only handoff on the real initializer's payload. The legacy
  * command itself is NEVER forwarded, and failure is returned even after this
  * diagnostic cycle passes. Native initialization and script execution stay
@@ -126,7 +151,7 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	struct sgx545_init_stage validation, stage;
 	struct sgx545_init_requirements caps = {0};
 	struct sgx545_init_control control = {0};
-	unsigned roles[SGX545_INIT_ROLES], i, buffers = 0, pages = 0;
+	unsigned roles[SGX545_INIT_MAX_BUFFERS], token_count = SGX545_INIT_ROLES, i, buffers = 0, pages = 0;
 	int slot = descriptor_slot(fd), error = 0, validated = 0, staged = 0, queried = 0, aborted = 0;
 
 	if (wire->in_size != sizeof(request) || wire->out_size != sizeof(struct sgx545_init2_out32))
@@ -149,8 +174,10 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	for (i = 0; i < 13; i++)
 		fprintf(stderr, "STRUCT index=%u supplied=%u required=%u\n", i, request.info.struct_sizes[i], caps.struct_sizes[i]);
 	for (i = 0; i < 18; i++)
-		if (request.info.mem_handles[i])
+		if (request.info.mem_handles[i]) {
 			fprintf(stderr, "INIT_MEMORY index=%u handle=%08x\n", i, request.info.mem_handles[i]);
+			roles[token_count++] = request.info.mem_handles[i];
+		}
 	script_metadata("part1", request.info.scripts.part1, 64);
 	script_metadata("part2", request.info.scripts.part2, 64);
 	script_metadata("deinit", request.info.scripts.deinit, 16);
@@ -159,7 +186,7 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	stage = validation;
 	if (transport_ioctl(fd, SGX545_IOCTL_INIT_VALIDATE, &validation) < 0) { error = errno; goto done; }
 	validated = 1; buffers = validation.buffers; pages = validation.pages;
-	if (validation.stage || validation.flags || buffers < SGX545_INIT_ROLES ||
+	if (validation.stage || validation.flags || buffers != token_count || buffers < SGX545_INIT_ROLES ||
 	    buffers > SGX545_INIT_MAX_BUFFERS || pages < buffers) { error = EPROTO; goto done; }
 	if (transport_ioctl(fd, SGX545_IOCTL_INIT_STAGE, &stage) < 0) { error = errno; goto done; }
 	staged = 1;
@@ -172,6 +199,7 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	else if (control.services != wire->services || control.stage != stage.stage || control.operation != SGX545_STAGE_QUERY ||
 		 control.buffers != buffers || control.pages != pages || control.flags) error = EPROTO;
 	else queried = 1;
+	if (queried) error = content_readback(fd, wire->services, stage.stage, roles, buffers);
 	/* Always attempt cleanup after a delivered STAGE, including query failure. */
 	control = (struct sgx545_init_control){.services = wire->services, .stage = stage.stage, .operation = SGX545_STAGE_ABORT};
 	if (transport_ioctl(fd, SGX545_IOCTL_INIT_CONTROL, &control) < 0) error = errno;

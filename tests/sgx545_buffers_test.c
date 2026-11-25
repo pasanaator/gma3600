@@ -65,6 +65,7 @@ static void kfree(void *p) { assert(p && metadata); metadata--; free(p); }
 #define pr_info(...) ((void)0)
 #define rmb() ((void)0)
 #define wmb() ((void)0)
+#define mb() ((void)0)
 typedef unsigned vm_fault_t;
 struct vm_operations_struct;
 struct vm_area_struct {
@@ -162,12 +163,15 @@ static void ownership_transfer(void)
     void *first_pin, *second_pin, *linear;
     struct vm_area_struct vma = area(1, 4096);
     struct vm_fault fault;
+    struct sgx545_content_measure before, after;
     assert(!gma_sgx_buffer_alloc(p, &creator, 1, SGX545_BUFFER_WC, 4096, &out));
     assert(!gma_sgx_buffer_alloc(p, &creator, 2, SGX545_BUFFER_WC, 4096, &out));
     assert(!gma_sgx_buffer_mmap(p, &creator, &vma));
     assert(!gma_sgx_buffer_pin(p, &creator, 1, &first_pin));
     assert(!gma_sgx_buffer_pin(p, &creator, 2, &second_pin));
     assert(!gma_sgx_buffer_describe(p, &creator, 1, &linear, &bytes) && linear && bytes == 4096);
+    ((unsigned char *)linear)[4095] = 17;
+    assert(!gma_sgx_buffer_measure(p, &creator, 1, &before) && before.nonzero == 1);
     tokens[1] = 99;
     assert(gma_sgx_buffers_transfer(p, &creator, &stage, tokens, 2) == -ENOENT);
     assert(!gma_sgx_buffer_map_info(p, &creator, 1, &map)); /* no partial transfer */
@@ -175,6 +179,8 @@ static void ownership_transfer(void)
     assert(gma_sgx_buffers_transfer(p, &creator, &stage, tokens, 2) == -EINVAL);
     tokens[1] = 2;
     assert(!gma_sgx_buffers_transfer(p, &creator, &stage, tokens, 2));
+    assert(gma_sgx_buffer_measure(p, &creator, 1, &after) == -ENOENT);
+    assert(!gma_sgx_buffer_measure(p, &stage, 1, &after) && after.hash == before.hash && after.nonzero == 1);
     assert(gma_sgx_buffer_map_info(p, &creator, 1, &map) == -ENOENT);
     gma_sgx_buffers_release_owner(p, &creator);
     assert(pages_live == 2 && !gma_sgx_buffer_map_info(p, &stage, 1, &map));
@@ -183,6 +189,7 @@ static void ownership_transfer(void)
     gma_sgx_buffer_unpin(first_pin); gma_sgx_buffer_unpin(second_pin);
     gma_sgx_buffers_stop(p);
     assert(pages_live == 1); /* VMA outlives transfer, rollback and provider detach. */
+    assert(gma_sgx_buffer_measure(p, &creator, 1, &after) == -ENODEV && !after.hash);
     fault = (struct vm_fault){&vma, vma.vm_start, vma.vm_pgoff};
     assert(vma.vm_ops->fault(&fault) == VM_FAULT_NOPAGE);
     vma.vm_ops->close(&vma); empty();
@@ -200,6 +207,11 @@ int main(void)
     volatile u32 *data;
     unsigned i;
 
+    {
+        const unsigned char fixture[] = {'h', 'e', 'l', 'l', 'o', 0, 3, 0};
+        struct sgx545_content_measure measured = sgx545_measure_content(fixture, 5, 8);
+        assert(measured.hash == 0x4f9f2cabU && measured.nonzero == 5 && measured.padding_nonzero == 1);
+    }
     fail_alloc = 1;
     assert(!gma_sgx_buffers_create()); empty();
     p = gma_sgx_buffers_create(); assert(p);
@@ -232,6 +244,17 @@ int main(void)
     assert(gma_sgx_buffer_visit(p, &other, 42, visit_pages, b) == -ENOENT);
     assert(gma_sgx_buffer_visit(p, &owner, 42, visit_pages, b) == 17);
     data = b->linear;
+    {
+        struct sgx545_content_measure zero, changed;
+        assert(!gma_sgx_buffer_measure(p, &owner, 42, &zero) && !zero.nonzero && !zero.padding_nonzero);
+        assert(gma_sgx_buffer_measure(p, &other, 42, &changed) == -ENOENT);
+        ((unsigned char *)b->linear)[8192] = 7; /* final logical byte */
+        ((unsigned char *)b->linear)[12287] = 9; /* final padding byte */
+        assert(!gma_sgx_buffer_measure(p, &owner, 42, &changed));
+        assert(changed.hash != zero.hash && changed.nonzero == 1 && changed.padding_nonzero == 1);
+        assert(((unsigned char *)b->linear)[8192] == 7 && ((unsigned char *)b->linear)[12287] == 9);
+        ((unsigned char *)b->linear)[8192] = ((unsigned char *)b->linear)[12287] = 0;
+    }
     for (i = 0; i < 12288 / 4; i++) { assert(!data[i]); data[i] = 0x12345678U ^ i; }
     assert(gma_sgx_buffer_check(p, &owner, 42, 0, 0) == -EIO);
     assert(!gma_sgx_buffer_check(p, &owner, 42, 0x12345678U, 0xabcdef01U));

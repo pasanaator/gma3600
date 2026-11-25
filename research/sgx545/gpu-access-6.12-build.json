@@ -48,10 +48,11 @@
       "client_sha256": "bf049d97e7df84c60aba0ac1fd54aff9462d5603c75a6a74fe96d0027b924b26"
     }
   ],
-  "hardware_status": "pending for new read-only/write-only tests and continued real initializer capture",
+  "hardware_status": "passed exact read-only/write-only allocation tests and real 15-buffer/36-page handoff cycle, with clean teardown",
   "GPU_execution_enabled": false,
   "display_parent_changed": false,
   "private_initializer_bundle_rebuild_required": false,
   "proprietary_libraries_executed_in_cloud": false,
-  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
+  "hardware_result": "d2500hn-real-handoff.json"
 }

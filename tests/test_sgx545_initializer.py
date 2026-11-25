@@ -23,6 +23,15 @@ builder = load("sgx545_initializer_build")
 runner = load("sgx545_initializer_run")
 
 
+def content_trace():
+    lines = ["HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=40 errno=0 gpu_execution=disabled"]
+    for i in range(11):
+        lines.append(f"CONTENT index={i} handle={0x100+i:08x} bytes=4 address={0xf2000000+i*4096:08x} memory_flags=0202420b "
+                     "baseline=12345678 current=12345678 nonzero=1 padding_nonzero=0 changed=0")
+    lines.append("CONTENT_SUMMARY checked=11 buffers=11 bytes=44 nonzero_bytes=11 populated=11 changed=0 errno=0")
+    return "\n".join(lines) + "\n"
+
+
 class InitializerTests(unittest.TestCase):
     def test_pinned_package_validation_rejects_tampering_and_length(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -50,7 +59,7 @@ class InitializerTests(unittest.TestCase):
     def test_runtime_and_intel_artifact_hashes_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = {"schema": 1, "transport_version": "0.2.0", "artifact_sha256": {}}
+            manifest = {"schema": 1, "transport_version": "0.3.0", "artifact_sha256": {}}
             for name in runner.ARTIFACTS:
                 file = folder / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +68,7 @@ class InitializerTests(unittest.TestCase):
             (folder / "bundle.json").write_text(json.dumps(manifest))
             runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps({**manifest, "transport_version": "0.1.0"}))
-            with self.assertRaisesRegex(ValueError, "Rebuild.*0.2.0"):
+            with self.assertRaisesRegex(ValueError, "Rebuild.*0.3.0"):
                 runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps(manifest))
             (folder / "sysroot/lib/i386-linux-gnu/libc.so.6").write_bytes(b"changed")
@@ -71,7 +80,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host2",
-            "module/gma3600_sgx_services/version": "0.10.1",
+            "module/gma3600_sgx_services/version": "0.11.0",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +104,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.10.1")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.11.0")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1")):
                 self.write_status(path, {**status, key: value})
@@ -120,7 +129,7 @@ class InitializerTests(unittest.TestCase):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
             (root / "module/gma3600_sgx_services/version").write_text("0.9.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.10.1"):
+            with self.assertRaisesRegex(ValueError, "services 0.11.0"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):
@@ -161,13 +170,29 @@ class InitializerTests(unittest.TestCase):
         self.assertEqual(runner.first_failed_request(handoff)["phase"], "cpu_handoff")
         self.assertIsNone(runner.first_failed_request(handoff.replace("errno=71", "errno=0")))
 
+    def test_content_report_requires_all_buffers_stable_and_consistent(self):
+        trace = content_trace()
+        handoff = runner.handoff_status(trace)
+        result = runner.content_status(trace, handoff)
+        self.assertTrue(result["verified"])
+        self.assertEqual(len(result["buffers"]), 11)
+        self.assertEqual(result["summary"]["nonzero_bytes"], 11)
+        for old, new in (("current=12345678", "current=12345679"), ("changed=0", "changed=1"),
+                         ("handle=00000101", "handle=00000100"), ("bytes=44", "bytes=45"),
+                         ("nonzero=1", "nonzero=5"), ("errno=0", "errno=5")):
+            changed = trace.replace(old, new, 1)
+            self.assertFalse(runner.content_status(changed, runner.handoff_status(changed))["verified"])
+        partial = "\n".join(line for line in trace.splitlines() if not line.startswith("CONTENT index=10 "))
+        self.assertFalse(runner.content_status(partial, handoff)["verified"])
+        self.assertFalse(runner.content_status("", handoff)["verified"])
+
     def test_capture_reserves_report_before_execution_and_records_timeout(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             status_path, status = self.target(folder / "sys")
             report = folder / "report.json"
             argv = ["run", "--bundle", str(folder), "--capture", "--report", str(report)]
-            manifest = {"transport_version": "0.2.0", "artifact_sha256": {"fixture": "mock"}}
+            manifest = {"transport_version": "0.3.0", "artifact_sha256": {"fixture": "mock"}}
             def child(*args, **kwargs):
                 self.assertEqual(json.loads(report.read_text())["outcome"], "capture_pending")
                 self.assertNotIn("LD_PRELOAD", kwargs["env"])
@@ -189,11 +214,12 @@ class InitializerTests(unittest.TestCase):
                 run.assert_not_called()
                 argv[-1] = str(folder / "handoff.json")
                 run.side_effect = None
-                run.return_value = runner.subprocess.CompletedProcess([], 3, "", "HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=40 errno=0 gpu_execution=disabled\n")
+                run.return_value = runner.subprocess.CompletedProcess([], 3, "", content_trace())
                 self.assertEqual(runner.main(), 0)
                 result = json.loads(Path(argv[-1]).read_text())
-                self.assertEqual(result["outcome"], "cpu_handoff_cycle_passed_with_clean_resources")
+                self.assertEqual(result["outcome"], "cpu_handoff_content_verified_with_clean_resources")
                 self.assertTrue(result["handoff"]["cpu_cycle_passed"])
+                self.assertTrue(result["contents"]["verified"])
                 argv[-1] = str(folder / "dirty-handoff.json")
                 with patch.object(runner, "services_status", return_value={**status, "stages": "1"}):
                     self.assertEqual(runner.main(), 1)

@@ -14,7 +14,7 @@ typedef uint32_t u32;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
 struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors; };
-struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; };
+struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; struct sgx545_content_measure content; };
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
 static int fail_bind, fail_unbind, live_bindings;
@@ -217,6 +217,15 @@ static void gma_sgx_buffers_stop(struct gma_sgx_buffers *p)
     kfree(p);
 }
 static int fail_transfer;
+static int gma_sgx_buffer_measure(struct gma_sgx_buffers *p, void *owner, u32 token,
+    struct sgx545_content_measure *out)
+{
+    unsigned i;
+    for (i = 0; i < 32; i++) if (p->slots[i].owner == owner && p->slots[i].token == token) {
+        *out = p->slots[i].content; return 0;
+    }
+    return -ENOENT;
+}
 static int gma_sgx_buffer_describe(struct gma_sgx_buffers *p, void *owner, u32 token,
     void **linear, u32 *bytes)
 {
@@ -597,6 +606,30 @@ static void initializer_stage_lifetime(void)
         controller->owner = &foreign;
         assert(stage_control(controller, &control) == -EPERM); controller->owner = &current_pid;
         assert(!stage_control(controller, &control) && control.buffers == 9 && control.pages == 36);
+        {
+            struct sgx545_init_content content = {.services = controller->session.services, .stage = message.stage};
+            struct mock_buffer *backing = b->stage->allocations->pin;
+            u32 index;
+            assert(!stage_content(controller, &content) && !content.flags && content.token == tokens[0]);
+            content = (struct sgx545_init_content){.services = controller->session.services, .stage = message.stage};
+            controller->owner = &foreign;
+            assert(stage_content(controller, &content) == -EPERM); controller->owner = &current_pid;
+            content.index = 9;
+            assert(stage_content(controller, &content) == -EINVAL);
+            for (index = 0; index < 9 && tokens[index] != backing->token; index++) {}
+            assert(index < 9);
+            content.index = index; backing->content.hash ^= 1;
+            assert(!stage_content(controller, &content) && content.flags == SGX545_CONTENT_CHANGED);
+            assert(content.baseline_hash != content.current_hash && !b->stage->dirty);
+            backing->content.hash ^= 1;
+            content = (struct sgx545_init_content){.services = controller->session.services, .stage = message.stage, .index = index};
+            assert(!stage_content(controller, &content) && !content.flags);
+            content = (struct sgx545_init_content){.services = controller->session.services, .stage = message.stage, .index = index};
+            backing->content.padding_nonzero = 1;
+            assert(!stage_content(controller, &content) && content.flags == SGX545_CONTENT_CHANGED &&
+                content.baseline_hash == content.current_hash); /* padding is measured separately */
+            backing->content.padding_nonzero = 0;
+        }
         assert(!bridge_release(NULL, &first) && live_bindings == 9);
         assert(!stage_control(controller, &control)); /* creator and native handles gone */
         if (mode == 0 || mode == 1) {

@@ -69,6 +69,7 @@ static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_REQUIREMENTS) == sizeof(struct sgx545_
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_STAGE) == sizeof(struct sgx545_init_stage));
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_VALIDATE) == sizeof(struct sgx545_init_stage));
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTROL) == sizeof(struct sgx545_init_control));
+static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTENT) == sizeof(struct sgx545_init_content));
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -115,6 +116,7 @@ struct gma_sgx_file {
 struct gma_sgx_stage {
 	struct gma_sgx_native_init snapshot;
 	struct gma_sgx_init_memory memory[SGX545_INIT_MAX_BUFFERS];
+	struct sgx545_content_measure content[SGX545_INIT_MAX_BUFFERS];
 	struct gma_sgx_device_allocation *allocations;
 	struct pid *owner;
 	u32 id, count, tokens[SGX545_INIT_MAX_BUFFERS];
@@ -519,6 +521,8 @@ static int stage_prepare(struct gma_sgx_file *f, const struct sgx545_init2_in32 
 		ret = gma_sgx_buffer_describe(b->buffers, f, a->token,
 			&s->memory[i].linear, &s->memory[i].bytes);
 		if (ret) goto fail;
+		ret = gma_sgx_buffer_measure(b->buffers, f, a->token, &s->content[i]);
+		if (ret) goto fail;
 	}
 	ret = gma_sgx_init_translate(wire, s->memory, s->count, &s->snapshot);
 	if (ret) goto fail;
@@ -667,6 +671,41 @@ static int stage_control(struct gma_sgx_file *f, struct sgx545_init_control *mes
 	ret = gma_sgx_init_check(&s->snapshot, s->memory, s->count);
 	if (ret) return ret;
 	message->buffers = b->stats.staged_buffers; message->pages = b->stats.staged_pages;
+	return 0;
+}
+
+static int stage_content(struct gma_sgx_file *f, struct sgx545_init_content *message)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct gma_sgx_stage *s = b->stage;
+	struct sgx545_content_measure measured;
+	struct gma_sgx_device_allocation *a;
+	struct device_visit_context visit = {.verify = true};
+	u32 index = message->index;
+	int ret;
+
+	if (message->flags || message->token || message->bytes || message->address || message->memory_flags ||
+	    message->baseline_hash || message->current_hash || message->nonzero_bytes || message->padding_nonzero)
+		return -EINVAL;
+	if (!f->session.services || message->services != f->session.services || !s || message->stage != s->id)
+		return -ENOENT;
+	if (f->owner != s->owner || !OSProcHasPrivSrvInit()) return -EPERM;
+	if (s->dirty) return -EIO;
+	if (index >= s->count) return -EINVAL;
+	a = s->allocations;
+	while (a && a->token != s->tokens[index]) a = a->next;
+	if (!a) return -EIO;
+	visit.allocation = a;
+	ret = gma_sgx_buffer_visit(b->buffers, s, a->token, device_visit, &visit);
+	if (ret) return ret;
+	ret = gma_sgx_buffer_measure(b->buffers, s, a->token, &measured);
+	if (ret) return ret;
+	message->token = a->token; message->bytes = s->memory[index].bytes;
+	message->address = a->binding.address; message->memory_flags = a->flags;
+	message->baseline_hash = s->content[index].hash; message->current_hash = measured.hash;
+	message->nonzero_bytes = measured.nonzero; message->padding_nonzero = measured.padding_nonzero;
+	if (measured.hash != s->content[index].hash || measured.nonzero != s->content[index].nonzero ||
+	    measured.padding_nonzero != s->content[index].padding_nonzero) message->flags = SGX545_CONTENT_CHANGED;
 	return 0;
 }
 
@@ -902,9 +941,11 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 		struct sgx545_init_requirements caps;
 		struct sgx545_init_stage stage;
 		struct sgx545_init_control control;
+		struct sgx545_init_content content;
 	} message;
 	u32 size = cmd == SGX545_IOCTL_INIT_REQUIREMENTS ? sizeof(message.caps) :
-		(cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_VALIDATE) ? sizeof(message.stage) : sizeof(message.control);
+		(cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_VALIDATE) ? sizeof(message.stage) :
+		cmd == SGX545_IOCTL_INIT_CONTENT ? sizeof(message.content) : sizeof(message.control);
 	int ret;
 
 	if (copy_from_user(&message, (void __user *)arg, size)) return -EFAULT;
@@ -923,6 +964,7 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 	else if (cmd == SGX545_IOCTL_INIT_STAGE)
 		ret = stage_publish(f, wire, &message.stage, stage_copy_result, (void __user *)arg);
 	else if (cmd == SGX545_IOCTL_INIT_VALIDATE) ret = stage_validate(f, wire, &message.stage);
+	else if (cmd == SGX545_IOCTL_INIT_CONTENT) ret = stage_content(f, &message.content);
 	else ret = stage_control(f, &message.control);
 	/* STAGE copies its result transactionally. QUERY/ABORT own no new resource. */
 	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
@@ -943,11 +985,11 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
 	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK && cmd != SGX545_IOCTL_INIT_REQUIREMENTS &&
-	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE)
+	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
-	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE)
+	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT)
 		return bridge_init_ioctl(f, cmd, arg);
 	if (cmd == SGX545_IOCTL_DEVICE_CHECK) {
 		struct sgx545_device_check check;

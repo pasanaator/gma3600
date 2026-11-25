@@ -25,6 +25,7 @@ _Static_assert(sizeof(struct sgx545_init2_in32) == 2068, "Intel initializer wire
 _Static_assert(sizeof(struct sgx545_init_requirements) == 104, "initializer requirements ABI");
 _Static_assert(sizeof(struct sgx545_init_stage) == 32, "initializer staging ABI");
 _Static_assert(sizeof(struct sgx545_init_control) == 24, "initializer control ABI");
+_Static_assert(sizeof(struct sgx545_init_content) == 48, "initializer content ABI");
 static int original_intel_abi;
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
@@ -631,6 +632,15 @@ static void stage_query(int fd, unsigned services, unsigned id, unsigned buffers
 	if (control.buffers != buffers || control.pages != pages) fail("staged resource counts", control.buffers);
 }
 
+static struct sgx545_init_content content_query(int fd, unsigned services, unsigned stage, unsigned index)
+{
+	struct sgx545_init_content content = {.services = services, .stage = stage, .index = index};
+	expect("staged buffer content readback", sys3(54, fd, SGX545_IOCTL_INIT_CONTENT, ptr(&content)), 0);
+	if (content.services != services || content.stage != stage || content.index != index)
+		fail("content reply identity", content.stage);
+	return content;
+}
+
 static void stage_test(int fd, unsigned services, unsigned device, const char *path, int leave_staged)
 {
 	struct sgx545_init_requirements caps = {.services = services, .device = device};
@@ -641,12 +651,13 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 		.request = ptr(&wire), .request_bytes = sizeof(wire)};
 	struct sgx545_init_control control;
 	struct sgx545_alloc_device_out allocations[12] = {0};
+	struct sgx545_content_measure expected_content[11];
 	struct sgx545_bridge32 w;
 	struct sgx545_map_info_out map = {0};
 	struct sgx545_device_check walk;
 	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 0, 4096};
 	unsigned i, data_heap = 0, code_heap = 0, total_pages = 0, first_size, other, temporary, bit;
-	volatile unsigned *memory;
+	volatile unsigned *memory, *code_memory = 0;
 	volatile struct sgx545_init_stage *readonly;
 	int control_fd, child, status;
 
@@ -668,6 +679,7 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 		unsigned bytes = i < 9 ? caps.minimum_bytes[i] : 4096;
 		if (!bytes || bytes > SGX545_BUFFER_MAX_BYTES) fail("initializer allocation bound", bytes);
 		in[2] = i < 9 ? data_heap : code_heap; in[4] = (bytes + 4095) & ~4095U;
+		in[3] = i < 9 ? SGX545_DEVICE_FLAGS : SGX545_DEVICE_READ | SGX545_DEVICE_NO_SYNC;
 		w = package(6, services, in, 24, &allocations[i], 76);
 		expect("staging device allocation", call(fd, &w), 0);
 		if (allocations[i].error || !allocations[i].kernel_mem ||
@@ -698,6 +710,14 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 		memory[i] = 0x13579bdfU ^ i;
 	}
 	__asm__ volatile("sfence" ::: "memory");
+	expected_content[0] = sgx545_measure_content((const void *)memory, first_size, first_size);
+	for (i = 1; i < 11; i++) {
+		unsigned size = allocations[i].mem.alloc_size;
+		volatile unsigned *mapped = device_mapping(fd, services, &allocations[i], 0x55667700U + i);
+		expected_content[i] = sgx545_measure_content((const void *)mapped, size, size);
+		if (i == 9) code_memory = mapped;
+		else expect("unmap populated initializer buffer", sys3(91, ptr((const void *)mapped), size, 0), 0);
+	}
 	w = package(99, services, &wire, sizeof(wire), &result, 8);
 	expect("legacy hardware initializer remains disabled", call(fd, &w), -95);
 	message.request_bytes = 2192;
@@ -738,6 +758,28 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	if (!message.stage || message.buffers != 11 || message.pages != total_pages)
 		fail("initializer handoff reply", message.buffers);
 	stage_query(control_fd, other, message.stage, 11, total_pages);
+	for (i = 0; i < 11; i++) {
+		struct sgx545_init_content content = content_query(control_fd, other, message.stage, i);
+		if (content.flags || content.token != allocations[i].kernel_mem || content.bytes != allocations[i].mem.alloc_size ||
+		    content.address != allocations[i].mem.device_address || content.memory_flags != allocations[i].mem.flags ||
+		    content.baseline_hash != expected_content[i].hash || content.current_hash != expected_content[i].hash ||
+		    content.nonzero_bytes != expected_content[i].nonzero || content.padding_nonzero)
+			fail("populated bytes survive initializer handoff", i);
+	}
+	{
+		struct sgx545_init_content content;
+		code_memory[0] ^= 0x01000000;
+		__asm__ volatile("sfence" ::: "memory");
+		content = content_query(control_fd, other, message.stage, 9);
+		if (content.flags != SGX545_CONTENT_CHANGED || content.baseline_hash != expected_content[9].hash ||
+		    content.current_hash == content.baseline_hash) fail("staged GPU-read-only code CPU write detection", content.flags);
+		code_memory[0] ^= 0x01000000;
+		__asm__ volatile("sfence" ::: "memory");
+		content = content_query(control_fd, other, message.stage, 9);
+		if (content.flags || content.current_hash != expected_content[9].hash) fail("restored staged content", content.flags);
+		expect("unmap staged code CPU mapping", sys3(91, ptr((const void *)code_memory), allocations[9].mem.alloc_size, 0), 0);
+	}
+	say("PASS: CPU writes to 11 initializer buffers survive handoff; staged GPU-read-only code detects changes and restoration\n");
 	in[1] = device; in[2] = allocations[0].kernel_mem;
 	w = package(7, services, in, 12, &result, 8);
 	expect("creator cannot free handed-off memory", call(fd, &w), -2);
@@ -749,8 +791,10 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	if (!child) {
 		int child_fd = open_bridge(path);
 		unsigned child_services = connect_bridge(child_fd);
+		struct sgx545_init_content denied = {.services = child_services, .stage = message.stage};
+		int content_result = sys3(54, child_fd, SGX545_IOCTL_INIT_CONTENT, ptr(&denied));
 		control = (struct sgx545_init_control){child_services, message.stage, SGX545_STAGE_QUERY, 0, 0, 0};
-		sys3(1, sys3(54, child_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)) == -1 ? 0 : 1, 0, 0);
+		sys3(1, content_result == -1 && sys3(54, child_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)) == -1 ? 0 : 1, 0, 0);
 		return;
 	}
 	expect("staging child wait", sys3(7, child, ptr(&status), 0), child);
@@ -760,12 +804,20 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	stage_query(control_fd, other, message.stage, 11, total_pages);
 	expect("unmap final creator VMA", sys3(91, ptr((const void *)memory), first_size, 0), 0);
 	stage_query(control_fd, other, message.stage, 11, total_pages);
+	{
+		struct sgx545_init_content content = content_query(control_fd, other, message.stage, 0);
+		if (content.flags || content.current_hash != expected_content[0].hash) fail("content survives creator close/unmap", content.flags);
+	}
 	if (!leave_staged) {
 		control = (struct sgx545_init_control){other, message.stage, SGX545_STAGE_ABORT, 0, 0, 0};
 		expect("explicit staged initializer abort", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), 0);
 		if (control.buffers || control.pages) fail("staging abort counters", control.buffers);
 		control.operation = SGX545_STAGE_QUERY;
 		expect("stale staging handle rejected", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), -2);
+		{
+			struct sgx545_init_content stale_content = {.services = other, .stage = message.stage};
+			expect("aborted stage content inaccessible", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTENT, ptr(&stale_content)), -2);
+		}
 	}
 	expect("close staging control connection", sys3(6, control_fd, 0, 0), 0);
 	say("PASS: i386 initializer staging, native snapshot, ownership rollback, creator-close lifetime and ");
