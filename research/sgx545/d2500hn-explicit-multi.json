@@ -1,0 +1,25 @@
+{
+  "source": "User inline initializer JSON and attached SSH transcript; normalized observation",
+  "checkpoint": "fec61d0 / services 0.9.5 / transport 0.1.4",
+  "transcript_sha256": "80359855a1f3eadd5c17d421e91f56595a44a6bf50a78306b0efdc8b528f9a32",
+  "device_intel_probe": "passed exact 4-byte/alignment=16 case, all three heaps, coherent/EDM PTE checks, CPU roundtrip and cleanup",
+  "real_initializer_progress": "8192-byte, 8-byte and 4-byte allocations plus map-info succeeded; 236-byte request with alignment=32 stopped at flag validation",
+  "rejected_request": {
+    "heap_handle": "00000004",
+    "flags": "0002004f",
+    "bytes": 236,
+    "alignment": 32,
+    "result": "EOPNOTSUPP (95)",
+    "new_bit": "PVRSRV_HAP_MULTI_PROCESS = 0x20000"
+  },
+  "diagnosis": "The requested bit is already present in successful replies (0202424f), inherited from supported heaps. Only the raw request allowlist rejected an explicit request for that same attribute.",
+  "trace": "LOADER mode=Intel-initializer transport=0.1.4\nTRANSPORT open name=(null) busid=pci:0000:00:02.0\nTRANSPORT opened fd=3\nTRANSPORT none command=21 fd=3\nBRIDGE command=12 in=8 out=8\nCONNECT reserved=ffeb2488 service_flags=00000000\nRESULT command=12 payload_error=0\nBRIDGE command=67 in=0 out=8\nRESULT command=67 payload_error=0\nBRIDGE command=0 in=0 out=328\nRESULT command=0 payload_error=0\nBRIDGE command=1 in=12 out=8\nACQUIRE reserved=00000000 index=0 type=0\nRESULT command=1 payload_error=0\nBRIDGE command=98 in=8 out=776\nINPUT command=98 reserved=00000000\nRESULT command=98 payload_error=0\nBRIDGE command=6 in=24 out=76\nINPUT command=6 reserved=ffffffff\nALLOC heap=00000004 flags=0000004f bytes=8192 alignment=4096\nRESULT command=6 payload_error=0\nALLOCATED handle=00000006 address=f4000000 bytes=8192 flags=0202424f\nBRIDGE command=11 in=8 out=20\nINPUT command=11 reserved=ffeb22fc\nRESULT command=11 payload_error=0\nBRIDGE command=6 in=24 out=76\nINPUT command=6 reserved=ffffffff\nALLOC heap=00000004 flags=0000004f bytes=8 alignment=4096\nRESULT command=6 payload_error=0\nALLOCATED handle=00000007 address=f4002000 bytes=8 flags=0202424f\nBRIDGE command=11 in=8 out=20\nINPUT command=11 reserved=ffeb22fc\nRESULT command=11 payload_error=0\nBRIDGE command=6 in=24 out=76\nINPUT command=6 reserved=ffffffff\nALLOC heap=00000004 flags=0000004f bytes=4 alignment=16\nRESULT command=6 payload_error=0\nALLOCATED handle=00000008 address=f4003000 bytes=4 flags=0202424f\nBRIDGE command=11 in=8 out=20\nINPUT command=11 reserved=ffeb22fc\nRESULT command=11 payload_error=0\nBRIDGE command=6 in=24 out=76\nINPUT command=6 reserved=ffffffff\nALLOC heap=00000004 flags=0002004f bytes=236 alignment=32\nRESULT command=6 errno=95\nBRIDGE command=68 in=8 out=8\nINPUT command=68 reserved=f7daae44\nRESULT command=68 payload_error=0\nBRIDGE command=13 in=0 out=8\nRESULT command=13 payload_error=0\nINITIALIZER return=1 gpu_execution=disabled\n",
+  "status_after_device_test": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+  "status_after_capture": "state=prepared devices=1 pages_live=4 blocked_hw_accesses=0 gpu_execution=disabled bridge=enabled files=0 connections=0 bridge_errors=0 heap_handles=0 init_running=0 init_ran=1 buffers=0 buffer_pages=0 buffer_maps=0 buffer_errors=0 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+  "final_cleanup": {
+    "device_test": "[17945.599077] result=0 pages_live=0 blocked_hw_accesses=0",
+    "capture": "[17984.991167] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "GPU_execution_enabled": false,
+  "hardware_status_after_fix": "pending with services 0.10.0; rebuild private bundle for transport 0.2.0 and the expanded CPU handoff checkpoint"
+}

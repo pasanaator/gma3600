@@ -1,0 +1,72 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.10.0",
+  "private_transport_version": "0.2.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-explicit-multi.json",
+  "original_Intel_reference": {
+    "package_sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "explicit_MULTI": "include4/services.h: PVRSRV_HAP_MULTI_PROCESS = 1U << 17; inherited by supported shared heaps",
+    "handoff_roles": "services4/srvkm/bridged/sgx/bridged_sgx_bridge.c: release/dissociate CCB, host-control, misc, HWPERF and both signature handles"
+  },
+  "changes": [
+    "Accept explicit MULTI without changing effective heap attributes, ownership or CPU/GPU cache policy",
+    "Project INIT_VALIDATE shares exact staging validation and translation, without consuming tokens, ending the attempt or transferring ownership",
+    "Private transport audits real Intel command 99 metadata, normalizes only the copied reserved word, and validates its bounded payload",
+    "If validation passes, exercise STAGE, QUERY and ABORT; attempt abort even after failed or malformed query replies",
+    "Remember kernel-performed initializer abort per descriptor/service token; preserve state across descriptor compaction and clear it on disconnect/close",
+    "Always return legacy command 99 failure, reject successful finalization and leave native hardware initialization unreachable",
+    "JSON reports distinguish completed CPU handoff from incomplete traces, process failure and nonzero resource counters"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 21,
+    "actual_bridge_functions": "ASan/UBSan; validate preserves allocation owners, PTEs, state and token sequence, even with token space exhausted; existing stage rollback/close/detach/fault cases pass",
+    "transport_native_mock": "ASan/UBSan; success cycle, requirements/validation/stage/query/abort errors, corrupted query identity with cleanup, repeat handoff rejection, abort acknowledgement, descriptor compaction and disconnect reset",
+    "transport_actual_ELF32_mock": "same complete routing and failure suite passed under QEMU with private glibc; confirms reserved word normalized only in private copy",
+    "private_runtime_fixture": "passed under QEMU; only project-owned fixture executed",
+    "i386_device_intel_client": "compiled/selftest passed; exact 236-byte/alignment=32/0x2004f case, foreign map-info/mmap rejection and all three shared heaps",
+    "i386_staging_client": "compiled/selftest passed; repeated validation and failed validation-copyout added before existing rollback and ownership handoff tests",
+    "alternative_mapping_types": "single-process, kernel-only, no-CPU and contradictory modes rejected"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "source_fixtures": "passed, actual DDK MMU and initializer translator exercised for both profiles",
+      "original_Intel_ABI_audit": "passed, including original MULTI definition",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "a3fc887f85a512333ee1e21eefffb1eee5632d4f15581e542e14c4cc58e3f0c8",
+      "client_sha256": "de540a03a2020a12e0c48f418422264cc5404b5d0763bf5903ef4922525845b0"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "source_fixtures": "passed, actual DDK MMU and initializer translator exercised for both profiles",
+      "original_Intel_ABI_audit": "passed, including original MULTI definition",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "f11c046d86da182ed04f348c30587e5ebe65c88f8f3e3f1c279bb372191248c6",
+      "client_sha256": "de540a03a2020a12e0c48f418422264cc5404b5d0763bf5903ef4922525845b0"
+    }
+  ],
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "e3c73d1182470ddf08b08b1bb4185651daac5d301d2efd5036e7208c5b9cc61b",
+    "lib/libdrm.so.2": "28b6036d31aa80549c1b994c63a7880d82f82b623062243ce188ad91b4213ce8",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending: explicit MULTI allocation, added validation ioctl tests and real initializer handoff",
+  "GPU_execution_enabled": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

@@ -27,7 +27,7 @@ def main():
         "static int device_visit(", "static int device_free_owned(", "static int backend_free_device(",
         "static int backend_alloc_device(", "static int backend_free_shared(",
         "static int bridge_device_check(", "static int stage_requirements(",
-        "static int stage_prepare(", "static void stage_drop_metadata(", "static int stage_commit(",
+        "static int stage_prepare(", "static int stage_validate(", "static void stage_drop_metadata(", "static int stage_commit(",
         "static int stage_rollback(", "static int stage_publish(", "static int stage_abort(",
         "static int stage_control(", "static int backend_disconnect(", "static void bridge_free(struct kref *ref)\n{",
         "static void bridge_file_free(", "static int bridge_open(",

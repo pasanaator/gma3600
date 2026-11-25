@@ -1,106 +1,77 @@
-# Capture the real Intel initializer's requests
+# Real Intel initializer and CPU handoff checkpoint
 
-**Current services: 0.9.5; transport: 0.1.4 (unchanged).** The
-[coherent/EDM allocation tests passed on all three heaps](../research/sgx545/d2500hn-small-alignment.json).
-The real initializer also allocated 8,192-byte and 8-byte buffers and obtained
-their mapping metadata. Its next request, 4 bytes aligned to 16 bytes, was
-rejected by the old 4 KiB minimum-alignment check. Both test and capture unloads
-released every tracked page without errors or blocked hardware accesses.
+**Current versions: services 0.10.0 and private transport 0.2.0.** Rebuild both;
+the older transport 0.1.4 bundle cannot exercise the new handoff path. Keep the
+working `1.0.4-sgx-host2` display parent loaded.
 
-Services 0.9.5 accepts zero or power-of-two alignments through 1 MiB. Requests
-below 4 KiB use 4 KiB-aligned native backing, which also satisfies their byte
-alignment. The logical allocation size stays unchanged: the observed request
-returns size 4 and maps one zeroed 4 KiB page. Larger alignments keep their
-requested value. No subpage allocator or new CPU/GPU cache policy is introduced.
+The [latest Atom trace](../research/sgx545/d2500hn-explicit-multi.json) confirms
+that the real initializer allocated its 4-byte/alignment=16 buffer and cleaned
+up correctly. It next requested 236 bytes aligned to 32 with flags `0x2004f`.
+The additional flag is Intel's `PVRSRV_HAP_MULTI_PROCESS`, already present in
+the supported heap attributes and successful allocation replies. This release
+accepts an explicit request for that attribute. Mapping, queries and freeing
+still require the owning file/process; cross-process import/export is not
+implemented. CPU aliases remain WC, and the existing access/coherent/EDM PTE
+policy, allocation bounds and zeroed page backing are retained.
 
-Services 0.9.4 accepts the observed coherent/EDM flags, optional zeroing and
-RAM-backed flags, and an omitted CPU cache mode. Intel's original BM allocator
-inherits heap attributes in that case. The private provider still supports
-only validated WC system-memory heaps: direct-map, kernel and user aliases all
-stay WC. Other CPU cache modes remain unsupported. Replies now include inherited
-heap attributes, and per-allocation/staging metadata retains the actual flags.
+This checkpoint also connects the real initializer's final handoff to the
+existing CPU staging implementation:
 
-The native MMU mapper now writes requested CACHECONSISTENT and EDMPROTECT bits.
-Its verifier checks those and access bits as well as physical page order. Source
-tests cover both bits separately/together, deliberate PTE corruption, sibling
-mappings, cleanup and mixed staged allocation flags. This verifies CPU-visible
-PTE construction; active GPU DMA coherence and protection remain untested.
+1. The private transport copies the 2,068-byte Intel command 99 payload and
+   normalizes its reserved first word in the copy. It logs buffer-role tokens,
+   required minimum sizes, supplied/required structure sizes and script-format
+   metadata. It never logs firmware bytes or register-write values.
+2. A new project-only `INIT_VALIDATE` ioctl checks ownership, mapped PTEs,
+   allocation sizes, build options, structure sizes and bounded scripts using
+   the same translator as staging. Validation changes no allocation owner,
+   token sequence, initializer state or retained-resource count.
+3. If validation passes, the transport calls `STAGE`, `QUERY`, then `ABORT`.
+   It verifies the reported counts and attempts abort even if query fails.
+   Successful staging ends the one-shot initializer attempt in the kernel;
+   the later legacy abort acknowledges that already-performed operation.
+4. The legacy command still returns failure. No script, firmware, native
+   initialization part 2, reset, power operation or GPU job is executed.
 
-Reserved bridge words remain ignored, and the two documented PDump-only CONNECT
-flags remain no-ops. Unknown service bits are rejected and PDUMP builds are
-explicitly disabled. These fields do not grant privileges or extend lifetimes.
+The kernel's legacy command 99 remains blocked. Native staging snapshots are
+private metadata, not registered native BM/resource-manager allocations.
+This checkpoint tests the handoff's CPU data and lifetime contract; it does
+not establish firmware compatibility, GPU DMA or rendering. The real
+initializer may encounter another missing allocation/service interface before
+handoff, or its payload may fail the strict checks. Return that trace rather
+than changing the checks to fit it.
 
-Rebuild the services module and use the updated runner from the repository.
-**Reuse the existing transport 0.1.4 bundle**; its libraries and launcher do not
-need rebuilding. The display parent remains the working host2 build.
+## Build on the Atom
 
-The [0.9.1 hardware tests passed](../research/sgx545/d2500hn-enumeration.json).
-The next diagnostic invokes the **unmodified Intel `SrvInit()`** with the
-original `libsrv_init.so` and `libsrv_um.so`, on the user's Intel GMA3600.
-This replaces synthetic client requests with the initializer's actual requests.
-
-A private, project-owned `libdrm.so.2` opens only `/dev/gma3600-sgx-bridge` and
-translates the documented Intel libdrm transport to the existing diagnostic
-ioctl. It logs command numbers, payload lengths, allocation flags/sizes/alignment,
-kernel errors and the initializer's return value. It does not dump firmware
-contents or change the proprietary libraries. Unknown commands are rejected;
-command 99 and successful initializer finalization are always blocked. This is
-a limited compatibility transport, not a full libdrm implementation or security
-sandbox. Its master-related calls do not acquire or release a KMS master.
-
-**GPU execution remains disabled.** A successful `SrvInit()` is not expected.
-The useful result is the first actual compatibility gap and whether all
-resources are released when the process exits. The real initializer may stop
-before allocation, at unsupported flags, or at another missing service. The
-result must guide the next change; its stage is not assumed in advance.
-
-## Build privately, without installing old packages
-
-The builder downloads the checksum-pinned Intel package and Ubuntu i386
-`libc6`/`libc6-dev` 2.15 packages into a cache. It extracts them into a new output
-directory and builds the adapter, launcher and a project-owned fixture. It
-does not install packages, change system library paths, load modules or execute
-the proprietary libraries. Their license is retained as `INTEL-LICENSE.txt`.
-No 32-bit system libc or multilib CRT installation is needed. The existing
-compiler's `-m32` support, Linux UAPI headers, Python 3 and `dpkg-deb` are used.
-
-From the repository root on the Atom:
+From the repository root, use new output directories:
 
 ```sh
 git pull --ff-only
 bash tests/run.sh
-sgx_build="$HOME/Desktop/gma3600-sgx-alignment-$(date +%Y%m%d-%H%M%S)"
+sgx_build="$HOME/Desktop/gma3600-sgx-handoff-$(date +%Y%m%d-%H%M%S)"
 python3 tools/sgx545_hybrid_build.py \
-  --kdir /lib/modules/$(uname -r)/build \
+  --kdir "/lib/modules/$(uname -r)/build" \
   --source "$HOME/.cache/gma3600/openpvrsgx" \
   --sgx-rev 10131 --output "$sgx_build"
 modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
+init_build="$HOME/Desktop/gma3600-sgx-initializer-handoff-$(date +%Y%m%d-%H%M%S)"
+python3 tools/sgx545_initializer_build.py --output "$init_build"
 python3 tools/sgx545_initializer_run.py --bundle "$init_build" --selftest
 ```
 
-The final line must be `PASS: private i386 loader, project-owned fixture and
-limited libdrm transport`, with `transport=0.1.4` in the loader line. The module
-must report version `0.9.5`. Keep `$init_build` pointing to the existing 0.1.4
-bundle; set its path again if using a new SSH session. If no bundle exists,
-create one with `python3 tools/sgx545_initializer_build.py --output NEW_DIRECTORY`
-and set `$init_build` to that directory. This selftest
-checks the observed PCI-only selector and rejects other devices without opening
-hardware. It executes only the open-source fixture,
-including in cloud validation under QEMU. It does not initialize the GPU.
-The pinned dependency list and validation results are recorded in
-[the build record](../research/sgx545/initializer-capture-build.json).
-The [current validation record](../research/sgx545/small-alignment-6.12-build.json)
-covers both kernel profiles, all supported power-of-two alignments, logical size
-preservation, malformed requests, copyout rollback and a native one-page mapping.
+Expect services `0.10.0` and `transport=0.2.0`. The selftest must pass.
+The builders do not install packages, load modules or execute proprietary
+libraries. The initializer builder verifies checksum-pinned Intel and Ubuntu
+i386 packages and extracts a private runtime, retaining `INTEL-LICENSE.txt`.
+No old packages or libraries are installed into the system. The selftest
+executes only the project-owned fixture. See the
+[current validation record](../research/sgx545/handoff-6.12-build.json).
 
-## Capture on the Atom, using a fresh services child
+## Allocation and staging regressions
 
-Keep the working host2 display parent loaded and SSH connected. Reuse
-`$sgx_build` from the new 0.9.5 build above. Load only the new services child;
-the working display parent stays loaded.
+Keep SSH connected and the working host2 parent loaded. Remove the old services
+child or identification probe, then run the updated allocation test:
 
 ```sh
-modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
 if [ -d /sys/module/gma3600_sgx_services ]; then
   sudo rmmod gma3600_sgx_services
 fi
@@ -113,52 +84,58 @@ cat /sys/bus/auxiliary/devices/gma3600.sgx.*/services
 sudo rmmod gma3600_sgx_services
 ```
 
-Stop if the allocation test fails. Expect this additional line:
+Expect the exact 236-byte/alignment=32/flags=0x2004f test to pass, followed by
+all three heaps, PTE attributes, neighboring allocations, WC roundtrip and
+foreign-file mapping/free rejection. All resource/error counters must return
+to zero, with four baseline pages before unload and zero afterward.
 
-```text
-PASS: 4-byte allocation alignment=16, page-backed mapping, coherent/EDM PTEs and free with live mapping
-```
-
-The test checks that exact small request, then all three initializer heaps,
-neighboring allocations, CPU mapping lifetime and kernel PTE verification.
-Before unload expect four baseline
-pages and zero allocations/maps/errors; unload must release all pages.
-**Reload services before capture:** the allocation test consumes the one-shot
-initializer attempt.
+Each initializer mode consumes a one-shot attempt, so reload between modes:
 
 ```sh
 sudo insmod "$sgx_build/core/gma3600_sgx_services.ko" prepare=1 bridge=1
-init_report="$init_build/initializer-report-alignment-$(date +%Y%m%d-%H%M%S).json"
+sudo "$sgx_build/sgx545-compat-probe" --init-stage
+cat /sys/bus/auxiliary/devices/gma3600.sgx.*/services
+sudo rmmod gma3600_sgx_services
+```
+
+The synthetic staging test now also checks repeated validation and failed
+validation-copyout without moving buffer ownership. It then tests staging
+copyout rollback, creator close, same-process control and explicit abort.
+Stop and return the logs if either regression test fails.
+
+## Capture the unmodified Intel initializer
+
+Reload once more, then capture using the new private bundle:
+
+```sh
+sudo insmod "$sgx_build/core/gma3600_sgx_services.ko" prepare=1 bridge=1
+init_report="$init_build/initializer-report.json"
 sudo python3 tools/sgx545_initializer_run.py \
-  --bundle "$init_build" --capture \
-  --report "$init_report"
+  --bundle "$init_build" --capture --report "$init_report"
 cat /sys/bus/auxiliary/devices/gma3600.sgx.*/services
 sudo rmmod gma3600_sgx_services
 sudo dmesg | grep -Ei 'SGX buffers|SGX bridge|services cleanup|blocked hardware|BUG:|Oops' | tail -10
 ```
 
-The helper verifies the Intel PCI vendor/device, `gma3600` parent ownership,
-host2/services 0.9.5 versions, fresh initialization state and zero live resources.
-It refuses capture through QEMU or on a different GPU. It checks the bundle
-hashes before execution and uses only the private runtime/library path. The
-capture has a 25-second timeout and saves the initializer output and before/after
-resource counts in JSON. A nonzero initializer return with clean resources is
-a completed capture, not successful GPU initialization. A crash, timeout,
-unexpected success or leftover resources is marked `inspect_report`.
-The trace includes `CONNECT reserved=... service_flags=...` and
-`ACQUIRE reserved=... index=... type=...`. Return those values even if a request
-is still rejected. Unsupported selectors, flags and commands are not silently
-rewritten by the userspace transport.
-Successful allocations also log the returned handle, device address, size and
-effective flags, including inherited CPU cache attributes.
+The runner requires the verified Atom PCI device, host2 parent, services 0.10.0,
+fresh prepare-only state, root privileges and a new report filename. It verifies
+bundle hashes and uses a private library path with a 25-second timeout. It does
+not acquire or release DRM/KMS master, so the working desktop remains on llvmpipe.
 
-After process exit, expect `pages_live=4`, `gpu_execution=disabled`, and zero
-file, allocation, mapping, stage, error and blocked-access counters. `init_ran`
-may be zero or one depending on how far the real initializer got. Unload must
-report `result=0 pages_live=0 blocked_hw_accesses=0`.
+If the CPU handoff cycle passes, expect a line like:
 
-Return the JSON at `$init_report`, the printed output and cleanup lines. Each
-new capture requires a fresh services load and a new report filename.
-The desktop should continue using llvmpipe. Native BM/resource integration,
-firmware matching, active DMA/page walks and power/reset/IRQ bring-up remain
-unfinished.
+```text
+HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=N pages=N errno=0 gpu_execution=disabled
+```
+
+The JSON outcome is then `cpu_handoff_cycle_passed_with_clean_resources`.
+The Intel initializer still returns failure deliberately. If it stops earlier,
+the JSON records the first unsupported request and may have `handoff: null`.
+A failed handoff includes its progress and errno; crashes, timeouts, unexpected
+initializer success or leftover resources produce `inspect_report`.
+
+After process exit expect `pages_live=4`, `gpu_execution=disabled`, and zero
+files, connections, allocations, mappings, stages, errors and blocked accesses.
+Unload must report `result=0 pages_live=0 blocked_hw_accesses=0`.
+Return the JSON at `$init_report`, regression output and cleanup lines. A repeat
+capture needs a fresh services load and a new report filename.

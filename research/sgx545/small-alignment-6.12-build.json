@@ -46,10 +46,11 @@
       "services_sha256": "c04c5d633a3b287475f0f691768d5ff61c1780607b75c73b588318d92f98dc81"
     }
   ],
-  "hardware_status": "pending",
+  "hardware_status": "passed exact small-alignment probe and real 4-byte/alignment=16 allocation; stopped at next explicit MULTI request",
   "GPU_execution_enabled": false,
   "proprietary_libraries_executed_in_cloud": false,
   "display_parent_changed": false,
   "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
-  "updated_common_client_sha256": "80e21da2527ed251c79bf5ba0cfeaa75721a8bd466cbf58ca1da374e5fc304c3"
+  "updated_common_client_sha256": "80e21da2527ed251c79bf5ba0cfeaa75721a8bd466cbf58ca1da374e5fc304c3",
+  "hardware_result": "d2500hn-explicit-multi.json"
 }

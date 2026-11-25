@@ -459,20 +459,20 @@ static volatile unsigned *device_mapping(int fd, unsigned services,
 	return memory;
 }
 static void small_device_alignment_test(int fd, unsigned services, unsigned device,
-	const struct sgx545_heap32 *heap)
+	const struct sgx545_heap32 *heap, unsigned bytes, unsigned alignment, unsigned flags)
 {
-	unsigned input[6] = {0xffffffff, device, heap->handle, SGX545_INTEL_INIT_FLAGS, 4, 16};
+	unsigned input[6] = {0xffffffff, device, heap->handle, flags, bytes, alignment};
 	unsigned freed[15] = {0, device, 0};
 	struct sgx545_alloc_device_out allocation = {0};
 	struct sgx545_handle_out result = {0};
 	struct sgx545_bridge32 wire = package(6, services, input, 24, &allocation, 76);
 	volatile unsigned *memory;
-	expect("4-byte allocation with alignment=16", call(fd, &wire), 0);
-	if (allocation.error || !allocation.kernel_mem || allocation.mem.alloc_size != 4 ||
+	expect("small aligned initializer allocation", call(fd, &wire), 0);
+	if (allocation.error || !allocation.kernel_mem || allocation.mem.alloc_size != bytes ||
 	    allocation.mem.kernel_mem != allocation.kernel_mem || allocation.mem.mapping != allocation.kernel_mem ||
 	    (allocation.mem.device_address & 4095) || allocation.mem.device_address < heap->base ||
 	    (__u64)allocation.mem.device_address + 4096 > (__u64)heap->base + heap->size ||
-	    allocation.mem.flags != (SGX545_INTEL_INIT_FLAGS | heap->attributes | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI))
+	    allocation.mem.flags != (flags | heap->attributes | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI))
 		fail("small-alignment allocation reply", allocation.error);
 	memory = device_mapping(fd, services, &allocation, 0x11223344);
 	device_walk(fd, services, device, &allocation);
@@ -482,7 +482,8 @@ static void small_device_alignment_test(int fd, unsigned services, unsigned devi
 	expect("free small allocation payload", result.error, 0);
 	check_words(memory, 4096, 0xeeddccbbU);
 	expect("unmap small allocation", sys3(91, ptr((const void *)memory), 4096, 0), 0);
-	say("PASS: 4-byte allocation alignment=16, page-backed mapping, coherent/EDM PTEs and free with live mapping\n");
+	if (bytes == 4) say("PASS: 4-byte allocation alignment=16, page-backed mapping, coherent/EDM PTEs and free with live mapping\n");
+	else say("PASS: 236-byte allocation alignment=32 flags=0x2004f, page-backed mapping and cleanup\n");
 }
 static void device_test(int fd, unsigned services, unsigned device, const char *path, int close_only)
 {
@@ -493,7 +494,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	struct sgx545_bridge32 w;
 	struct { unsigned flags, token; struct sgx545_client_mem32 mem; } cpu_free = {0};
 	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 3 * 4096 + 17, 0};
-	unsigned flags = original_intel_abi ? SGX545_INTEL_INIT_FLAGS : SGX545_DEVICE_FLAGS;
+	unsigned flags = original_intel_abi ? SGX545_INTEL_INIT_FLAGS | SGX545_BUFFER_MULTI : SGX545_DEVICE_FLAGS;
 	unsigned free_in[15] = {0, device, 0}, i, heaps = 0, other, other_device;
 	volatile unsigned *first = 0, *second = 0;
 	int fd2;
@@ -511,7 +512,10 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	expect("device initializer INFO payload", info.error, 0);
 	for (i = 0; i < SGX545_MAX_HEAPS; i++) if (info.heaps[i].handle) break;
 	if (i == SGX545_MAX_HEAPS) fail("no device allocation heaps", i);
-	if (original_intel_abi) small_device_alignment_test(fd, services, device, &info.heaps[i]);
+	if (original_intel_abi) {
+		small_device_alignment_test(fd, services, device, &info.heaps[i], 4, 16, SGX545_INTEL_INIT_FLAGS);
+		small_device_alignment_test(fd, services, device, &info.heaps[i], 236, 32, flags);
+	}
 	in[2] = info.heaps[i].handle;
 	w = package(6, services, in, 24, &a, 76);
 	in[1]++;
@@ -562,6 +566,13 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		expect("cross-file device free rejected", call(fd2, &w), -2);
 		check = (struct sgx545_device_check){other, other_device, a.kernel_mem, 0, 0, 0};
 		expect("cross-file device PTE check rejected", sys3(54, fd2, SGX545_IOCTL_DEVICE_CHECK, ptr(&check)), -2);
+		{
+			unsigned map_input[2] = {0, a.kernel_mem};
+			struct sgx545_map_info_out denied = {0};
+			w = package(11, other, map_input, 8, &denied, sizeof(denied));
+			expect("cross-file device map-info rejected", call(fd2, &w), -2);
+			expect("cross-file device mmap rejected", probe_mmap2(fd2, 16384, 3, 1, a.kernel_mem), -2);
+		}
 		disconnect_bridge(fd2, other); expect("close other device file", sys3(6, fd2, 0, 0), 0);
 		free_in[1] = device;
 		w = package(7, services, free_in, original_intel_abi ? 60 : 12, &result.error, original_intel_abi ? 8 : 4);
@@ -591,7 +602,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		expect("unmap second device buffer", sys3(91, ptr((const void *)second), 16384, 0), 0);
 	}
 	if (heaps != 3) fail("expected three shared initializer heaps", heaps);
-	if (original_intel_abi) say("PASS: Intel flags=0x4f, inherited WC cache mode, coherent/EDM PTE checks and CPU roundtrip\n");
+	if (original_intel_abi) say("PASS: Intel flags=0x4f/0x2004f, inherited WC, PTE attributes and mapping isolation\n");
 	if (!close_only) disconnect_bridge(fd, services);
 	expect("close device fd with live VMAs", sys3(6, fd, 0, 0), 0);
 	check_words(first, 16384, 0xeca86420U); check_words(second, 16384, 0xdb97531fU);
@@ -696,10 +707,17 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	wire.info.scripts.part1[0].op = 1; wire.info.scripts.part1[0].offset = 0x4000;
 	expect("out-of-window script register rejected", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, ptr(&message)), -34);
 	wire.info.scripts.part1[0].op = 2; wire.info.scripts.part1[0].offset = 0;
+	expect("initializer validation without ownership handoff", sys3(54, fd, SGX545_IOCTL_INIT_VALIDATE, ptr(&message)), 0);
+	if (message.stage || message.buffers != 11 || message.pages != total_pages || message.flags)
+		fail("initializer validation reply", message.buffers);
+	message.buffers = message.pages = 0;
+	expect("repeat initializer validation", sys3(54, fd, SGX545_IOCTL_INIT_VALIDATE, ptr(&message)), 0);
+	message.buffers = message.pages = 0;
 	temporary = probe_mmap2(~0U, 4096, 3, 0x22, 0);
 	if (temporary >= 0xfffff001U) fail("staging rollback page", temporary);
 	readonly = (volatile struct sgx545_init_stage *)temporary; *readonly = message;
 	expect("staging copyout mprotect", sys3(125, temporary, 4096, 1), 0);
+	expect("validation copyout leaves ownership intact", sys3(54, fd, SGX545_IOCTL_INIT_VALIDATE, temporary), -14);
 	expect("staging copyout ownership rollback", sys3(54, fd, SGX545_IOCTL_INIT_STAGE, temporary), -14);
 	expect("staging copyout munmap", sys3(91, temporary, 4096, 0), 0);
 	walk = (struct sgx545_device_check){services, device, allocations[0].kernel_mem, 0, 0, 0};

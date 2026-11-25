@@ -36,5 +36,6 @@
     "capture": "[16638.871180] result=0 pages_live=0 blocked_hw_accesses=0"
   },
   "GPU_execution_enabled": false,
-  "hardware_status_after_fix": "pending with services 0.9.5; existing transport 0.1.4 bundle can be reused"
+  "hardware_status_after_fix": "passed exact 4-byte/alignment=16 allocation and map-info, including all cleanup checks",
+  "next_hardware_result": "d2500hn-explicit-multi.json"
 }

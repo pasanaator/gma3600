@@ -13,6 +13,7 @@ _Static_assert(PVRSRV_MEM_CACHE_CONSISTENT == SGX545_DEVICE_COHERENT, "coherent 
 _Static_assert(PVRSRV_MEM_EDM_PROTECT == SGX545_DEVICE_EDM_PROTECT, "EDM protected GPU PTE flag");
 _Static_assert(PVRSRV_MEM_ZERO == SGX545_DEVICE_ZERO, "zeroed allocation flag");
 _Static_assert(PVRSRV_HAP_CACHETYPE_MASK == SGX545_BUFFER_CACHE_MASK, "CPU cache flag mask");
+_Static_assert(PVRSRV_HAP_MULTI_PROCESS == SGX545_BUFFER_MULTI, "multi-process heap mapping attribute");
 _Static_assert(SRV_FLAGS_PERSIST == SGX545_CONNECT_PDUMP_PERSIST, "PDump persistence flag");
 _Static_assert(SRV_FLAGS_PDUMP_ACTIVE == SGX545_CONNECT_PDUMP_ACTIVE, "PDump active flag");
 _Static_assert(sizeof(PVRSRV_BRIDGE_PACKAGE) == sizeof(struct sgx545_bridge32), "envelope");

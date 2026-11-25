@@ -483,7 +483,7 @@ static void device_allocation_lifetime(void)
         assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOMEM);
         assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a)); first = a.kernel_mem;
         assert(a.mem.device_address == 0xf4000000 && b->stats.device_pages == 4);
-        assert(!backend_alloc_device(f, 100, SGX545_INTEL_INIT_FLAGS, 16384, 4096, &c));
+        assert(!backend_alloc_device(f, 100, SGX545_INTEL_INIT_FLAGS | SGX545_BUFFER_MULTI, 16384, 4096, &c));
         assert(c.mem.flags == (SGX545_INTEL_INIT_FLAGS | SGX545_HEAP_FLAGS));
         assert(f->device_allocations->binding.memory_flags == (SGX545_INTEL_INIT_FLAGS & SGX545_DEVICE_MMU_FLAGS));
         assert(b->stats.device_allocations == 2 && b->stats.device_pages == 8 && live_bindings == 2);
@@ -492,6 +492,7 @@ static void device_allocation_lifetime(void)
         check.device++;
         assert(bridge_device_check(f, &check) == -ENOENT); check.device--;
         assert(backend_free_device(other, first) == -ENOENT);
+        assert(backend_free_device(other, c.kernel_mem) == -ENOENT); /* explicit MULTI never grants ownership */
         assert(backend_free_shared(f, first) == -EINVAL);
         if (!mode) {
             assert(!backend_free_device(f, first) && b->stats.device_allocations == 1);
@@ -559,6 +560,22 @@ static void initializer_stage_lifetime(void)
         wire.info.ccb ^= 0x40000000;
         assert(stage_prepare(f, &wire, &message, &candidate) == -ENOENT && !candidate);
         wire.info.ccb ^= 0x40000000;
+        {
+            struct sgx545_init_stage check = message;
+            u32 before = b->next_token;
+            assert(!stage_validate(f, &wire, &check));
+            assert(!check.stage && check.buffers == 9 && check.pages == 36);
+            assert(b->next_token == before && !b->stage && !b->stats.stages);
+            assert(b->init_owner == f && f->session.initializer && !b->stats.init_ran);
+            assert(b->stats.device_allocations == 9 && live_bindings == 9);
+            assert(stage_validate(controller, &wire, &message) == -ENOENT);
+            check = message; check.flags = 1;
+            assert(stage_validate(f, &wire, &check) == -EINVAL);
+            assert(*device_slot(f, tokens[0])); /* ownership stays with the creator */
+            b->next_token = U32_MAX; check = message;
+            assert(!stage_validate(f, &wire, &check) && b->next_token == U32_MAX);
+            b->next_token = before;
+        }
         fail_alloc = 1;
         assert(stage_prepare(f, &wire, &message, &candidate) == -ENOMEM && !candidate);
         fail_transfer = 1;

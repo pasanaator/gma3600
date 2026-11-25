@@ -450,8 +450,8 @@ static void acquire_selector_protocol(void)
 
 static void initializer_allocation_flags(void)
 {
-    const unsigned accepted[] = {0xb, 0xf, 0x4b, 0x4f, 0xcf, 0x400b, 0x424f};
-    const unsigned rejected[] = {0, 3, 0x47, 0x104f, 0x204f, 0x604f, 0x14f, 0x2004f, 0x0200004f};
+    const unsigned accepted[] = {0xb, 0xf, 0x4b, 0x4f, 0xcf, 0x400b, 0x424f, 0x2004f, 0x2404f};
+    const unsigned rejected[] = {0, 3, 0x47, 0x104f, 0x204f, 0x604f, 0x14f, 0x804f, 0x1004f, 0x3004f, 0x8004f, 0x0200004f};
     struct fake f = {.in = {0xffffffff, 2, 99, 0x4f, 8192, 4096}};
     struct sgx545_session s = {.services = 1, .device = 2, .initializer = 1, .init_info = 1};
     unsigned i, token;

@@ -22,18 +22,20 @@ _Static_assert(sizeof(void *) == 4, "Intel initializer transport must be i386");
 
 /* Each drmOpen gets its own bridge file: do not merge legacy connections. */
 static int descriptors[32];
+static unsigned aborted_services[32];
 static unsigned descriptor_count;
 static unsigned requests;
 
-static int owned(int fd)
+static int descriptor_slot(int fd)
 {
 	unsigned i;
 	for (i = 0; i < descriptor_count; i++)
-		if (descriptors[i] == fd) return 1;
-	return 0;
+		if (descriptors[i] == fd) return (int)i;
+	return -1;
 }
+static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.4"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.2.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -60,6 +62,7 @@ EXPORT int drmOpen(const char *name, const char *busid)
 		fprintf(stderr, "TRANSPORT open_failed errno=%d\n", error);
 		return -error;
 	}
+	aborted_services[descriptor_count] = 0;
 	descriptors[descriptor_count++] = fd;
 	fprintf(stderr, "TRANSPORT opened fd=%d\n", fd);
 	return fd;
@@ -73,6 +76,7 @@ EXPORT int drmClose(int fd)
 		if (descriptors[i] != fd) continue;
 		/* Linux releases the fd even when close reports EINTR. */
 		descriptors[i] = descriptors[--descriptor_count];
+		aborted_services[i] = aborted_services[descriptor_count];
 		result = transport_close(fd);
 		if (result < 0) return -errno;
 		return 0;
@@ -93,6 +97,91 @@ EXPORT int drmCommandNone(int fd, unsigned long command)
 	/* Original PVR_DRM_IS_MASTER_CMD. The kernel still checks initializer
 	 * capability/ownership; no KMS master is acquired or released here. */
 	return command == 0x15 ? 0 : -EOPNOTSUPP;
+}
+
+static void script_metadata(const char *name, const struct sgx545_init_command32 *commands, unsigned count)
+{
+	unsigned i;
+	for (i = 0; i < count; i++) {
+		if (commands[i].op == 2) {
+			fprintf(stderr, "SCRIPT name=%s writes=%u halt=1\n", name, i);
+			return;
+		}
+		if (commands[i].op != 1 || commands[i].offset & 3 || commands[i].offset >= 0x4000) {
+			fprintf(stderr, "SCRIPT name=%s invalid_index=%u op=%u offset=%08x\n",
+				name, i, commands[i].op, commands[i].offset);
+			return;
+		}
+	}
+	fprintf(stderr, "SCRIPT name=%s writes=%u halt=0\n", name, count);
+}
+
+/* Exercise the CPU-only handoff on the real initializer's payload. The legacy
+ * command itself is NEVER forwarded, and failure is returned even after this
+ * diagnostic cycle passes. Native initialization and script execution stay
+ * unreachable. The kernel owns all authorization, validation and lifetimes. */
+static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
+{
+	struct sgx545_init2_in32 request;
+	struct sgx545_init_stage validation, stage;
+	struct sgx545_init_requirements caps = {0};
+	struct sgx545_init_control control = {0};
+	unsigned roles[SGX545_INIT_ROLES], i, buffers = 0, pages = 0;
+	int slot = descriptor_slot(fd), error = 0, validated = 0, staged = 0, queried = 0, aborted = 0;
+
+	if (wire->in_size != sizeof(request) || wire->out_size != sizeof(struct sgx545_init2_out32))
+		return -EINVAL;
+	if (aborted_services[slot]) return -EALREADY;
+	memcpy(&request, (void *)(unsigned long)wire->param_in, sizeof(request));
+	fprintf(stderr, "INIT2 reserved=%08x device=%08x build_options=%08x\n",
+		request.flags, request.device, request.info.build_options);
+	/* The original bridge's first word is reserved, not an input flag. Only
+	 * this private copy is normalized for the stricter project-only ioctl. */
+	request.flags = 0;
+	roles[0] = request.info.ccb; roles[1] = request.info.ccb_control; roles[2] = request.info.event_kicker;
+	roles[3] = request.info.host_control; roles[4] = request.info.ta3d_control; roles[5] = request.info.misc;
+	roles[6] = request.info.hwperf; roles[7] = request.info.ta_signature; roles[8] = request.info.signature_3d;
+	caps.services = wire->services; caps.device = request.device;
+	if (transport_ioctl(fd, SGX545_IOCTL_INIT_REQUIREMENTS, &caps) < 0) { error = errno; goto done; }
+	fprintf(stderr, "INIT2_EXPECT build_options=%08x mask=%08x\n", caps.build_options, caps.build_option_mask);
+	for (i = 0; i < SGX545_INIT_ROLES; i++)
+		fprintf(stderr, "ROLE index=%u handle=%08x minimum_bytes=%u\n", i, roles[i], caps.minimum_bytes[i]);
+	for (i = 0; i < 13; i++)
+		fprintf(stderr, "STRUCT index=%u supplied=%u required=%u\n", i, request.info.struct_sizes[i], caps.struct_sizes[i]);
+	for (i = 0; i < 18; i++)
+		if (request.info.mem_handles[i])
+			fprintf(stderr, "INIT_MEMORY index=%u handle=%08x\n", i, request.info.mem_handles[i]);
+	script_metadata("part1", request.info.scripts.part1, 64);
+	script_metadata("part2", request.info.scripts.part2, 64);
+	script_metadata("deinit", request.info.scripts.deinit, 16);
+	validation = (struct sgx545_init_stage){.services = wire->services, .device = request.device,
+		.request = (unsigned)(unsigned long)&request, .request_bytes = sizeof(request)};
+	stage = validation;
+	if (transport_ioctl(fd, SGX545_IOCTL_INIT_VALIDATE, &validation) < 0) { error = errno; goto done; }
+	validated = 1; buffers = validation.buffers; pages = validation.pages;
+	if (validation.stage || validation.flags || buffers < SGX545_INIT_ROLES ||
+	    buffers > SGX545_INIT_MAX_BUFFERS || pages < buffers) { error = EPROTO; goto done; }
+	if (transport_ioctl(fd, SGX545_IOCTL_INIT_STAGE, &stage) < 0) { error = errno; goto done; }
+	staged = 1;
+	/* STAGE has already ended this initializer attempt in the kernel. Keep
+	 * that fact even if QUERY or ABORT fails; never issue a second native abort. */
+	aborted_services[slot] = wire->services;
+	control.services = wire->services; control.stage = stage.stage;
+	if (!stage.stage || stage.flags || stage.buffers != buffers || stage.pages != pages) error = EPROTO;
+	else if (transport_ioctl(fd, SGX545_IOCTL_INIT_CONTROL, &control) < 0) error = errno;
+	else if (control.services != wire->services || control.stage != stage.stage || control.operation != SGX545_STAGE_QUERY ||
+		 control.buffers != buffers || control.pages != pages || control.flags) error = EPROTO;
+	else queried = 1;
+	/* Always attempt cleanup after a delivered STAGE, including query failure. */
+	control = (struct sgx545_init_control){.services = wire->services, .stage = stage.stage, .operation = SGX545_STAGE_ABORT};
+	if (transport_ioctl(fd, SGX545_IOCTL_INIT_CONTROL, &control) < 0) error = errno;
+	else if (control.services != wire->services || control.stage != stage.stage || control.operation != SGX545_STAGE_ABORT ||
+		 control.buffers || control.pages || control.flags) error = EPROTO;
+	else aborted = 1;
+done:
+	fprintf(stderr, "HANDOFF validated=%d staged=%d queried=%d aborted=%d buffers=%u pages=%u errno=%d gpu_execution=disabled\n",
+		validated, staged, queried, aborted, buffers, pages, error);
+	return error ? -error : -EOPNOTSUPP;
 }
 
 EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned long size)
@@ -148,9 +237,16 @@ EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned l
 			fprintf(stderr, "BLOCK successful initializer finalization\n");
 			return -EOPNOTSUPP;
 		}
+		if (aborted_services[descriptor_slot(fd)] == wire->services && wire->services) {
+			if (wire->out_size != 8) return -EINVAL;
+			memset((void *)(unsigned long)wire->param_out, 0, 8);
+			fprintf(stderr, "TRANSPORT init_abort=already_performed_by_stage\n");
+			return 0;
+		}
 		break;
+	case 99:
+		return initializer_handoff(fd, wire);
 	default:
-		/* Includes command 99. Do not reinterpret or execute scripts. */
 		fprintf(stderr, "BLOCK bridge command=%u\n", number);
 		return -EOPNOTSUPP;
 	}
@@ -161,6 +257,8 @@ EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned l
 	} else if (wire->out_size >= 4) {
 		fprintf(stderr, "RESULT command=%u payload_error=%u\n", number,
 			*(unsigned *)(unsigned long)wire->param_out);
+		if (number == SGX545_CMD_DISCONNECT && !*(unsigned *)(unsigned long)wire->param_out)
+			aborted_services[descriptor_slot(fd)] = 0;
 		if (number == SGX545_CMD_ALLOC_DEVICE && wire->out_size == sizeof(struct sgx545_alloc_device_out)) {
 			const struct sgx545_alloc_device_out *out = (void *)(unsigned long)wire->param_out;
 			if (!out->error)

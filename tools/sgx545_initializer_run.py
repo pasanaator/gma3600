@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.1.4":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.1.4 is required")
+    if manifest.get("transport_version") != "0.2.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.2.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,8 +54,8 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.9.5":
-        raise ValueError("Capture currently requires host2 and tested services 0.9.5")
+    if host != "1.0.4-sgx-host2" or child != "0.10.0":
+        raise ValueError("Capture currently requires host2 and tested services 0.10.0")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
@@ -73,6 +73,17 @@ def clean_status(status):
                     "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "device_allocations", "device_pages",
                     "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors")})
     return all(status.get(key) == value for key, value in expected.items())
+
+
+def handoff_status(stderr):
+    matches = re.findall(r"^HANDOFF validated=([01]) staged=([01]) queried=([01]) aborted=([01]) "
+                         r"buffers=(\d+) pages=(\d+) errno=(\d+) gpu_execution=disabled$", stderr, re.M)
+    if not matches:
+        return None
+    values = list(map(int, matches[-1]))
+    status = dict(zip(("validated", "staged", "queried", "aborted", "buffers", "pages", "errno"), values))
+    status["cpu_cycle_passed"] = values[:4] == [1, 1, 1, 1] and values[6] == 0 and 9 <= values[4] <= 27 and values[5] >= values[4]
+    return status
 
 
 def command(bundle, selftest=False, qemu=None):
@@ -133,8 +144,12 @@ def main():
         except (OSError, ValueError) as error:
             after, cleanup_ok = {"status_error": str(error)}, False
         outcome = "initializer_returned_failure_with_clean_resources" if code == 3 and cleanup_ok else "inspect_report"
+        handoff = handoff_status(stderr)
+        if outcome != "inspect_report" and handoff and handoff["cpu_cycle_passed"]:
+            outcome = "cpu_handoff_cycle_passed_with_clean_resources"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
+                  "handoff": handoff,
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
                   "bundle_artifact_sha256": manifest["artifact_sha256"],
@@ -144,7 +159,9 @@ def main():
         report_stream.truncate()
         report_stream.close()
         print("Initializer diagnostic report:", args.report)
-        print("This is a compatibility trace, not a successful GPU initialization.")
+        if outcome == "cpu_handoff_cycle_passed_with_clean_resources":
+            print("CPU handoff validation, staging, query and abort passed.")
+        print("GPU execution remains disabled; the Intel initializer is deliberately returned a failure.")
         return 0 if outcome != "inspect_report" else 1
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, str(error) + "\n")

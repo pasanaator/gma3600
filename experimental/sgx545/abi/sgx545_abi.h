@@ -80,12 +80,14 @@ struct sgx545_bridge_request {
 #define SGX545_SYSMEM_NONCONTIG     0x02000000U
 #define SGX545_HEAP_FLAGS           (SGX545_BUFFER_WC | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI | SGX545_SYSMEM_NONCONTIG)
 #define SGX545_INTEL_INIT_FLAGS     (SGX545_DEVICE_REQUIRED | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
-/* CPU cache mode may be omitted and inherited from a validated WC heap. */
+/* CPU cache mode may be omitted and inherited from a validated WC heap.
+ * MULTI is already an attribute of these heaps; it does not publish a handle
+ * or bypass this diagnostic bridge's per-file/process ownership checks. */
 static inline int sgx545_device_flags_valid(__u32 flags)
 {
 	return (flags & SGX545_DEVICE_REQUIRED) == SGX545_DEVICE_REQUIRED &&
 		!(flags & ~(SGX545_DEVICE_FLAGS | SGX545_DEVICE_COHERENT |
-			SGX545_DEVICE_EDM_PROTECT | SGX545_DEVICE_ZERO | SGX545_RAM_BACKED));
+			SGX545_DEVICE_EDM_PROTECT | SGX545_DEVICE_ZERO | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI));
 }
 static inline int sgx545_device_effective_flags_valid(__u32 flags)
 {
@@ -172,6 +174,8 @@ struct sgx545_init_requirements {
 	__u32 minimum_bytes[SGX545_INIT_ROLES], struct_sizes[13];
 };
 #define SGX545_IOCTL_INIT_STAGE 0xc0204705U
+/* Same envelope as STAGE, but no token, ownership or initializer state changes. */
+#define SGX545_IOCTL_INIT_VALIDATE 0xc0204707U
 struct sgx545_init_stage {
 	__u32 services, device, request, request_bytes;
 	__u32 stage, buffers, pages, flags;
