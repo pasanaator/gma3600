@@ -413,6 +413,39 @@ static void connect_flags_protocol(void)
     }
 }
 
+static void acquire_selector_protocol(void)
+{
+    struct fake f = {.in = {0xfefefefe, 42, 0}};
+    struct sgx545_session s = {.services = 1};
+    unsigned selector, before, token, invalid;
+
+    for (selector = 0; selector < 2; selector++) {
+        f.in[2] = selector ? SGX545_DEVICE_TYPE : SGX545_DEVICE_TYPE_UNKNOWN;
+        f.in[1] = 41;
+        assert(!run(&s, &f, 1) && word(&f, 0) == 11 && !s.device);
+        f.in[1] = 42; f.fail_out = 1;
+        assert(run(&s, &f, 1) == -EFAULT && !s.device);
+        f.fail_release = 23;
+        assert(run(&s, &f, 1) == -EFAULT && s.device && s.device_type == SGX545_DEVICE_TYPE);
+        token = s.device; before = f.acquires;
+        f.fail_out = f.fail_release = 0;
+        f.in[2] = selector ? SGX545_DEVICE_TYPE_UNKNOWN : SGX545_DEVICE_TYPE;
+        assert(!run(&s, &f, 1) && word(&f, 1) == token && f.acquires == before);
+        f.in[2] = selector ? SGX545_DEVICE_TYPE : SGX545_DEVICE_TYPE_UNKNOWN;
+        assert(!run(&s, &f, 1) && word(&f, 1) == token && f.acquires == before);
+        f.in[1] = 43;
+        assert(run(&s, &f, 1) == -EOPNOTSUPP && f.acquires == before && s.device == token);
+        f.in[1] = 42;
+        for (invalid = 1; invalid < 16; invalid++) {
+            if (invalid == SGX545_DEVICE_TYPE) continue;
+            f.in[2] = invalid;
+            assert(run(&s, &f, 1) == -EOPNOTSUPP && f.acquires == before);
+        }
+        assert(!sgx545_session_close(&s, &ops, &f) && !s.device && !s.device_type);
+        s.services = 1;
+    }
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -495,6 +528,7 @@ int main(void)
 	original_intel_protocol();
 	enumeration_protocol();
 	connect_flags_protocol();
+	acquire_selector_protocol();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }

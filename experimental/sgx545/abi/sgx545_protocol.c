@@ -163,15 +163,18 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		break;
 	}
 	case SGX545_CMD_ACQUIRE:
-		if (in[2] != SGX545_DEVICE_TYPE)
+		/* Intel uses UNKNOWN to select an enumerated device by index. The
+		 * restricted backend still resolves only our SGX device by that index;
+		 * normalize the selector so repeat queries can use either form. */
+		if (in[2] != SGX545_DEVICE_TYPE_UNKNOWN && in[2] != SGX545_DEVICE_TYPE)
 			return -EOPNOTSUPP;
 		if (s->device) {
-			if (in[1] != s->device_index || in[2] != s->device_type)
+			if (in[1] != s->device_index || s->device_type != SGX545_DEVICE_TYPE)
 				return -EOPNOTSUPP;
 			out.handle.handle = s->device;
 			ret = 0;
 		} else {
-			ret = ops->acquire(ctx, in[1], in[2], &token);
+			ret = ops->acquire(ctx, in[1], SGX545_DEVICE_TYPE, &token);
 			if (!ret && !token) {
 				ops->release_device(ctx);
 				return -EIO;
@@ -295,7 +298,7 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		else if (cmd == SGX545_CMD_ACQUIRE) {
 			s->device = token;
 			s->device_index = in[1];
-			s->device_type = in[2];
+			s->device_type = SGX545_DEVICE_TYPE;
 		} else if (cmd == SGX545_CMD_INIT_CONNECT)
 			s->initializer = 1;
 		else if (cmd == SGX545_CMD_INIT_INFO)

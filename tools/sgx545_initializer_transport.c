@@ -33,7 +33,7 @@ static int owned(int fd)
 	return 0;
 }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.2"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.3"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -123,6 +123,9 @@ EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned l
 	if (number == SGX545_CMD_CONNECT && wire->in_size == 8) {
 		const unsigned *in = (void *)(unsigned long)wire->param_in;
 		fprintf(stderr, "CONNECT reserved=%08x service_flags=%08x\n", in[0], in[1]);
+	} else if (number == SGX545_CMD_ACQUIRE && wire->in_size == 12) {
+		const unsigned *in = (void *)(unsigned long)wire->param_in;
+		fprintf(stderr, "ACQUIRE reserved=%08x index=%u type=%u\n", in[0], in[1], in[2]);
 	} else if (wire->in_size >= 4) {
 		fprintf(stderr, "INPUT command=%u reserved=%08x\n", number,
 			*(unsigned *)(unsigned long)wire->param_in);

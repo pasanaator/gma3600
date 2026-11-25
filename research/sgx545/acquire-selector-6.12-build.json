@@ -1,0 +1,68 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.9.3",
+  "transport_version": "0.1.3",
+  "previous_hardware_result": "d2500hn-initializer-acquire.json",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "original_Intel_reference": {
+    "source_package_sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "source": "services4/srvkm/common/pvrsrv.c: PVRSRVAcquireDeviceDataKM_Match_AnyVaCb",
+    "UNKNOWN_type": 0,
+    "SGX_type": 7,
+    "semantics": "UNKNOWN selects ui32DeviceIndex; non-UNKNOWN selects device type. This restricted bridge keeps the existing SGX/index check and adds UNKNOWN as an index selector."
+  },
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 20,
+    "focused_sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "original_Intel_and_compat_i386_field_assertions": "UNKNOWN=0, SGX=7, request index offset=4 and type offset=8",
+    "acquire_cases": [
+      "UNKNOWN or SGX first, then the alternate selector returns the same handle without another backend call",
+      "Invalid first index retains no device handle",
+      "Changed index and unrelated types rejected",
+      "Failed result publication rolls back; failed rollback retains canonical SGX state for cleanup",
+      "Original input fields logged and forwarded unchanged by userspace adapter"
+    ],
+    "i386_loader_fixture_under_QEMU": "passed; transport 0.1.3"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "original_Intel_ABI_audit": "passed",
+      "real_DDK_source_fixtures": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "9e90bc053772dc914874433490fc28084b4da405acbccd5f71727d61078829c3"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "original_Intel_ABI_audit": "passed",
+      "real_DDK_source_fixtures": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "f5d005aed13b1203064a7e50f13d0824f4b771ed631da4cb5034867f688c82f0"
+    }
+  ],
+  "capture_bundle_artifact_sha256": {
+    "sgx545-initializer": "bf97fa18d49c7b6371e539c3e29d38b6a2a708706c09ce846aa5aba1e832bc8d",
+    "lib/libdrm.so.2": "a44a2a784330172c04f989fa912ea6370455fd5072bf5ec29d442c8c376769a3",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending",
+  "GPU_execution_enabled": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

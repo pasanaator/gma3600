@@ -1,0 +1,69 @@
+{
+  "source": "User-supplied initializer report and matching SSH transcript",
+  "checkpoint": "73d34fc / services 0.9.2 / transport 0.1.2",
+  "report_file": "d2500hn-initializer-acquire-report.json",
+  "report_sha256": "26b0f6bfe5e74608e7056572b044af5725f538d864a78e028a193cf1c43b977f",
+  "transcript_sha256": "d080a183438fa6ddc24b7aa4b8619064443dd02d7e0e598d13fa345a4325c253",
+  "report_trace_matches_transcript": true,
+  "plain_bridge_probe": "passed; reserved words, all documented CONNECT flags and both enumeration formats",
+  "real_initializer_progress": [
+    "PCI-only open fd=3",
+    "CONNECT accepted with reserved=fff50a08 and service_flags=00000000",
+    "initializer CONNECT command 67 accepted",
+    "original Intel 328-byte enumeration accepted",
+    "ACQUIRE command 1 rejected with EOPNOTSUPP (95)",
+    "initializer abort and disconnect accepted"
+  ],
+  "previous_rejection_confirmed": "Nonzero reserved CONNECT word; service_flags were zero. The 0.9.1 zero-word requirement would reject this payload.",
+  "new_rejection": {
+    "request_bytes": 12,
+    "reply_bytes": 8,
+    "reserved_word": "00000000",
+    "index_and_type_values": "not present in transport 0.1.2 trace",
+    "rejecting_condition": "ACQUIRE type is not explicit SGX=7; it is rejected before the backend",
+    "original_Intel_supported_selection": "UNKNOWN=0 selects by index; this legitimate form was missing from our restricted translator",
+    "new_fix": "Accept UNKNOWN and SGX for the indexed device, normalize backend/session type, reuse the handle across selectors; log original request index/type"
+  },
+  "bridge_commands_observed": [
+    12,
+    67,
+    0,
+    1,
+    68,
+    13
+  ],
+  "initializer_return": 34,
+  "status_after_client": {
+    "state": "prepared",
+    "devices": "1",
+    "pages_live": "4",
+    "blocked_hw_accesses": "0",
+    "gpu_execution": "disabled",
+    "bridge": "enabled",
+    "files": "0",
+    "connections": "0",
+    "bridge_errors": "0",
+    "heap_handles": "0",
+    "init_running": "0",
+    "init_ran": "1",
+    "buffers": "0",
+    "buffer_pages": "0",
+    "buffer_maps": "0",
+    "buffer_errors": "0",
+    "device_allocations": "0",
+    "device_pages": "0",
+    "device_errors": "0",
+    "stages": "0",
+    "staged_buffers": "0",
+    "staged_pages": "0",
+    "stage_errors": "0"
+  },
+  "resources_clean_after_process": true,
+  "final_cleanup": {
+    "buffers": "[3832.125029] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[3832.125045] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+    "services": "[3832.143544] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "GPU_execution_enabled": false,
+  "hardware_status_after_fix": "pending with services 0.9.3 and transport 0.1.3"
+}

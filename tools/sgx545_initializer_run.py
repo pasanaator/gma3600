@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.1.2":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.1.2 is required")
+    if manifest.get("transport_version") != "0.1.3":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.1.3 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,8 +54,8 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.9.2":
-        raise ValueError("Capture currently requires host2 and tested services 0.9.2")
+    if host != "1.0.4-sgx-host2" or child != "0.9.3":
+        raise ValueError("Capture currently requires host2 and tested services 0.9.3")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}

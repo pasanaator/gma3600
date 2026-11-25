@@ -1,19 +1,23 @@
 # Capture the real Intel initializer's requests
 
-**Current services: 0.9.2; transport: 0.1.2.** The PCI-only open now works, and
-the real Intel initializer [reached CONNECT](../research/sgx545/d2500hn-initializer-connect.json).
-Services 0.9.1 rejected it with `EOPNOTSUPP`. That check rejects a nonzero
-reserved bridge word or any nonzero CONNECT flags; the old trace did not record
-their values, so which word triggered it is not yet confirmed.
+**Current services: 0.9.3; transport: 0.1.3.** The real Intel initializer now
+[passes CONNECT, initializer ownership and original enumeration](../research/sgx545/d2500hn-initializer-acquire.json).
+Its CONNECT service flags were zero; the previously rejected field was the
+nonzero reserved word. The plain flag/enumeration probe also passed, and abort,
+disconnect and unload left no tracked resources or blocked hardware accesses.
 
-Intel's original handlers ignore the reserved `ui32BridgeFlags` word. CONNECT's
-documented service flags, `SRV_FLAGS_PERSIST=1` and `SRV_FLAGS_PDUMP_ACTIVE=2`,
-only affect PDump builds. Services 0.9.2 matches that release behavior: it ignores
-the reserved word and accepts combinations of those two bits as no-ops. Unknown
-service bits are still rejected, and the kernel explicitly refuses a PDUMP
-build. These flags do not make allocations or files persistent. Permission,
-ownership, size and command checks remain in force. Transport 0.1.2 records
-the reserved word and CONNECT flags without rewriting them.
+The real initializer next stopped at ACQUIRE with `EOPNOTSUPP`: services 0.9.2
+accepted only explicit type `SGX=7`. Intel also defines `UNKNOWN=0` to select
+an enumerated device by index. Services 0.9.3 adds that form and normalizes both
+selectors internally. Repeated requests for the same index reuse one handle,
+even if the selector changes. Other types and attempts to switch index remain
+rejected. The restricted backend continues checking the supplied device index.
+The 0.1.2 trace did not record ACQUIRE's index/type values; transport 0.1.3 logs
+them without rewriting the request so the next capture can confirm them.
+
+Reserved bridge words remain ignored, and the two documented PDump-only CONNECT
+flags remain no-ops. Unknown service bits are rejected and PDUMP builds are
+explicitly disabled. These fields do not grant privileges or extend lifetimes.
 
 Rebuild both the services module and private initializer bundle for this
 checkpoint. The display parent remains the working host2 build.
@@ -53,7 +57,7 @@ From the repository root on the Atom:
 ```sh
 git pull --ff-only
 bash tests/run.sh
-sgx_build="$HOME/Desktop/gma3600-sgx-connect-$(date +%Y%m%d-%H%M%S)"
+sgx_build="$HOME/Desktop/gma3600-sgx-acquire-$(date +%Y%m%d-%H%M%S)"
 python3 tools/sgx545_hybrid_build.py \
   --kdir /lib/modules/$(uname -r)/build \
   --source "$HOME/.cache/gma3600/openpvrsgx" \
@@ -65,21 +69,21 @@ python3 tools/sgx545_initializer_run.py --bundle "$init_build" --selftest
 ```
 
 The final line must be `PASS: private i386 loader, project-owned fixture and
-limited libdrm transport`, with `transport=0.1.2` in the loader line. The module
-must report version `0.9.2`. This selftest
+limited libdrm transport`, with `transport=0.1.3` in the loader line. The module
+must report version `0.9.3`. This selftest
 checks the observed PCI-only selector and rejects other devices without opening
 hardware. It executes only the open-source fixture,
 including in cloud validation under QEMU. It does not initialize the GPU.
 The pinned dependency list and validation results are recorded in
 [the build record](../research/sgx545/initializer-capture-build.json).
-The [current validation record](../research/sgx545/connect-flags-6.12-build.json)
-covers both kernel profiles, original Intel flag definitions, supported flag
-combinations, ignored reserved words, rejected unknown bits and lifetime tests.
+The [current validation record](../research/sgx545/acquire-selector-6.12-build.json)
+covers both kernel profiles, original Intel selector values and request offsets,
+both first/repeat selector orders, invalid indices/types and failed-copy cleanup.
 
 ## Capture on the Atom, using a fresh services child
 
 Keep the working host2 display parent loaded and SSH connected. Reuse
-`$sgx_build` from the new 0.9.2 build above. Load only the new services child;
+`$sgx_build` from the new 0.9.3 build above. Load only the new services child;
 the working display parent stays loaded.
 
 ```sh
@@ -100,19 +104,21 @@ sudo rmmod gma3600_sgx_services
 sudo dmesg | grep -Ei 'SGX buffers|SGX bridge|services cleanup|blocked hardware|BUG:|Oops' | tail -10
 ```
 
-The plain probe must pass its reserved-word/PDump-flag checks before capture.
+The plain probe must pass its reserved-word/PDump-flag and ACQUIRE checks before capture.
+Expect `PASS: ACQUIRE UNKNOWN=0 and SGX=7 reuse the indexed device handle`.
 It does not consume the one-shot initializer attempt. Stop if it fails.
 The helper verifies the Intel PCI vendor/device, `gma3600` parent ownership,
-host2/services 0.9.2 versions, fresh initialization state and zero live resources.
+host2/services 0.9.3 versions, fresh initialization state and zero live resources.
 It refuses capture through QEMU or on a different GPU. It checks the bundle
 hashes before execution and uses only the private runtime/library path. The
 capture has a 25-second timeout and saves the initializer output and before/after
 resource counts in JSON. A nonzero initializer return with clean resources is
 a completed capture, not successful GPU initialization. A crash, timeout,
 unexpected success or leftover resources is marked `inspect_report`.
-CONNECT trace lines now include `reserved=... service_flags=...`. Return those
-values even if CONNECT is still rejected; unrecognized service bits remain
-unsupported rather than being silently stripped.
+The trace includes `CONNECT reserved=... service_flags=...` and
+`ACQUIRE reserved=... index=... type=...`. Return those values even if a request
+is still rejected. Unsupported selectors, flags and commands are not silently
+rewritten by the userspace transport.
 
 After process exit, expect `pages_live=4`, `gpu_execution=disabled`, and zero
 file, allocation, mapping, stage, error and blocked-access counters. `init_ran`

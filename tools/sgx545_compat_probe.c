@@ -516,7 +516,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		w = package(64, services, &cpu_free, sizeof(cpu_free), &result.error, 4);
 		expect("CPU-only free cannot strand GPU PTEs", call(fd, &w), -22);
 		fd2 = open_bridge(path); other = connect_bridge(fd2);
-		free_in[1] = 0; free_in[2] = 7;
+		free_in[1] = 0; free_in[2] = original_intel_abi ? SGX545_DEVICE_TYPE_UNKNOWN : SGX545_DEVICE_TYPE;
 		{
 			struct sgx545_enumerate_out devices = {0};
 			enumerate_devices(fd2, other, &devices);
@@ -797,7 +797,8 @@ int probe_main(unsigned *initial_stack)
 	expect("waitpid", sys3(7, child, ptr(&status), 0), child);
 	expect("forked process cannot use inherited bridge session", status, 0);
 
-	in[1] = devices.devices[0].index + 100; in[2] = 7;
+	in[1] = devices.devices[0].index + 100;
+	in[2] = original_intel_abi ? SGX545_DEVICE_TYPE_UNKNOWN : SGX545_DEVICE_TYPE;
 	w = package(1, services, in, 12, &acquired, 8);
 	expect("bad device index ioctl", call(fd, &w), 0);
 	if (!acquired.error || acquired.handle) fail("bad device index accepted", acquired.error);
@@ -809,6 +810,11 @@ int probe_main(unsigned *initial_stack)
 	device = acquired.handle;
 	expect("repeat ACQUIRE ioctl", call(fd, &w), 0);
 	expect("repeat ACQUIRE reuses handle", acquired.handle, device);
+	in[2] = in[2] == SGX545_DEVICE_TYPE ? SGX545_DEVICE_TYPE_UNKNOWN : SGX545_DEVICE_TYPE;
+	expect("alternate ACQUIRE selector ioctl", call(fd, &w), 0);
+	expect("UNKNOWN and SGX selectors reuse handle", acquired.handle, device);
+	in[2] = original_intel_abi ? SGX545_DEVICE_TYPE_UNKNOWN : SGX545_DEVICE_TYPE;
+	say("PASS: ACQUIRE UNKNOWN=0 and SGX=7 reuse the indexed device handle\n");
 
 	fd2 = open_bridge(path);
 	other = connect_bridge(fd2);

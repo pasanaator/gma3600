@@ -83,6 +83,10 @@ int main(void)
 	input[0] = 0xfefefefe; input[1] = SGX545_CONNECT_PDUMP_PERSIST;
 	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == before + 3);
 	assert(input[0] == 0xfefefefe && input[1] == SGX545_CONNECT_PDUMP_PERSIST); /* logged, never rewritten */
+	wire.bridge_id = SGX545_COMMAND(1); wire.in_size = 12;
+	input[1] = 0; input[2] = SGX545_DEVICE_TYPE_UNKNOWN;
+	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == before + 4);
+	assert(input[0] == 0xfefefefe && input[1] == 0 && input[2] == SGX545_DEVICE_TYPE_UNKNOWN);
 	wire.in_size = 4097;
 	assert(drmCommandWrite(fd, 0x12, &wire, 28) == -EINVAL);
 	wire.in_size = 8; wire.param_in = 0xfffffffc;

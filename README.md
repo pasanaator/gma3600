@@ -31,8 +31,9 @@ The original Intel CONNECT/free test and both
 The services 0.9.1 [original Intel enumeration and allocation tests](docs/SGX545-ENUMERATION-TESTING.md)
 also passed on the Atom. A new [private initializer capture tool](docs/SGX545-INITIALIZER-CAPTURE.md)
 can now observe the unmodified i386 Intel initializer's real requests on that hardware.
-The PCI-only open now works. Services 0.9.2 matches Intel's reserved bridge-word
-and PDump-only CONNECT flag behavior; transport 0.1.2 logs the actual flag words.
+The real initializer now passes CONNECT, initializer ownership and enumeration.
+Services 0.9.3 adds Intel's `UNKNOWN=0` device-index selector; transport 0.1.3
+logs the ACQUIRE index and type. Prior reserved-word and flag checks passed on hardware.
 Rebuild the services child and private bundle before the next capture.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
