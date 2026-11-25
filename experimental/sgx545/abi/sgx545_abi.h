@@ -67,10 +67,32 @@ struct sgx545_bridge_request {
 #define SGX545_MAX_HEAPS            32U
 #define SGX545_UNDEFINED_HEAP       0xffffffffU
 #define SGX545_BUFFER_WC            0x00004000U
+#define SGX545_BUFFER_CACHE_MASK    0x00007000U
 #define SGX545_BUFFER_MULTI         0x00020000U
 #define SGX545_BUFFER_MAX_BYTES     0x00100000U
 #define SGX545_DEVICE_FLAGS        (SGX545_BUFFER_WC | 0x0000000bU) /* RW, no sync */
 #define SGX545_RAM_BACKED           0x00000200U
+#define SGX545_DEVICE_COHERENT      0x00000004U
+#define SGX545_DEVICE_EDM_PROTECT   0x00000040U
+#define SGX545_DEVICE_ZERO          0x00000080U
+#define SGX545_DEVICE_REQUIRED      0x0000000bU
+#define SGX545_DEVICE_MMU_FLAGS     (3U | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
+#define SGX545_SYSMEM_NONCONTIG     0x02000000U
+#define SGX545_HEAP_FLAGS           (SGX545_BUFFER_WC | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI | SGX545_SYSMEM_NONCONTIG)
+#define SGX545_INTEL_INIT_FLAGS     (SGX545_DEVICE_REQUIRED | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
+/* CPU cache mode may be omitted and inherited from a validated WC heap. */
+static inline int sgx545_device_flags_valid(__u32 flags)
+{
+	return (flags & SGX545_DEVICE_REQUIRED) == SGX545_DEVICE_REQUIRED &&
+		!(flags & ~(SGX545_DEVICE_FLAGS | SGX545_DEVICE_COHERENT |
+			SGX545_DEVICE_EDM_PROTECT | SGX545_DEVICE_ZERO | SGX545_RAM_BACKED));
+}
+static inline int sgx545_device_effective_flags_valid(__u32 flags)
+{
+	__u32 required = SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+	return (flags & required) == required &&
+		sgx545_device_flags_valid(flags & ~(SGX545_BUFFER_MULTI | SGX545_SYSMEM_NONCONTIG));
+}
 /* Project diagnostic ioctl, separate from the Intel services command space. */
 #define SGX545_IOCTL_BUFFER_CHECK   0xc0104701U
 struct sgx545_buffer_check { __u32 services, handle, expected, fill; };

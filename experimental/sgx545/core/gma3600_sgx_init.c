@@ -117,7 +117,7 @@ int gma_sgx_init_translate(const struct sgx545_init2_in32 *wire,
 		if (m->token != tokens[i] || !m->linear || !m->bytes || m->bytes > SGX545_BUFFER_MAX_BYTES ||
 		    !m->address || (m->address & 4095) ||
 		    (__u64)m->address + m->bytes > 0x100000000ULL ||
-		    m->flags != (SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI)) { ret = -EINVAL; goto fail; }
+		    !sgx545_device_effective_flags_valid(m->flags)) { ret = -EINVAL; goto fail; }
 		if (i < SGX545_INIT_ROLES && m->bytes < caps.minimum_bytes[i]) { ret = -ENOSPC; goto fail; }
 		native->pvLinAddrKM = m->linear; native->sDevVAddr.uiAddr = m->address;
 		native->ui32Flags = m->flags; native->uAllocSize = m->bytes;

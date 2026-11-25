@@ -33,7 +33,7 @@ static int owned(int fd)
 	return 0;
 }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.3"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.4"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -161,6 +161,12 @@ EXPORT int drmCommandWrite(int fd, unsigned long command, void *data, unsigned l
 	} else if (wire->out_size >= 4) {
 		fprintf(stderr, "RESULT command=%u payload_error=%u\n", number,
 			*(unsigned *)(unsigned long)wire->param_out);
+		if (number == SGX545_CMD_ALLOC_DEVICE && wire->out_size == sizeof(struct sgx545_alloc_device_out)) {
+			const struct sgx545_alloc_device_out *out = (void *)(unsigned long)wire->param_out;
+			if (!out->error)
+				fprintf(stderr, "ALLOCATED handle=%08x address=%08x bytes=%u flags=%08x\n",
+					out->kernel_mem, out->mem.device_address, out->mem.alloc_size, out->mem.flags);
+		}
 	}
 	return result;
 }

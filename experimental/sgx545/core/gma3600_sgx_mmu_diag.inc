@@ -42,6 +42,18 @@ static int gma_mmu_page_matches(MMU_HEAP *heap, IMG_DEV_VIRTADDR address, IMG_UI
 		return 0;
 	return MMU_GetPhysPageAddr(heap, address).uiAddr == physical;
 }
+
+static int gma_mmu_attributes_match(MMU_HEAP *heap, IMG_DEV_VIRTADDR address, IMG_UINT32 flags)
+{
+	MMU_PT_INFO *pt = heap->psMMUContext->apsPTInfoList[address.uiAddr >> heap->ui32PDShift];
+	IMG_UINT32 index = (address.uiAddr & heap->ui32PTMask) >> heap->ui32PTShift;
+	IMG_UINT32 expected = 0, mask = SGX_MMU_PTE_READONLY | SGX_MMU_PTE_WRITEONLY |
+		SGX_MMU_PTE_CACHECONSISTENT | SGX_MMU_PTE_EDMPROTECT;
+	if (!pt || !pt->PTPageCpuVAddr) return 0;
+	if (flags & PVRSRV_MEM_CACHE_CONSISTENT) expected |= SGX_MMU_PTE_CACHECONSISTENT;
+	if (flags & PVRSRV_MEM_EDM_PROTECT) expected |= SGX_MMU_PTE_EDMPROTECT;
+	return (((IMG_UINT32 *)pt->PTPageCpuVAddr)[index] & mask) == expected;
+}
 #endif
 
 int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *physical,
@@ -59,7 +71,8 @@ int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *phy
 	OSMemoryBarrier();
 	for (i = 0; i < count; i++) {
 		walk.uiAddr = binding->address + i * 4096;
-		if (!gma_mmu_page_matches(heap, walk, physical[i]))
+		if (!gma_mmu_page_matches(heap, walk, physical[i]) ||
+		    !gma_mmu_attributes_match(heap, walk, binding->memory_flags))
 			return -EIO;
 	}
 	*tables = gma_mmu_table_count(heap);
@@ -102,6 +115,13 @@ int gma3600_sgx_mmu_unbind(struct gma_sgx_mmu_binding *binding)
 int gma3600_sgx_mmu_bind(void *native_heap, const __u32 *physical, __u32 count,
 	__u32 alignment, struct gma_sgx_mmu_binding *binding)
 {
+	return gma3600_sgx_mmu_bind_flags(native_heap, physical, count, alignment,
+		PVRSRV_MEM_READ | PVRSRV_MEM_WRITE, binding);
+}
+
+int gma3600_sgx_mmu_bind_flags(void *native_heap, const __u32 *physical, __u32 count,
+	__u32 alignment, __u32 memory_flags, struct gma_sgx_mmu_binding *binding)
+{
 #if defined(FIX_HW_BRN_31620) || defined(SUPPORT_SGX_MMU_DUMMY_PAGE) || defined(SUPPORT_SGX_MMU_BYPASS)
 	return -EOPNOTSUPP;
 #else
@@ -115,6 +135,12 @@ int gma3600_sgx_mmu_bind(void *native_heap, const __u32 *physical, __u32 count,
 	if (binding->live || binding->failed)
 		return -EBUSY;
 	memset(binding, 0, sizeof(*binding));
+	if ((memory_flags & ~SGX545_DEVICE_MMU_FLAGS) ||
+	    (memory_flags & (PVRSRV_MEM_READ | PVRSRV_MEM_WRITE)) != (PVRSRV_MEM_READ | PVRSRV_MEM_WRITE))
+		return -EINVAL;
+#if defined(FIX_HW_BRN_25503)
+	if (memory_flags & PVRSRV_MEM_EDM_PROTECT) return -EOPNOTSUPP;
+#endif
 	if (!heap || !physical || !count || count > 256 || alignment < 4096 ||
 	    alignment > SGX545_BUFFER_MAX_BYTES || (alignment & (alignment - 1)))
 		return -EINVAL;
@@ -140,11 +166,12 @@ int gma3600_sgx_mmu_bind(void *native_heap, const __u32 *physical, __u32 count,
 	}
 	binding->heap = heap; binding->address = address.uiAddr;
 	binding->bytes = bytes; binding->pages = count; binding->live = 1;
+	binding->memory_flags = memory_flags;
 	if (actual != bytes || (address.uiAddr & (alignment - 1))) {
 		ret = -EIO;
 		goto rollback;
 	}
-	MMU_MapScatter(heap, address, scatter, bytes, PVRSRV_MEM_READ | PVRSRV_MEM_WRITE, IMG_NULL);
+	MMU_MapScatter(heap, address, scatter, bytes, memory_flags, IMG_NULL);
 	ret = gma3600_sgx_mmu_verify(binding, physical, count, &tables);
 	if (!ret)
 		goto out;

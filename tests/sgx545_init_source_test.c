@@ -82,6 +82,12 @@ int main(void)
     assert(output.info.ui32ClkGateStatusReg == 0x100 && output.info.ui32CacheControl == 0x30);
     output.memory[5].pvLinAddrKM = NULL;
     assert(gma_sgx_init_check(&output, memory, count) == -EIO);
+    setup(9); memory[0].flags = SGX545_INTEL_INIT_FLAGS | SGX545_HEAP_FLAGS;
+    assert(!gma_sgx_init_translate(&wire, memory, 9, &output));
+    assert(output.memory[0].ui32Flags == memory[0].flags);
+    assert(!gma_sgx_init_check(&output, memory, 9));
+    memory[0].flags ^= SGX545_DEVICE_EDM_PROTECT;
+    assert(gma_sgx_init_check(&output, memory, 9) == -EIO);
 
     setup(9); wire.info.build_options = 0x60218;
     assert(!gma_sgx_init_translate(&wire, memory, 9, &output));

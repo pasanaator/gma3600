@@ -41,8 +41,8 @@ typedef int SYS_DATA;
 #define PVRSRV_MEM_READ 1
 #define PVRSRV_MEM_WRITE 2
 #define PVRSRV_MEM_USER_SUPPLIED_DEVVADDR 0x100
-#define PVRSRV_MEM_CACHE_CONSISTENT 0x200
-#define PVRSRV_MEM_EDM_PROTECT 0x400
+#define PVRSRV_MEM_CACHE_CONSISTENT SGX545_DEVICE_COHERENT
+#define PVRSRV_MEM_EDM_PROTECT SGX545_DEVICE_EDM_PROTECT
 #define PVRSRV_OS_PAGEABLE_HEAP 0
 #define PVRSRV_DEVICE_TYPE_SGX 7
 #define PT_DEBUG 0
@@ -145,6 +145,39 @@ static void persistent_bindings(MMU_HEAP *heap, const __u32 *physical)
     assert(gma3600_sgx_mmu_bind(heap, physical, 0, 4096, &a) == -EINVAL);
     assert(gma3600_sgx_mmu_bind(heap, physical, 4, 8193, &a) == -EINVAL);
     assert(gma3600_sgx_mmu_bind(heap, physical, 257, 4096, &a) == -EINVAL);
+    assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 1, &a) == -EINVAL);
+    assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 0x83, &a) == -EINVAL);
+    for (i = 0; i < 4; i++) {
+        unsigned flags = 3 | (i & 1 ? PVRSRV_MEM_CACHE_CONSISTENT : 0) |
+            (i & 2 ? PVRSRV_MEM_EDM_PROTECT : 0);
+        unsigned count = i & 1 ? 2 : 4;
+        unsigned expected = (i & 1 ? SGX_MMU_PTE_CACHECONSISTENT : 0) |
+            (i & 2 ? SGX_MMU_PTE_EDMPROTECT : 0);
+        unsigned mask = SGX_MMU_PTE_CACHECONSISTENT | SGX_MMU_PTE_EDMPROTECT |
+            SGX_MMU_PTE_READONLY | SGX_MMU_PTE_WRITEONLY;
+        MMU_PT_INFO *pt;
+        unsigned *pte;
+        assert(!gma3600_sgx_mmu_bind_flags(heap, physical, count, 4096, flags, &a));
+        assert(a.memory_flags == flags);
+        assert(!gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &b));
+        pt = heap->psMMUContext->apsPTInfoList[a.address >> heap->ui32PDShift];
+        pte = &((unsigned *)pt->PTPageCpuVAddr)[(a.address & heap->ui32PTMask) >> heap->ui32PTShift];
+        assert((*pte & mask) == expected);
+        assert(!gma3600_sgx_mmu_verify(&a, physical, count, &tables));
+        *pte ^= SGX_MMU_PTE_CACHECONSISTENT;
+        assert(gma3600_sgx_mmu_verify(&a, physical, count, &tables) == -EIO);
+        *pte ^= SGX_MMU_PTE_CACHECONSISTENT;
+        *pte ^= SGX_MMU_PTE_EDMPROTECT;
+        assert(gma3600_sgx_mmu_verify(&a, physical, count, &tables) == -EIO);
+        *pte ^= SGX_MMU_PTE_EDMPROTECT;
+        *pte ^= SGX_MMU_PTE_READONLY;
+        assert(gma3600_sgx_mmu_verify(&a, physical, count, &tables) == -EIO);
+        *pte ^= SGX_MMU_PTE_READONLY;
+        assert(!gma3600_sgx_mmu_unbind(&a));
+        assert(!gma3600_sgx_mmu_verify(&b, physical, 4, &tables));
+        assert(!gma3600_sgx_mmu_unbind(&b));
+        assert(!pt_pages && !pt_metadata && !reservations);
+    }
     for (i = 0; i < 4; i++) {
         assert(!gma3600_sgx_mmu_bind(heap, physical, 4, 4096, &a));
         old_address = a.address;

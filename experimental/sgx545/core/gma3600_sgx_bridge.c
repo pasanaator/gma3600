@@ -38,6 +38,10 @@ static_assert(SRV_FLAGS_PERSIST == SGX545_CONNECT_PDUMP_PERSIST);
 static_assert(SRV_FLAGS_PDUMP_ACTIVE == SGX545_CONNECT_PDUMP_ACTIVE);
 static_assert(PVRSRV_DEVICE_TYPE_UNKNOWN == SGX545_DEVICE_TYPE_UNKNOWN);
 static_assert(PVRSRV_DEVICE_TYPE_SGX == SGX545_DEVICE_TYPE);
+static_assert(PVRSRV_MEM_CACHE_CONSISTENT == SGX545_DEVICE_COHERENT);
+static_assert(PVRSRV_MEM_EDM_PROTECT == SGX545_DEVICE_EDM_PROTECT);
+static_assert(PVRSRV_MEM_ZERO == SGX545_DEVICE_ZERO);
+static_assert(PVRSRV_BACKINGSTORE_SYSMEM_NONCONTIG == SGX545_SYSMEM_NONCONTIG);
 static_assert(PVRSRV_MAX_DEVICES == SGX545_MAX_DEVICES);
 static_assert(sizeof(PVRSRV_DEVICE_IDENTIFIER) == sizeof(struct sgx545_device_id));
 static_assert(sizeof(PVRSRV_BRIDGE_OUT_CONNECT_SERVICES) == 16);
@@ -59,6 +63,7 @@ static_assert(_IOC_NR(PVRSRV_BRIDGE_ALLOC_SHARED_SYS_MEM) == SGX545_CMD_ALLOC_SH
 static_assert(_IOC_NR(PVRSRV_BRIDGE_FREE_SHARED_SYS_MEM) == SGX545_CMD_FREE_SHARED);
 static_assert(_IOC_NR(PVRSRV_BRIDGE_MHANDLE_TO_MMAP_DATA) == SGX545_CMD_MAP_INFO);
 static_assert(SGX545_BUFFER_WC == PVRSRV_HAP_WRITECOMBINE);
+static_assert(SGX545_BUFFER_CACHE_MASK == PVRSRV_HAP_CACHETYPE_MASK);
 static_assert(SGX545_BUFFER_MULTI == PVRSRV_HAP_MULTI_PROCESS);
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_REQUIREMENTS) == sizeof(struct sgx545_init_requirements));
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_STAGE) == sizeof(struct sgx545_init_stage));
@@ -82,7 +87,7 @@ struct gma_sgx_device_allocation {
 	struct gma_sgx_device_allocation *next;
 	struct gma_sgx_mmu_binding binding;
 	void *pin;
-	u32 token;
+	u32 token, flags;
 };
 struct device_visit_context {
 	struct gma_sgx_device_allocation *allocation;
@@ -364,8 +369,8 @@ static int device_visit(void *context, struct page **pages, u32 count)
 	if (ctx->verify)
 		ret = gma3600_sgx_mmu_verify(&ctx->allocation->binding, physical, count, &ctx->tables);
 	else
-		ret = gma3600_sgx_mmu_bind(ctx->heap->pMMUHeap, physical, count,
-			ctx->alignment, &ctx->allocation->binding);
+		ret = gma3600_sgx_mmu_bind_flags(ctx->heap->pMMUHeap, physical, count,
+			ctx->alignment, ctx->allocation->flags & SGX545_DEVICE_MMU_FLAGS, &ctx->allocation->binding);
 	kfree(physical);
 	return ret;
 }
@@ -421,6 +426,12 @@ static int backend_alloc_device(void *context, u32 heap_token, u32 flags, u32 by
 			break;
 	if (i == SGX545_MAX_HEAPS || !f->heap_handles[i])
 		return -ENOENT;
+	/* BM_Alloc inherits heap attributes when no CPU cache override is supplied.
+	 * The private backing provider implements only these WC system-memory heaps. */
+	if (!sgx545_device_flags_valid(flags) ||
+	    (f->init_info.heaps[i].attributes & SGX545_BUFFER_CACHE_MASK) != SGX545_BUFFER_WC ||
+	    (f->init_info.heaps[i].attributes & ~SGX545_HEAP_FLAGS))
+		return -EOPNOTSUPP;
 	ret = PVRSRVLookupHandle(f->handles, (void **)&visit.heap, f->heap_handles[i],
 		PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP);
 	if (ret)
@@ -440,6 +451,7 @@ static int backend_alloc_device(void *context, u32 heap_token, u32 flags, u32 by
 		goto fail;
 	}
 	allocation->token = token;
+	allocation->flags = flags | f->init_info.heaps[i].attributes | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
 	allocation->next = f->device_allocations;
 	f->device_allocations = allocation;
 	f->bridge->stats.device_allocations++;
@@ -456,7 +468,7 @@ static int backend_alloc_device(void *context, u32 heap_token, u32 flags, u32 by
 	out->kernel_mem = token;
 	out->mem = backing.mem;
 	out->mem.device_address = allocation->binding.address;
-	out->mem.flags = flags | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+	out->mem.flags = allocation->flags;
 	return 0;
 fail:
 	kfree(allocation);
@@ -502,7 +514,7 @@ static int stage_prepare(struct gma_sgx_file *f, const struct sgx545_init2_in32 
 		ret = gma_sgx_buffer_visit(b->buffers, f, a->token, device_visit, &visit);
 		if (ret) goto fail;
 		s->memory[i].token = a->token; s->memory[i].address = a->binding.address;
-		s->memory[i].flags = SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+		s->memory[i].flags = a->flags;
 		ret = gma_sgx_buffer_describe(b->buffers, f, a->token,
 			&s->memory[i].linear, &s->memory[i].bytes);
 		if (ret) goto fail;

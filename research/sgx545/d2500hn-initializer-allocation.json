@@ -1,0 +1,74 @@
+{
+  "source": "User-supplied initializer JSON and matching SSH transcript",
+  "checkpoint": "ecd6e36 / services 0.9.3 / transport 0.1.3",
+  "report_file": "d2500hn-initializer-allocation-report.json",
+  "report_sha256": "100b416a5b4ed7711a31ba7be9ea991db08c530a9672156c0c58572ee49fc419",
+  "transcript_sha256": "ba1b237036be6528af9f76d00532519f419f0c6c8b8296226bfec70885a736e5",
+  "report_trace_matches_transcript": true,
+  "plain_bridge_probe": "passed, including UNKNOWN=0/SGX=7 handle reuse",
+  "real_initializer_progress": [
+    "CONNECT, initializer ownership and enumeration passed",
+    "ACQUIRE index=0 type=0 passed",
+    "776-byte initializer heap query passed",
+    "First device allocation rejected with EOPNOTSUPP",
+    "Explicit abort and disconnect passed"
+  ],
+  "first_allocation": {
+    "heap_handle": "0x00000014",
+    "flags": "0x0000004f",
+    "bytes": 8192,
+    "alignment": 4096,
+    "decoded_flags": [
+      "PVRSRV_MEM_READ",
+      "PVRSRV_MEM_WRITE",
+      "PVRSRV_MEM_CACHE_CONSISTENT",
+      "PVRSRV_MEM_NO_SYNCOBJ",
+      "PVRSRV_MEM_EDM_PROTECT"
+    ],
+    "CPU_cache_mode": "not explicitly requested; original BM_Alloc inherits WC from the heap"
+  },
+  "status_after_client": {
+    "state": "prepared",
+    "devices": "1",
+    "pages_live": "4",
+    "blocked_hw_accesses": "0",
+    "gpu_execution": "disabled",
+    "bridge": "enabled",
+    "files": "0",
+    "connections": "0",
+    "bridge_errors": "0",
+    "heap_handles": "0",
+    "init_running": "0",
+    "init_ran": "1",
+    "buffers": "0",
+    "buffer_pages": "0",
+    "buffer_maps": "0",
+    "buffer_errors": "0",
+    "device_allocations": "0",
+    "device_pages": "0",
+    "device_errors": "0",
+    "stages": "0",
+    "staged_buffers": "0",
+    "staged_pages": "0",
+    "stage_errors": "0"
+  },
+  "resources_clean_after_process": true,
+  "initializer_return": 1,
+  "bridge_commands_observed": [
+    12,
+    67,
+    0,
+    1,
+    98,
+    6,
+    68,
+    13
+  ],
+  "final_cleanup": {
+    "buffers": "[14584.753360] buffers=0 pages=0 maps=0 errors=0",
+    "bridge": "[14584.753374] files=0 connections=0 errors=0 heap_handles=0 init_running=0 init_ran=1 device_allocations=0 device_pages=0 device_errors=0 stages=0 staged_buffers=0 staged_pages=0 stage_errors=0",
+    "services": "[14584.775149] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "GPU_execution_enabled": false,
+  "hardware_status_after_fix": "pending with services 0.9.4 / transport 0.1.4"
+}

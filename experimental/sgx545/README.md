@@ -27,9 +27,9 @@ including retained allocations released on unload. Services 0.9.1 fixes the
 [The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
 using a private runtime and limited libdrm transport with the existing child.
-The real initializer passed CONNECT, initializer ownership and enumeration with
-services 0.9.2, then stopped at ACQUIRE. Use services 0.9.3 and transport 0.1.3
-for Intel's `UNKNOWN=0` device-index selector and ACQUIRE index/type tracing.
+The real initializer passed indexed acquisition and heap discovery with services
+0.9.3, then requested allocation flags 0x4f. Use services 0.9.4 and transport
+0.1.4 for coherent/EDM PTE attributes, WC heap inheritance and allocation tracing.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result

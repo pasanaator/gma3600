@@ -256,7 +256,7 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 			return -EACCES;
 		if (!s->device || in[1] != s->device)
 			return -ENOENT;
-		if ((in[3] & ~SGX545_RAM_BACKED) != SGX545_DEVICE_FLAGS)
+		if (!sgx545_device_flags_valid(in[3]))
 			return -EOPNOTSUPP;
 		if (!in[4] || in[4] > SGX545_BUFFER_MAX_BYTES ||
 		    (in[5] && (in[5] < 4096 || in[5] > SGX545_BUFFER_MAX_BYTES || (in[5] & (in[5] - 1)))))

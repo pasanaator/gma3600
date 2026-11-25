@@ -446,6 +446,26 @@ static void acquire_selector_protocol(void)
     }
 }
 
+static void initializer_allocation_flags(void)
+{
+    const unsigned accepted[] = {0xb, 0xf, 0x4b, 0x4f, 0xcf, 0x400b, 0x424f};
+    const unsigned rejected[] = {0, 3, 0x47, 0x104f, 0x204f, 0x604f, 0x14f, 0x2004f, 0x0200004f};
+    struct fake f = {.in = {0xffffffff, 2, 99, 0x4f, 8192, 4096}};
+    struct sgx545_session s = {.services = 1, .device = 2, .initializer = 1, .init_info = 1};
+    unsigned i, token;
+    for (i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        f.in[2] = 99; f.in[3] = accepted[i];
+        assert(!run(&s, &f, 6) && f.device_buffers == 1);
+        token = word(&f, 1); f.in[2] = token;
+        assert(!run(&s, &f, 7) && !f.device_buffers);
+    }
+    f.in[2] = 99;
+    for (i = 0; i < sizeof(rejected) / sizeof(rejected[0]); i++) {
+        f.in[3] = rejected[i];
+        assert(run(&s, &f, 6) == -EOPNOTSUPP && !f.device_buffers);
+    }
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -529,6 +549,7 @@ int main(void)
 	enumeration_protocol();
 	connect_flags_protocol();
 	acquire_selector_protocol();
+	initializer_allocation_flags();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }

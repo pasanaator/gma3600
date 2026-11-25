@@ -414,13 +414,13 @@ static void buffer_test(int fd, unsigned services, unsigned device, const char *
 }
 
 static void device_reply(const struct sgx545_alloc_device_out *allocation,
-	const struct sgx545_heap32 *heap, unsigned alignment)
+	const struct sgx545_heap32 *heap, unsigned alignment, unsigned flags)
 {
 	unsigned i;
 	const struct sgx545_client_mem32 *m = &allocation->mem;
 	if (allocation->error || !allocation->kernel_mem || m->kernel_mem != allocation->kernel_mem ||
 	    m->mapping != allocation->kernel_mem || m->alloc_size != 3 * 4096 + 17 ||
-	    m->flags != (SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI) ||
+	    m->flags != (flags | heap->attributes | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI) ||
 	    m->linear || m->kernel_linear || m->physical_address || m->client_flags ||
 	    m->sync_info || m->resource || m->next || (m->device_address & (alignment - 1)) ||
 	    m->device_address < heap->base || (__u64)m->device_address + 16384 > (__u64)heap->base + heap->size)
@@ -465,9 +465,11 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	struct sgx545_bridge32 w;
 	struct { unsigned flags, token; struct sgx545_client_mem32 mem; } cpu_free = {0};
 	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 3 * 4096 + 17, 0};
+	unsigned flags = original_intel_abi ? SGX545_INTEL_INIT_FLAGS : SGX545_DEVICE_FLAGS;
 	unsigned free_in[15] = {0, device, 0}, i, heaps = 0, other, other_device;
 	volatile unsigned *first = 0, *second = 0;
 	int fd2;
+	in[3] = flags;
 
 	w = package(6, services, in, 24, &a, 76);
 	expect("device allocation requires initializer", call(fd, &w), -13);
@@ -488,7 +490,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	in[2] = 0xffffffffU;
 	expect("device allocation bad heap", call(fd, &w), -2); in[2] = info.heaps[i].handle;
 	in[3] &= ~8U;
-	expect("sync objects remain unsupported", call(fd, &w), -95); in[3] = SGX545_DEVICE_FLAGS;
+	expect("sync objects remain unsupported", call(fd, &w), -95); in[3] = flags;
 	in[4] = SGX545_BUFFER_MAX_BYTES + 1;
 	expect("device allocation bound", call(fd, &w), -22); in[4] = 3 * 4096 + 17;
 	in[5] = 4097;
@@ -502,10 +504,10 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		if (!heap->handle) continue;
 		heaps++; in[2] = heap->handle; in[5] = 0;
 		w = package(6, services, in, 24, &a, 76);
-		expect("first persistent allocation", call(fd, &w), 0); device_reply(&a, heap, 4096);
+		expect("first persistent allocation", call(fd, &w), 0); device_reply(&a, heap, 4096, in[3]);
 		in[5] = 65536; in[3] |= SGX545_RAM_BACKED;
 		w.param_out = ptr(&b);
-		expect("second aligned persistent allocation", call(fd, &w), 0); device_reply(&b, heap, 65536);
+		expect("second aligned persistent allocation", call(fd, &w), 0); device_reply(&b, heap, 65536, in[3]);
 		if ((__u64)a.mem.device_address < (__u64)b.mem.device_address + 16384 &&
 		    (__u64)b.mem.device_address < (__u64)a.mem.device_address + 16384)
 			fail("overlapping live device addresses", b.mem.device_address);
@@ -543,7 +545,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		device_walk(fd, services, device, &b);
 		in[5] = 4096;
 		w = package(6, services, in, 24, &c, 76);
-		expect("allocation after freeing neighbor", call(fd, &w), 0); device_reply(&c, heap, 4096);
+		expect("allocation after freeing neighbor", call(fd, &w), 0); device_reply(&c, heap, 4096, in[3]);
 		if (c.kernel_mem == a.kernel_mem || c.kernel_mem == b.kernel_mem)
 			fail("device allocation reused stale token", c.kernel_mem);
 		device_walk(fd, services, device, &b); device_walk(fd, services, device, &c);
@@ -560,6 +562,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 		expect("unmap second device buffer", sys3(91, ptr((const void *)second), 16384, 0), 0);
 	}
 	if (heaps != 3) fail("expected three shared initializer heaps", heaps);
+	if (original_intel_abi) say("PASS: Intel flags=0x4f, inherited WC cache mode, coherent/EDM PTE checks and CPU roundtrip\n");
 	if (!close_only) disconnect_bridge(fd, services);
 	expect("close device fd with live VMAs", sys3(6, fd, 0, 0), 0);
 	check_words(first, 16384, 0xeca86420U); check_words(second, 16384, 0xdb97531fU);

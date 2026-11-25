@@ -18,14 +18,14 @@ struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_bin
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
 static int fail_bind, fail_unbind, live_bindings;
-int gma3600_sgx_mmu_bind(void *heap, const __u32 *physical, __u32 count,
-    __u32 alignment, struct gma_sgx_mmu_binding *binding)
+int gma3600_sgx_mmu_bind_flags(void *heap, const __u32 *physical, __u32 count,
+    __u32 alignment, __u32 flags, struct gma_sgx_mmu_binding *binding)
 {
     const u32 cpu_order[] = {0x1000, 0x9000, 0x3000, 0x7000};
     assert(visiting_buffer && visiting_buffer->pins == 1 && count == 4);
     assert(!memcmp(physical, cpu_order, sizeof(cpu_order)));
     if (fail_bind) { fail_bind--; return -ENOMEM; }
-    *binding = (struct gma_sgx_mmu_binding){heap, 0xf4000000 + 0x10000 * live_bindings, count * 4096, count, 1, 0};
+    *binding = (struct gma_sgx_mmu_binding){heap, 0xf4000000 + 0x10000 * live_bindings, count * 4096, count, 1, 0, flags};
     assert(!(binding->address & (alignment - 1)));
     visiting_buffer->binding = binding; live_bindings++;
     return 0;
@@ -428,6 +428,7 @@ static void mmu_bridge_validation(void)
     assert(!backend_init_connect(f));
     f->info_ready = true; mmu_buffer_owner = f;
     f->init_info.heaps[0].handle = 100;
+        f->init_info.heaps[0].attributes = SGX545_HEAP_FLAGS;
     assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
         PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
     check.services++;
@@ -468,9 +469,13 @@ static void device_allocation_lifetime(void)
         assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -EACCES);
         assert(!backend_init_connect(f)); f->info_ready = true;
         f->init_info.heaps[0].handle = 100;
+        f->init_info.heaps[0].attributes = SGX545_HEAP_FLAGS;
         assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
             PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
         assert(backend_alloc_device(f, 101, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOENT);
+        f->init_info.heaps[0].attributes = (SGX545_HEAP_FLAGS & ~SGX545_BUFFER_WC) | 0x1000;
+        assert(backend_alloc_device(f, 100, SGX545_INTEL_INIT_FLAGS, 16384, 4096, &a) == -EOPNOTSUPP);
+        f->init_info.heaps[0].attributes = SGX545_HEAP_FLAGS;
         fail_bind = 1;
         assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOMEM);
         assert(!b->stats.device_allocations && !b->stats.device_pages);
@@ -478,7 +483,9 @@ static void device_allocation_lifetime(void)
         assert(backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a) == -ENOMEM);
         assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &a)); first = a.kernel_mem;
         assert(a.mem.device_address == 0xf4000000 && b->stats.device_pages == 4);
-        assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &c));
+        assert(!backend_alloc_device(f, 100, SGX545_INTEL_INIT_FLAGS, 16384, 4096, &c));
+        assert(c.mem.flags == (SGX545_INTEL_INIT_FLAGS | SGX545_HEAP_FLAGS));
+        assert(f->device_allocations->binding.memory_flags == (SGX545_INTEL_INIT_FLAGS & SGX545_DEVICE_MMU_FLAGS));
         assert(b->stats.device_allocations == 2 && b->stats.device_pages == 8 && live_bindings == 2);
         check.buffer = first;
         assert(!bridge_device_check(f, &check) && check.pages == 4 && check.address == a.mem.device_address);
@@ -539,10 +546,11 @@ static void initializer_stage_lifetime(void)
         assert(!backend_init_connect(f)); f->info_ready = true; f->session.initializer = 1;
         assert(!stage_requirements(f, &caps));
         f->init_info.heaps[0].handle = 100;
+        f->init_info.heaps[0].attributes = SGX545_HEAP_FLAGS;
         assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
             PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
         for (i = 0; i < 9; i++) {
-            assert(!backend_alloc_device(f, 100, SGX545_DEVICE_FLAGS, 16384, 4096, &allocation));
+            assert(!backend_alloc_device(f, 100, i & 1 ? SGX545_INTEL_INIT_FLAGS : SGX545_DEVICE_FLAGS, 16384, 4096, &allocation));
             tokens[i] = allocation.kernel_mem;
         }
         wire.info.ccb = tokens[0]; wire.info.ccb_control = tokens[1]; wire.info.event_kicker = tokens[2];
@@ -561,6 +569,7 @@ static void initializer_stage_lifetime(void)
         message.stage = message.buffers = message.pages = 0;
         assert(!stage_publish(f, &wire, &message, publish_stage, NULL));
         assert(b->stage && b->stats.stages == 1 && !f->device_allocations);
+        assert(b->stage->memory[1].flags == (SGX545_INTEL_INIT_FLAGS | SGX545_HEAP_FLAGS));
         assert(!b->init_owner && !f->session.initializer && b->stats.init_ran);
         assert(stage_prepare(f, &wire, &message, &candidate) == -EBUSY);
         assert(backend_free_device(f, tokens[0]) == -ENOENT);

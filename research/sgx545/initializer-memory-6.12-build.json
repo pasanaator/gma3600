@@ -1,0 +1,83 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.9.4",
+  "transport_version": "0.1.4",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-initializer-allocation.json",
+  "reference_source": {
+    "package_sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "CPU_attribute_inheritance": "services4/srvkm/common/buffer_manager.c: BM_Alloc merges request and heap flags; explicit CPU cache flags override heap cache mode",
+    "GPU_attributes": "services4/srvkm/devices/sgx/mmu.c: MMU_MapPage sets CACHECONSISTENT and EDMPROTECT PTE bits"
+  },
+  "implementation": {
+    "accepted_device_request": "RW + NO_SYNCOBJ, optional coherent/EDM/zero/RAM/WC flags; missing CPU cache mode inherited from validated WC heap",
+    "CPU_aliases": "existing DMA32 zeroed pages with consistent WC direct/kernel/user aliases",
+    "heap_attribute_scope": "WC, multi-process, RAM-backed, system noncontiguous; other heap/cache types rejected",
+    "GPU_PTEs": "RW plus requested coherent/EDM bits; verifier checks physical page and access/cache/protection attributes",
+    "EDM_erratum_configuration": "FIX_HW_BRN_25503 remains unsupported for protected mapping",
+    "allocation_and_stage_metadata": "actual effective flags retained across handoff, query, close and cleanup",
+    "native_BM_ResMan_registration_added": false
+  },
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 20,
+    "sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "native_MMU_source_cases": [
+      "all coherent/EDM combinations with actual native MMU_MapPage/Scatter functions",
+      "two-page observed allocation and four-page sibling mappings",
+      "independent cache, EDM and read-only PTE corruption rejected",
+      "sibling attributes survive free; PT/VA capacity restored",
+      "existing scatter, PT-boundary, partial allocation and quarantine cases"
+    ],
+    "fixture_correction": "MMU fixture cache/EDM constants corrected from placeholder 0x200/0x400 to audited 0x4/0x40",
+    "metadata_cases": [
+      "heap WC inheritance and explicit WC",
+      "unsupported cached heap rejected before allocation",
+      "real effective flags returned and stored in binding",
+      "mixed protected/plain staged buffers retain metadata",
+      "native initializer snapshot preserves coherent/EDM/heap flags and detects mutation"
+    ],
+    "client_device_intel": "now requests observed flags 0x4f; CPU roundtrip, PTE verifier and sibling/close cleanup"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "source_translation_and_MMU_fixtures": "passed",
+      "original_Intel_ABI_audit": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "daa46078656d9e616dea6c2bf00bf26a05fef2e9e318a6f5a89555477ba1f140"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "source_translation_and_MMU_fixtures": "passed",
+      "original_Intel_ABI_audit": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "6192baa4f1dc75bb9e25efa4bcf57eb9932c3889ee91217cc2919238b8a2b517"
+    }
+  ],
+  "capture_bundle_artifact_sha256": {
+    "sgx545-initializer": "297209d569db3706dfcf7461dca291360ed8b880f7318efc940f1bf51f10ffa8",
+    "lib/libdrm.so.2": "12520300a2f47e80ceac6440c884094d24444e494bb3ff63eaf0468db5998a43",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending",
+  "GPU_execution_enabled": false,
+  "GPU_DMA_coherence_or_protection_enforcement_verified": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

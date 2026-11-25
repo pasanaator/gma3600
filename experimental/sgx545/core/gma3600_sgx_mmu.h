@@ -13,9 +13,12 @@ struct gma_sgx_mmu_binding {
 	void *heap;
 	__u32 address, bytes, pages;
 	int live, failed;
+	__u32 memory_flags;
 };
 int gma3600_sgx_mmu_bind(void *heap, const __u32 *physical, __u32 count,
 	__u32 alignment, struct gma_sgx_mmu_binding *binding);
+int gma3600_sgx_mmu_bind_flags(void *heap, const __u32 *physical, __u32 count,
+	__u32 alignment, __u32 memory_flags, struct gma_sgx_mmu_binding *binding);
 int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *physical,
 	__u32 count, __u32 *tables);
 int gma3600_sgx_mmu_unbind(struct gma_sgx_mmu_binding *binding);
