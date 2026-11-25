@@ -27,12 +27,13 @@ including retained allocations released on unload. Services 0.9.1 fixes the
 [The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
 using a private runtime and limited libdrm transport with the existing child.
-The real initializer passed small alignment with services 0.9.5, then requested
-the explicit MULTI attribute in flags 0x2004f. Services 0.10.0 accepts that
-attribute with the existing ownership checks. Rebuild the private bundle for
-transport 0.2.0, which can validate the real command 99 payload and exercise a
-CPU-only STAGE/QUERY/ABORT cycle while still returning legacy initialization
-failure. No script or firmware is executed.
+The [latest hardware run](../../research/sgx545/d2500hn-gpu-access.json) passed
+the MULTI allocation and validation/staging tests, then reached a GPU-read-only
+kernel-code allocation. Services 0.10.1 preserves and verifies read-only,
+write-only or read/write GPU permissions, including in staging snapshots.
+Rebuild the child and reuse transport 0.2.0; CPU mappings remain writable so
+the initializer can populate GPU-read-only memory. The runner now summarizes
+the first failed request separately from cleanup and expected handoff abort.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result
@@ -135,8 +136,7 @@ now also been build-validated; that is not a hardware compatibility result.
   and are never passed to the hardware initializer. Both staging client modes passed on the Atom. The new `INIT_VALIDATE` ioctl
   runs the same checks without transferring ownership, consuming tokens or
   ending the initializer attempt. The updated `--init-stage` mode adds repeat
-  validation and validation-copyout-fault checks; these additions await hardware
-  testing. Legacy command 99 stays blocked in the kernel.
+  validation and validation-copyout-fault checks; these additions passed on the Atom. Legacy command 99 stays blocked in the kernel.
 
 `core/gma3600_sgx_adapter.c` now registers a preparation-only auxiliary driver
 when explicitly loaded with `prepare=1`. It starts the OS/memory services and

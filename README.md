@@ -32,10 +32,11 @@ The services 0.9.1 [original Intel enumeration and allocation tests](docs/SGX545
 also passed on the Atom. A new [private initializer capture tool](docs/SGX545-INITIALIZER-CAPTURE.md)
 can now observe the unmodified i386 Intel initializer's real requests on that hardware.
 The real initializer now allocates coherent/EDM buffers and obtains mapping metadata.
-Services 0.10.0 accepts the explicit MULTI heap attribute while retaining file
-and process isolation. Transport 0.2.0 can validate the real initializer's final
-handoff and exercise staging, query and abort without running GPU code. Rebuild
-both the services child and the private initializer bundle for this checkpoint.
+The latest Atom run passed the MULTI allocation and validation/staging tests.
+Services 0.10.1 adds GPU read-only/write-only allocation support and matching
+PTE verification for the next real initializer request. Rebuild the services
+child and reuse the existing transport 0.2.0 initializer bundle. The updated
+runner summarizes the first compatibility failure in its JSON report.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

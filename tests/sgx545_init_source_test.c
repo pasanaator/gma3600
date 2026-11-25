@@ -38,7 +38,8 @@ static void setup(unsigned count)
     for (i = 0; i < count; i++) {
         unsigned size = i < 9 ? (caps.minimum_bytes[i] + 4095) & ~4095U : 4096;
         memory[i] = (struct gma_sgx_init_memory){100 + i, address, size,
-            SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI,
+            (SGX545_DEVICE_FLAGS & ~SGX545_DEVICE_ACCESS) | (i >= 9 ? i % 3 + 1 : SGX545_DEVICE_ACCESS) |
+                SGX545_RAM_BACKED | SGX545_BUFFER_MULTI,
             (void *)(uintptr_t)(0x100000000ULL + i * 0x100000)};
         if (i >= 9) wire.info.mem_handles[i - 9] = 100 + i;
         address += size;
@@ -69,6 +70,7 @@ int main(void)
     assert(output.info.hKernelHWPerfCBMemInfo == &output.memory[6]);
     assert(output.info.hKernel3DSigBufferMemInfo == &output.memory[8]);
     for (i = 9; i < 27; i++) assert(output.info.asInitMemHandles[i - 9] == &output.memory[i]);
+    for (i = 0; i < 27; i++) assert(output.memory[i].ui32Flags == memory[i].flags);
     assert(!gma_sgx_init_check(&output, memory, count));
     assert((uintptr_t)output.memory[0].pvLinAddrKM == 0x100000000ULL); /* no truncation */
     assert(!memcmp(output.info.aui32HostKickAddr, wire.info.host_kick, sizeof(wire.info.host_kick)));

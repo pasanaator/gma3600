@@ -149,14 +149,18 @@ static void persistent_bindings(MMU_HEAP *heap, const __u32 *physical)
     assert(a.pages == 1 && a.bytes == 4096);
     assert(!gma3600_sgx_mmu_verify(&a, physical, 1, &tables));
     assert(!gma3600_sgx_mmu_unbind(&a) && !pt_pages && !pt_metadata && !reservations);
-    assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 1, &a) == -EINVAL);
+    assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 0, &a) == -EINVAL);
+    assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, PVRSRV_MEM_CACHE_CONSISTENT, &a) == -EINVAL);
     assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 0x83, &a) == -EINVAL);
-    for (i = 0; i < 4; i++) {
-        unsigned flags = 3 | (i & 1 ? PVRSRV_MEM_CACHE_CONSISTENT : 0) |
+    for (i = 0; i < 12; i++) {
+        unsigned access = i / 4 + 1;
+        unsigned flags = access | (i & 1 ? PVRSRV_MEM_CACHE_CONSISTENT : 0) |
             (i & 2 ? PVRSRV_MEM_EDM_PROTECT : 0);
         unsigned count = i & 1 ? 2 : 4;
         unsigned expected = (i & 1 ? SGX_MMU_PTE_CACHECONSISTENT : 0) |
-            (i & 2 ? SGX_MMU_PTE_EDMPROTECT : 0);
+            (i & 2 ? SGX_MMU_PTE_EDMPROTECT : 0) |
+            (access == PVRSRV_MEM_READ ? SGX_MMU_PTE_READONLY : 0) |
+            (access == PVRSRV_MEM_WRITE ? SGX_MMU_PTE_WRITEONLY : 0);
         unsigned mask = SGX_MMU_PTE_CACHECONSISTENT | SGX_MMU_PTE_EDMPROTECT |
             SGX_MMU_PTE_READONLY | SGX_MMU_PTE_WRITEONLY;
         MMU_PT_INFO *pt;
@@ -177,6 +181,10 @@ static void persistent_bindings(MMU_HEAP *heap, const __u32 *physical)
         *pte ^= SGX_MMU_PTE_READONLY;
         assert(gma3600_sgx_mmu_verify(&a, physical, count, &tables) == -EIO);
         *pte ^= SGX_MMU_PTE_READONLY;
+        *pte ^= SGX_MMU_PTE_WRITEONLY;
+        assert(gma3600_sgx_mmu_verify(&a, physical, count, &tables) == -EIO);
+        *pte ^= SGX_MMU_PTE_WRITEONLY;
+        assert(!gma3600_sgx_mmu_verify(&a, physical, count, &tables));
         assert(!gma3600_sgx_mmu_unbind(&a));
         assert(!gma3600_sgx_mmu_verify(&b, physical, 4, &tables));
         assert(!gma3600_sgx_mmu_unbind(&b));

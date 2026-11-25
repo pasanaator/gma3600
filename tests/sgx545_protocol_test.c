@@ -450,12 +450,14 @@ static void acquire_selector_protocol(void)
 
 static void initializer_allocation_flags(void)
 {
-    const unsigned accepted[] = {0xb, 0xf, 0x4b, 0x4f, 0xcf, 0x400b, 0x424f, 0x2004f, 0x2404f};
-    const unsigned rejected[] = {0, 3, 0x47, 0x104f, 0x204f, 0x604f, 0x14f, 0x804f, 0x1004f, 0x3004f, 0x8004f, 0x0200004f};
+    const unsigned accepted[] = {0x9, 0xa, 0xb, 0xf, 0x4b, 0x4f, 0xcf, 0x400b, 0x424f, 0x2004f, 0x2404f,
+        0x4009, 0x400a, 0x20009, 0x2000a, 0x2404d, 0x2404e};
+    const unsigned rejected[] = {0, 1, 2, 3, 8, 0xc, 0x48, 0x4008, 0x24048, 0x47, 0x104f, 0x204f, 0x604f, 0x14f, 0x804f, 0x1004f, 0x3004f, 0x8004f, 0x0200004f};
     struct fake f = {.in = {0xffffffff, 2, 99, 0x4f, 8192, 4096}};
     struct sgx545_session s = {.services = 1, .device = 2, .initializer = 1, .init_info = 1};
     unsigned i, token;
     for (i = 0; i < sizeof(accepted) / sizeof(accepted[0]); i++) {
+        assert(sgx545_device_effective_flags_valid(accepted[i] | SGX545_HEAP_FLAGS));
         f.in[2] = 99; f.in[3] = accepted[i];
         assert(!run(&s, &f, 6) && f.device_buffers == 1);
         token = word(&f, 1); f.in[2] = token;
@@ -466,6 +468,8 @@ static void initializer_allocation_flags(void)
         f.in[3] = rejected[i];
         assert(run(&s, &f, 6) == -EOPNOTSUPP && !f.device_buffers);
     }
+    assert(!sgx545_device_effective_flags_valid(SGX545_HEAP_FLAGS | SGX545_DEVICE_NO_SYNC));
+    assert(!sgx545_device_effective_flags_valid(SGX545_HEAP_FLAGS | SGX545_DEVICE_READ));
 }
 
 static void initializer_small_alignment(void)

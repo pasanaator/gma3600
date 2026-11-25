@@ -1,0 +1,57 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.10.1",
+  "transport_version_unchanged": "0.2.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-gpu-access.json",
+  "original_Intel_reference": {
+    "package_sha256": "835a324bb38a4d8c3957781cd7cae00dcaaaba1e11f8f5f042215cdea72b6933",
+    "access_flags": "include4/services.h: READ=1, WRITE=2, NO_SYNCOBJ=8",
+    "PTE_policy": "services4/srvkm/devices/sgx/mmu.c: MMU_MapPage selects READONLY for READ alone, WRITEONLY for WRITE alone and neither bit for READ|WRITE"
+  },
+  "changes": [
+    "Accept any nonempty GPU access mask while still requiring NO_SYNCOBJ and the supported allocation attributes",
+    "Preserve access flags through effective allocation replies and native staging metadata",
+    "Use native MMU access bits and verify both permission bits alongside existing physical/cache/EDM checks",
+    "Test exact observed 53096-byte/alignment=8/flags=0x9 allocation and a GPU-write-only allocation, with writable CPU mappings and free-live-VMA cleanup",
+    "Summarize the first actual failed request in JSON and console output, separately from cleanup or the deliberate stop after a completed CPU handoff"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 22,
+    "actual_DDK_MMU": "12 combinations of READ/WRITE/RW and coherent/EDM flags, permission/cache corruption, sibling preservation and cleanup for both profiles",
+    "actual_staging_translator": "27 mixed-access native snapshots preserve exact flags; source and bridge ownership/lifetime tests passed",
+    "protocol": "read-only/write-only/RW with heap/cache flags accepted; no access, missing NO_SYNCOBJ and unsupported flag bits rejected",
+    "private_runtime_fixture": "existing 0.2.0 bundle passed under QEMU with updated runner; no bundle rebuild required",
+    "hardware_probe": "compiled/selftest passed; new exact read-only request maps 13 pages, checks CPU WC roundtrip and cleanup; actual hardware run pending",
+    "report_parser": "observed failed allocation preserved; later cleanup error ignored; unsupported commands and handoff errors distinguished"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "actual_DDK_MMU_and_translator_source_tests": "passed with ASan/UBSan",
+      "original_Intel_ABI_and_flag_assertions": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "8868564e6c4bf4b0825ba10593989b478e1acb48d60be81dcb1f8645f70f7cbc",
+      "client_sha256": "bf049d97e7df84c60aba0ac1fd54aff9462d5603c75a6a74fe96d0027b924b26"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "actual_DDK_MMU_and_translator_source_tests": "passed with ASan/UBSan",
+      "original_Intel_ABI_and_flag_assertions": "passed",
+      "ELF32_client_QEMU_selftest": "passed",
+      "services_sha256": "9048dd5c01d0a15c5ac4ffbd3d8f57d76f30d8b59e47034cd606a8011d4fc165",
+      "client_sha256": "bf049d97e7df84c60aba0ac1fd54aff9462d5603c75a6a74fe96d0027b924b26"
+    }
+  ],
+  "hardware_status": "pending for new read-only/write-only tests and continued real initializer capture",
+  "GPU_execution_enabled": false,
+  "display_parent_changed": false,
+  "private_initializer_bundle_rebuild_required": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

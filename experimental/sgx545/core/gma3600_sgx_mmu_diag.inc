@@ -50,6 +50,8 @@ static int gma_mmu_attributes_match(MMU_HEAP *heap, IMG_DEV_VIRTADDR address, IM
 	IMG_UINT32 expected = 0, mask = SGX_MMU_PTE_READONLY | SGX_MMU_PTE_WRITEONLY |
 		SGX_MMU_PTE_CACHECONSISTENT | SGX_MMU_PTE_EDMPROTECT;
 	if (!pt || !pt->PTPageCpuVAddr) return 0;
+	if ((flags & SGX545_DEVICE_ACCESS) == PVRSRV_MEM_READ) expected |= SGX_MMU_PTE_READONLY;
+	if ((flags & SGX545_DEVICE_ACCESS) == PVRSRV_MEM_WRITE) expected |= SGX_MMU_PTE_WRITEONLY;
 	if (flags & PVRSRV_MEM_CACHE_CONSISTENT) expected |= SGX_MMU_PTE_CACHECONSISTENT;
 	if (flags & PVRSRV_MEM_EDM_PROTECT) expected |= SGX_MMU_PTE_EDMPROTECT;
 	return (((IMG_UINT32 *)pt->PTPageCpuVAddr)[index] & mask) == expected;
@@ -136,7 +138,7 @@ int gma3600_sgx_mmu_bind_flags(void *native_heap, const __u32 *physical, __u32 c
 		return -EBUSY;
 	memset(binding, 0, sizeof(*binding));
 	if ((memory_flags & ~SGX545_DEVICE_MMU_FLAGS) ||
-	    (memory_flags & (PVRSRV_MEM_READ | PVRSRV_MEM_WRITE)) != (PVRSRV_MEM_READ | PVRSRV_MEM_WRITE))
+	    !(memory_flags & (PVRSRV_MEM_READ | PVRSRV_MEM_WRITE)))
 		return -EINVAL;
 #if defined(FIX_HW_BRN_25503)
 	if (memory_flags & PVRSRV_MEM_EDM_PROTECT) return -EOPNOTSUPP;

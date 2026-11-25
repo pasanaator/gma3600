@@ -458,20 +458,21 @@ static volatile unsigned *device_mapping(int fd, unsigned services,
 	check_words(memory, size, check.fill);
 	return memory;
 }
-static void small_device_alignment_test(int fd, unsigned services, unsigned device,
+static void initializer_allocation_test(int fd, unsigned services, unsigned device,
 	const struct sgx545_heap32 *heap, unsigned bytes, unsigned alignment, unsigned flags)
 {
 	unsigned input[6] = {0xffffffff, device, heap->handle, flags, bytes, alignment};
 	unsigned freed[15] = {0, device, 0};
+	unsigned mapped_bytes = (bytes + 4095) & ~4095U;
 	struct sgx545_alloc_device_out allocation = {0};
 	struct sgx545_handle_out result = {0};
 	struct sgx545_bridge32 wire = package(6, services, input, 24, &allocation, 76);
 	volatile unsigned *memory;
-	expect("small aligned initializer allocation", call(fd, &wire), 0);
+	expect("aligned initializer allocation", call(fd, &wire), 0);
 	if (allocation.error || !allocation.kernel_mem || allocation.mem.alloc_size != bytes ||
 	    allocation.mem.kernel_mem != allocation.kernel_mem || allocation.mem.mapping != allocation.kernel_mem ||
 	    (allocation.mem.device_address & 4095) || allocation.mem.device_address < heap->base ||
-	    (__u64)allocation.mem.device_address + 4096 > (__u64)heap->base + heap->size ||
+	    (__u64)allocation.mem.device_address + mapped_bytes > (__u64)heap->base + heap->size ||
 	    allocation.mem.flags != (flags | heap->attributes | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI))
 		fail("small-alignment allocation reply", allocation.error);
 	memory = device_mapping(fd, services, &allocation, 0x11223344);
@@ -480,10 +481,13 @@ static void small_device_alignment_test(int fd, unsigned services, unsigned devi
 	wire = package(7, services, freed, 60, &result, 8);
 	expect("free small allocation with live mapping", call(fd, &wire), 0);
 	expect("free small allocation payload", result.error, 0);
-	check_words(memory, 4096, 0xeeddccbbU);
-	expect("unmap small allocation", sys3(91, ptr((const void *)memory), 4096, 0), 0);
+	check_words(memory, mapped_bytes, 0xeeddccbbU);
+	expect("unmap initializer allocation", sys3(91, ptr((const void *)memory), mapped_bytes, 0), 0);
 	if (bytes == 4) say("PASS: 4-byte allocation alignment=16, page-backed mapping, coherent/EDM PTEs and free with live mapping\n");
-	else say("PASS: 236-byte allocation alignment=32 flags=0x2004f, page-backed mapping and cleanup\n");
+	else if (bytes == 236) say("PASS: 236-byte allocation alignment=32 flags=0x2004f, page-backed mapping and cleanup\n");
+	else if ((flags & SGX545_DEVICE_ACCESS) == SGX545_DEVICE_READ)
+		say("PASS: 53096-byte GPU-read-only allocation flags=0x9 alignment=8, 13 PTEs, CPU writes and live mapping cleanup\n");
+	else say("PASS: GPU-write-only allocation, PTE verification, CPU roundtrip and live mapping cleanup\n");
 }
 static void device_test(int fd, unsigned services, unsigned device, const char *path, int close_only)
 {
@@ -513,8 +517,14 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	for (i = 0; i < SGX545_MAX_HEAPS; i++) if (info.heaps[i].handle) break;
 	if (i == SGX545_MAX_HEAPS) fail("no device allocation heaps", i);
 	if (original_intel_abi) {
-		small_device_alignment_test(fd, services, device, &info.heaps[i], 4, 16, SGX545_INTEL_INIT_FLAGS);
-		small_device_alignment_test(fd, services, device, &info.heaps[i], 236, 32, flags);
+		initializer_allocation_test(fd, services, device, &info.heaps[i], 4, 16, SGX545_INTEL_INIT_FLAGS);
+		initializer_allocation_test(fd, services, device, &info.heaps[i], 236, 32, flags);
+		/* Intel's next real request targets the shared kernel-code heap. */
+		if (info.heaps[i].id != 0x07000002) fail("expected shared initializer code heap", info.heaps[i].id);
+		initializer_allocation_test(fd, services, device, &info.heaps[i], 53096, 8,
+			SGX545_DEVICE_READ | SGX545_DEVICE_NO_SYNC);
+		initializer_allocation_test(fd, services, device, &info.heaps[i], 8193, 32,
+			SGX545_DEVICE_WRITE | SGX545_DEVICE_NO_SYNC | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT);
 	}
 	in[2] = info.heaps[i].handle;
 	w = package(6, services, in, 24, &a, 76);

@@ -551,7 +551,9 @@ static void initializer_stage_lifetime(void)
         assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
             PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
         for (i = 0; i < 9; i++) {
-            assert(!backend_alloc_device(f, 100, i & 1 ? SGX545_INTEL_INIT_FLAGS : SGX545_DEVICE_FLAGS, 16384, 4096, &allocation));
+            u32 flags = i & 1 ? SGX545_INTEL_INIT_FLAGS : SGX545_DEVICE_FLAGS;
+            flags = (flags & ~SGX545_DEVICE_ACCESS) | (i % 3 + 1);
+            assert(!backend_alloc_device(f, 100, flags, 16384, 4096, &allocation));
             tokens[i] = allocation.kernel_mem;
         }
         wire.info.ccb = tokens[0]; wire.info.ccb_control = tokens[1]; wire.info.event_kicker = tokens[2];
@@ -586,7 +588,8 @@ static void initializer_stage_lifetime(void)
         message.stage = message.buffers = message.pages = 0;
         assert(!stage_publish(f, &wire, &message, publish_stage, NULL));
         assert(b->stage && b->stats.stages == 1 && !f->device_allocations);
-        assert(b->stage->memory[1].flags == (SGX545_INTEL_INIT_FLAGS | SGX545_HEAP_FLAGS));
+        assert(b->stage->memory[1].flags == ((SGX545_INTEL_INIT_FLAGS & ~SGX545_DEVICE_ACCESS) |
+            SGX545_DEVICE_WRITE | SGX545_HEAP_FLAGS));
         assert(!b->init_owner && !f->session.initializer && b->stats.init_ran);
         assert(stage_prepare(f, &wire, &message, &candidate) == -EBUSY);
         assert(backend_free_device(f, tokens[0]) == -ENOENT);

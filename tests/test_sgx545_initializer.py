@@ -71,7 +71,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host2",
-            "module/gma3600_sgx_services/version": "0.10.0",
+            "module/gma3600_sgx_services/version": "0.10.1",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +95,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.10.0")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.10.1")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1")):
                 self.write_status(path, {**status, key: value})
@@ -120,7 +120,7 @@ class InitializerTests(unittest.TestCase):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
             (root / "module/gma3600_sgx_services/version").write_text("0.9.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.10.0"):
+            with self.assertRaisesRegex(ValueError, "services 0.10.1"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):
@@ -143,6 +143,23 @@ class InitializerTests(unittest.TestCase):
             self.assertFalse(runner.handoff_status(line.replace(old, new))["cpu_cycle_passed"])
         failed = line.replace("errno=0", "errno=5")
         self.assertFalse(runner.handoff_status(line + failed)["cpu_cycle_passed"])
+
+    def test_first_failure_preserves_observed_allocation_and_ignores_cleanup(self):
+        trace = ("BRIDGE command=6 in=24 out=76\n"
+                 "ALLOC heap=00000004 flags=0002004f bytes=8328 alignment=32\n"
+                 "RESULT command=6 payload_error=0\n"
+                 "BRIDGE command=6 in=24 out=76\n"
+                 "ALLOC heap=00000003 flags=00000009 bytes=53096 alignment=8\n"
+                 "RESULT command=6 errno=95\n"
+                 "BRIDGE command=68 in=8 out=8\nRESULT command=68 payload_error=129\n")
+        self.assertEqual(runner.first_failed_request(trace), {
+            "command": 6, "input_bytes": 24, "output_bytes": 76,
+            "heap_handle": 3, "flags": 9, "bytes": 53096, "alignment": 8, "errno": 95})
+        self.assertIsNone(runner.first_failed_request("BRIDGE command=6 in=24 out=76\nRESULT command=6 payload_error=0\n"))
+        self.assertEqual(runner.first_failed_request("BRIDGE command=27 in=8 out=16\nBLOCK bridge command=27\n")["unsupported"], True)
+        handoff = "BRIDGE command=99 in=2068 out=8\nHANDOFF validated=0 staged=0 queried=0 aborted=0 buffers=0 pages=0 errno=71 gpu_execution=disabled\n"
+        self.assertEqual(runner.first_failed_request(handoff)["phase"], "cpu_handoff")
+        self.assertIsNone(runner.first_failed_request(handoff.replace("errno=71", "errno=0")))
 
     def test_capture_reserves_report_before_execution_and_records_timeout(self):
         with tempfile.TemporaryDirectory() as directory:

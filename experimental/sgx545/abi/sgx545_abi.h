@@ -75,23 +75,28 @@ struct sgx545_bridge_request {
 #define SGX545_DEVICE_COHERENT      0x00000004U
 #define SGX545_DEVICE_EDM_PROTECT   0x00000040U
 #define SGX545_DEVICE_ZERO          0x00000080U
-#define SGX545_DEVICE_REQUIRED      0x0000000bU
-#define SGX545_DEVICE_MMU_FLAGS     (3U | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
+#define SGX545_DEVICE_READ          0x00000001U
+#define SGX545_DEVICE_WRITE         0x00000002U
+#define SGX545_DEVICE_ACCESS        (SGX545_DEVICE_READ | SGX545_DEVICE_WRITE)
+#define SGX545_DEVICE_NO_SYNC       0x00000008U
+#define SGX545_DEVICE_MMU_FLAGS     (SGX545_DEVICE_ACCESS | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
 #define SGX545_SYSMEM_NONCONTIG     0x02000000U
 #define SGX545_HEAP_FLAGS           (SGX545_BUFFER_WC | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI | SGX545_SYSMEM_NONCONTIG)
-#define SGX545_INTEL_INIT_FLAGS     (SGX545_DEVICE_REQUIRED | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
+#define SGX545_INTEL_INIT_FLAGS     (SGX545_DEVICE_ACCESS | SGX545_DEVICE_NO_SYNC | SGX545_DEVICE_COHERENT | SGX545_DEVICE_EDM_PROTECT)
 /* CPU cache mode may be omitted and inherited from a validated WC heap.
  * MULTI is already an attribute of these heaps; it does not publish a handle
  * or bypass this diagnostic bridge's per-file/process ownership checks. */
 static inline int sgx545_device_flags_valid(__u32 flags)
 {
-	return (flags & SGX545_DEVICE_REQUIRED) == SGX545_DEVICE_REQUIRED &&
+	/* Access bits describe GPU permissions. CPU mappings stay writable so
+	 * the initializer can populate GPU-read-only code and data buffers. */
+	return (flags & SGX545_DEVICE_NO_SYNC) && (flags & SGX545_DEVICE_ACCESS) &&
 		!(flags & ~(SGX545_DEVICE_FLAGS | SGX545_DEVICE_COHERENT |
 			SGX545_DEVICE_EDM_PROTECT | SGX545_DEVICE_ZERO | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI));
 }
 static inline int sgx545_device_effective_flags_valid(__u32 flags)
 {
-	__u32 required = SGX545_DEVICE_FLAGS | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
+	__u32 required = SGX545_BUFFER_WC | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI;
 	return (flags & required) == required &&
 		sgx545_device_flags_valid(flags & ~(SGX545_BUFFER_MULTI | SGX545_SYSMEM_NONCONTIG));
 }

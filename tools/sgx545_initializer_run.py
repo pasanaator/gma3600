@@ -54,8 +54,8 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.10.0":
-        raise ValueError("Capture currently requires host2 and tested services 0.10.0")
+    if host != "1.0.4-sgx-host2" or child != "0.10.1":
+        raise ValueError("Capture currently requires host2 and tested services 0.10.1")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
@@ -84,6 +84,32 @@ def handoff_status(stderr):
     status = dict(zip(("validated", "staged", "queried", "aborted", "buffers", "pages", "errno"), values))
     status["cpu_cycle_passed"] = values[:4] == [1, 1, 1, 1] and values[6] == 0 and 9 <= values[4] <= 27 and values[5] >= values[4]
     return status
+
+
+def first_failed_request(stderr):
+    """Describe the first compatibility failure, excluding later cleanup calls."""
+    current = None
+    for line in stderr.splitlines():
+        match = re.fullmatch(r"BRIDGE command=(\d+) in=(\d+) out=(\d+)", line)
+        if match:
+            current = dict(zip(("command", "input_bytes", "output_bytes"), map(int, match.groups())))
+            continue
+        if current is None:
+            continue
+        match = re.fullmatch(r"ALLOC heap=([0-9a-f]+) flags=([0-9a-f]+) bytes=(\d+) alignment=(\d+)", line)
+        if match and current["command"] == 6:
+            current.update(heap_handle=int(match[1], 16), flags=int(match[2], 16),
+                           bytes=int(match[3]), alignment=int(match[4]))
+        match = re.fullmatch(r"RESULT command=(\d+) (errno|payload_error)=(\d+)", line)
+        if match and int(match[1]) == current["command"] and int(match[3]):
+            return {**current, match[2]: int(match[3])}
+        if line == "BLOCK bridge command=" + str(current["command"]):
+            return {**current, "unsupported": True}
+        if current["command"] == 99 and line.startswith("HANDOFF "):
+            handoff = handoff_status(line)
+            if handoff and handoff["errno"]:
+                return {**current, "errno": handoff["errno"], "phase": "cpu_handoff"}
+    return None
 
 
 def command(bundle, selftest=False, qemu=None):
@@ -150,6 +176,7 @@ def main():
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
+                  "first_failed_request": first_failed_request(stderr),
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
                   "bundle_artifact_sha256": manifest["artifact_sha256"],
@@ -161,7 +188,10 @@ def main():
         print("Initializer diagnostic report:", args.report)
         if outcome == "cpu_handoff_cycle_passed_with_clean_resources":
             print("CPU handoff validation, staging, query and abort passed.")
-        print("GPU execution remains disabled; the Intel initializer is deliberately returned a failure.")
+            print("The Intel initializer is deliberately returned a failure after that diagnostic cycle.")
+        elif report["first_failed_request"]:
+            print("First compatibility failure:", json.dumps(report["first_failed_request"], sort_keys=True))
+        print("GPU execution remains disabled.")
         return 0 if outcome != "inspect_report" else 1
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, str(error) + "\n")
