@@ -1,11 +1,17 @@
 # Capture the real Intel initializer's requests
 
-**Current services: 0.9.4; transport: 0.1.4.** The real Intel initializer
-[passes indexed ACQUIRE and obtains heap information](../research/sgx545/d2500hn-initializer-allocation.json).
-Its first allocation is 8 KiB aligned to 4 KiB, with flags **0x4f**: read/write,
-cache-consistent, no sync object, and EDM-protected. Services 0.9.3 accepted only
-the earlier diagnostic flags and rejected this request. Abort and unload still
-released every tracked resource without blocked hardware accesses.
+**Current services: 0.9.5; transport: 0.1.4 (unchanged).** The
+[coherent/EDM allocation tests passed on all three heaps](../research/sgx545/d2500hn-small-alignment.json).
+The real initializer also allocated 8,192-byte and 8-byte buffers and obtained
+their mapping metadata. Its next request, 4 bytes aligned to 16 bytes, was
+rejected by the old 4 KiB minimum-alignment check. Both test and capture unloads
+released every tracked page without errors or blocked hardware accesses.
+
+Services 0.9.5 accepts zero or power-of-two alignments through 1 MiB. Requests
+below 4 KiB use 4 KiB-aligned native backing, which also satisfies their byte
+alignment. The logical allocation size stays unchanged: the observed request
+returns size 4 and maps one zeroed 4 KiB page. Larger alignments keep their
+requested value. No subpage allocator or new CPU/GPU cache policy is introduced.
 
 Services 0.9.4 accepts the observed coherent/EDM flags, optional zeroing and
 RAM-backed flags, and an omitted CPU cache mode. Intel's original BM allocator
@@ -24,8 +30,9 @@ Reserved bridge words remain ignored, and the two documented PDump-only CONNECT
 flags remain no-ops. Unknown service bits are rejected and PDUMP builds are
 explicitly disabled. These fields do not grant privileges or extend lifetimes.
 
-Rebuild both the services module and private initializer bundle for this
-checkpoint. The display parent remains the working host2 build.
+Rebuild the services module and use the updated runner from the repository.
+**Reuse the existing transport 0.1.4 bundle**; its libraries and launcher do not
+need rebuilding. The display parent remains the working host2 build.
 
 The [0.9.1 hardware tests passed](../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic invokes the **unmodified Intel `SrvInit()`** with the
@@ -62,33 +69,34 @@ From the repository root on the Atom:
 ```sh
 git pull --ff-only
 bash tests/run.sh
-sgx_build="$HOME/Desktop/gma3600-sgx-memory-$(date +%Y%m%d-%H%M%S)"
+sgx_build="$HOME/Desktop/gma3600-sgx-alignment-$(date +%Y%m%d-%H%M%S)"
 python3 tools/sgx545_hybrid_build.py \
   --kdir /lib/modules/$(uname -r)/build \
   --source "$HOME/.cache/gma3600/openpvrsgx" \
   --sgx-rev 10131 --output "$sgx_build"
 modinfo -F version "$sgx_build/core/gma3600_sgx_services.ko"
-init_build="$HOME/Desktop/gma3600-sgx-initializer-$(date +%Y%m%d-%H%M%S)"
-python3 tools/sgx545_initializer_build.py --output "$init_build"
 python3 tools/sgx545_initializer_run.py --bundle "$init_build" --selftest
 ```
 
 The final line must be `PASS: private i386 loader, project-owned fixture and
 limited libdrm transport`, with `transport=0.1.4` in the loader line. The module
-must report version `0.9.4`. This selftest
+must report version `0.9.5`. Keep `$init_build` pointing to the existing 0.1.4
+bundle; set its path again if using a new SSH session. If no bundle exists,
+create one with `python3 tools/sgx545_initializer_build.py --output NEW_DIRECTORY`
+and set `$init_build` to that directory. This selftest
 checks the observed PCI-only selector and rejects other devices without opening
 hardware. It executes only the open-source fixture,
 including in cloud validation under QEMU. It does not initialize the GPU.
 The pinned dependency list and validation results are recorded in
 [the build record](../research/sgx545/initializer-capture-build.json).
-The [current validation record](../research/sgx545/initializer-memory-6.12-build.json)
-covers both kernel profiles, original flag definitions, real native MMU source,
-cache/EDM PTE mutations, metadata preservation and lifetime tests.
+The [current validation record](../research/sgx545/small-alignment-6.12-build.json)
+covers both kernel profiles, all supported power-of-two alignments, logical size
+preservation, malformed requests, copyout rollback and a native one-page mapping.
 
 ## Capture on the Atom, using a fresh services child
 
 Keep the working host2 display parent loaded and SSH connected. Reuse
-`$sgx_build` from the new 0.9.4 build above. Load only the new services child;
+`$sgx_build` from the new 0.9.5 build above. Load only the new services child;
 the working display parent stays loaded.
 
 ```sh
@@ -108,27 +116,29 @@ sudo rmmod gma3600_sgx_services
 Stop if the allocation test fails. Expect this additional line:
 
 ```text
-PASS: Intel flags=0x4f, inherited WC cache mode, coherent/EDM PTE checks and CPU roundtrip
+PASS: 4-byte allocation alignment=16, page-backed mapping, coherent/EDM PTEs and free with live mapping
 ```
 
-The test checks all three initializer heaps, neighboring allocations, CPU
-mapping lifetime and kernel PTE verification. Before unload expect four baseline
+The test checks that exact small request, then all three initializer heaps,
+neighboring allocations, CPU mapping lifetime and kernel PTE verification.
+Before unload expect four baseline
 pages and zero allocations/maps/errors; unload must release all pages.
 **Reload services before capture:** the allocation test consumes the one-shot
 initializer attempt.
 
 ```sh
 sudo insmod "$sgx_build/core/gma3600_sgx_services.ko" prepare=1 bridge=1
+init_report="$init_build/initializer-report-alignment-$(date +%Y%m%d-%H%M%S).json"
 sudo python3 tools/sgx545_initializer_run.py \
   --bundle "$init_build" --capture \
-  --report "$init_build/initializer-report.json"
+  --report "$init_report"
 cat /sys/bus/auxiliary/devices/gma3600.sgx.*/services
 sudo rmmod gma3600_sgx_services
 sudo dmesg | grep -Ei 'SGX buffers|SGX bridge|services cleanup|blocked hardware|BUG:|Oops' | tail -10
 ```
 
 The helper verifies the Intel PCI vendor/device, `gma3600` parent ownership,
-host2/services 0.9.4 versions, fresh initialization state and zero live resources.
+host2/services 0.9.5 versions, fresh initialization state and zero live resources.
 It refuses capture through QEMU or on a different GPU. It checks the bundle
 hashes before execution and uses only the private runtime/library path. The
 capture has a 25-second timeout and saves the initializer output and before/after
@@ -147,7 +157,7 @@ file, allocation, mapping, stage, error and blocked-access counters. `init_ran`
 may be zero or one depending on how far the real initializer got. Unload must
 report `result=0 pages_live=0 blocked_hw_accesses=0`.
 
-Return `initializer-report.json`, the printed output and cleanup lines. Each
+Return the JSON at `$init_report`, the printed output and cleanup lines. Each
 new capture requires a fresh services load and a new report filename.
 The desktop should continue using llvmpipe. Native BM/resource integration,
 firmware matching, active DMA/page walks and power/reset/IRQ bring-up remain

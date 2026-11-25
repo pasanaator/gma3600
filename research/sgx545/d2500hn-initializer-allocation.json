@@ -70,5 +70,6 @@
     "services": "[14584.775149] result=0 pages_live=0 blocked_hw_accesses=0"
   },
   "GPU_execution_enabled": false,
-  "hardware_status_after_fix": "pending with services 0.9.4 / transport 0.1.4"
+  "hardware_status_after_fix": "passed flags 0x4f; real allocator and map-info returned success for 8192 and 8 bytes, then rejected alignment=16",
+  "next_hardware_result": "d2500hn-small-alignment.json"
 }

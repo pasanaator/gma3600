@@ -27,9 +27,9 @@ including retained allocations released on unload. Services 0.9.1 fixes the
 [The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
 using a private runtime and limited libdrm transport with the existing child.
-The real initializer passed indexed acquisition and heap discovery with services
-0.9.3, then requested allocation flags 0x4f. Use services 0.9.4 and transport
-0.1.4 for coherent/EDM PTE attributes, WC heap inheritance and allocation tracing.
+The coherent/EDM tests passed on all three heaps with services 0.9.4. The real
+initializer allocated two buffers, then stopped on alignment=16. Use services
+0.9.5 with the existing transport 0.1.4 bundle for small byte-alignment support.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result

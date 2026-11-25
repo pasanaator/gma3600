@@ -432,29 +432,57 @@ static void device_walk(int fd, unsigned services, unsigned device,
 {
 	struct sgx545_device_check check = {services, device, allocation->kernel_mem, 0, 0, 0};
 	expect("persistent device PTE readback", sys3(54, fd, SGX545_IOCTL_DEVICE_CHECK, ptr(&check)), 0);
-	if (check.address != allocation->mem.device_address || check.pages != 4 || !check.page_tables)
+	if (check.address != allocation->mem.device_address ||
+	    check.pages != (allocation->mem.alloc_size + 4095) / 4096 || !check.page_tables)
 		fail("persistent device mapping result", check.address);
 }
 static volatile unsigned *device_mapping(int fd, unsigned services,
 	const struct sgx545_alloc_device_out *allocation, unsigned seed)
 {
 	unsigned in[2] = {0, allocation->kernel_mem}, i;
+	unsigned size = (allocation->mem.alloc_size + 4095) & ~4095U;
 	struct sgx545_map_info_out mapping = {0};
 	struct sgx545_bridge32 w = package(11, services, in, 8, &mapping, 20);
 	struct sgx545_buffer_check check = {services, allocation->kernel_mem, seed, seed ^ 0xffffffffU};
 	volatile unsigned *memory;
 	expect("device map-info", call(fd, &w), 0);
-	if (mapping.error || mapping.offset != allocation->kernel_mem || mapping.real_size != 16384 ||
+	if (mapping.error || mapping.offset != allocation->kernel_mem || mapping.real_size != size ||
 	    mapping.byte_offset || mapping.user_address) fail("device map metadata", mapping.error);
-	memory = map_buffer(fd, 16384, allocation->kernel_mem);
-	for (i = 0; i < 4096; i++) {
+	memory = map_buffer(fd, size, allocation->kernel_mem);
+	for (i = 0; i < size / 4; i++) {
 		if (memory[i]) fail("device buffer/padding zeroing", i);
 		memory[i] = seed ^ i;
 	}
 	__asm__ volatile("sfence" ::: "memory");
 	expect("device WC user/kernel roundtrip", sys3(54, fd, SGX545_IOCTL_BUFFER_CHECK, ptr(&check)), 0);
-	check_words(memory, 16384, check.fill);
+	check_words(memory, size, check.fill);
 	return memory;
+}
+static void small_device_alignment_test(int fd, unsigned services, unsigned device,
+	const struct sgx545_heap32 *heap)
+{
+	unsigned input[6] = {0xffffffff, device, heap->handle, SGX545_INTEL_INIT_FLAGS, 4, 16};
+	unsigned freed[15] = {0, device, 0};
+	struct sgx545_alloc_device_out allocation = {0};
+	struct sgx545_handle_out result = {0};
+	struct sgx545_bridge32 wire = package(6, services, input, 24, &allocation, 76);
+	volatile unsigned *memory;
+	expect("4-byte allocation with alignment=16", call(fd, &wire), 0);
+	if (allocation.error || !allocation.kernel_mem || allocation.mem.alloc_size != 4 ||
+	    allocation.mem.kernel_mem != allocation.kernel_mem || allocation.mem.mapping != allocation.kernel_mem ||
+	    (allocation.mem.device_address & 4095) || allocation.mem.device_address < heap->base ||
+	    (__u64)allocation.mem.device_address + 4096 > (__u64)heap->base + heap->size ||
+	    allocation.mem.flags != (SGX545_INTEL_INIT_FLAGS | heap->attributes | SGX545_RAM_BACKED | SGX545_BUFFER_MULTI))
+		fail("small-alignment allocation reply", allocation.error);
+	memory = device_mapping(fd, services, &allocation, 0x11223344);
+	device_walk(fd, services, device, &allocation);
+	freed[2] = allocation.kernel_mem;
+	wire = package(7, services, freed, 60, &result, 8);
+	expect("free small allocation with live mapping", call(fd, &wire), 0);
+	expect("free small allocation payload", result.error, 0);
+	check_words(memory, 4096, 0xeeddccbbU);
+	expect("unmap small allocation", sys3(91, ptr((const void *)memory), 4096, 0), 0);
+	say("PASS: 4-byte allocation alignment=16, page-backed mapping, coherent/EDM PTEs and free with live mapping\n");
 }
 static void device_test(int fd, unsigned services, unsigned device, const char *path, int close_only)
 {
@@ -483,6 +511,7 @@ static void device_test(int fd, unsigned services, unsigned device, const char *
 	expect("device initializer INFO payload", info.error, 0);
 	for (i = 0; i < SGX545_MAX_HEAPS; i++) if (info.heaps[i].handle) break;
 	if (i == SGX545_MAX_HEAPS) fail("no device allocation heaps", i);
+	if (original_intel_abi) small_device_alignment_test(fd, services, device, &info.heaps[i]);
 	in[2] = info.heaps[i].handle;
 	w = package(6, services, in, 24, &a, 76);
 	in[1]++;

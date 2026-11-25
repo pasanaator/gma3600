@@ -259,9 +259,12 @@ int sgx545_bridge_execute(struct sgx545_session *s,
 		if (!sgx545_device_flags_valid(in[3]))
 			return -EOPNOTSUPP;
 		if (!in[4] || in[4] > SGX545_BUFFER_MAX_BYTES ||
-		    (in[5] && (in[5] < 4096 || in[5] > SGX545_BUFFER_MAX_BYTES || (in[5] & (in[5] - 1)))))
+		    (in[5] && (in[5] > SGX545_BUFFER_MAX_BYTES || (in[5] & (in[5] - 1)))))
 			return -EINVAL;
-		ret = ops->alloc_device(ctx, in[2], in[3], in[4], in[5] ? in[5] : 4096, &out.device);
+		/* Whole-page backing satisfies every smaller power-of-two alignment.
+		 * Preserve the requested byte count; only the internal VA alignment
+		 * is strengthened before it reaches the native MMU allocator. */
+		ret = ops->alloc_device(ctx, in[2], in[3], in[4], in[5] > 4096 ? in[5] : 4096, &out.device);
 		if (ret < 0)
 			return ret;
 		out.device.error = ret;

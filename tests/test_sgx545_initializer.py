@@ -71,7 +71,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host2",
-            "module/gma3600_sgx_services/version": "0.9.4",
+            "module/gma3600_sgx_services/version": "0.9.5",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +95,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.9.4")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.9.5")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1")):
                 self.write_status(path, {**status, key: value})
@@ -120,7 +120,7 @@ class InitializerTests(unittest.TestCase):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
             (root / "module/gma3600_sgx_services/version").write_text("0.9.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.9.4"):
+            with self.assertRaisesRegex(ValueError, "services 0.9.5"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):

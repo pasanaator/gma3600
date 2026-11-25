@@ -31,10 +31,9 @@ The original Intel CONNECT/free test and both
 The services 0.9.1 [original Intel enumeration and allocation tests](docs/SGX545-ENUMERATION-TESTING.md)
 also passed on the Atom. A new [private initializer capture tool](docs/SGX545-INITIALIZER-CAPTURE.md)
 can now observe the unmodified i386 Intel initializer's real requests on that hardware.
-The real initializer now passes indexed acquisition and heap discovery.
-Services 0.9.4 supports its observed coherent/EDM allocation flags and WC heap
-inheritance, with PTE attribute verification; transport 0.1.4 logs allocation replies.
-Rebuild the services child and private bundle before the next capture.
+The real initializer now allocates coherent/EDM buffers and obtains mapping metadata.
+Services 0.9.5 accepts its small power-of-two alignment requests with page-aligned
+backing. Rebuild the services child and reuse the transport 0.1.4 bundle.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

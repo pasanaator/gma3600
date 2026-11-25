@@ -145,6 +145,10 @@ static void persistent_bindings(MMU_HEAP *heap, const __u32 *physical)
     assert(gma3600_sgx_mmu_bind(heap, physical, 0, 4096, &a) == -EINVAL);
     assert(gma3600_sgx_mmu_bind(heap, physical, 4, 8193, &a) == -EINVAL);
     assert(gma3600_sgx_mmu_bind(heap, physical, 257, 4096, &a) == -EINVAL);
+    assert(!gma3600_sgx_mmu_bind_flags(heap, physical, 1, 4096, 3 | PVRSRV_MEM_CACHE_CONSISTENT | PVRSRV_MEM_EDM_PROTECT, &a));
+    assert(a.pages == 1 && a.bytes == 4096);
+    assert(!gma3600_sgx_mmu_verify(&a, physical, 1, &tables));
+    assert(!gma3600_sgx_mmu_unbind(&a) && !pt_pages && !pt_metadata && !reservations);
     assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 1, &a) == -EINVAL);
     assert(gma3600_sgx_mmu_bind_flags(heap, physical, 4, 4096, 0x83, &a) == -EINVAL);
     for (i = 0; i < 4; i++) {

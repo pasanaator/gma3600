@@ -17,6 +17,7 @@ struct fake {
 	int fail_init, fail_abort, fail_info, fail_info_release;
 	unsigned buffers, buffer_frees, device_buffers, device_frees;
 	int fail_device_free, fail_device;
+	unsigned last_alignment;
 };
 static int connect_(void *ctx, unsigned *token)
 {
@@ -132,6 +133,7 @@ static int alloc_device(void *ctx, unsigned heap, unsigned flags, unsigned bytes
 {
     struct fake *f = ctx;
     assert(heap == 99 && alignment >= 4096 && !(alignment & (alignment - 1)));
+    f->last_alignment = alignment;
     if (f->fail_device) return f->fail_device;
     f->device_buffers++;
     out->kernel_mem = out->mem.kernel_mem = out->mem.mapping = ++f->token;
@@ -466,6 +468,30 @@ static void initializer_allocation_flags(void)
     }
 }
 
+static void initializer_small_alignment(void)
+{
+    struct fake f = {.in = {0xffffffff, 2, 99, SGX545_INTEL_INIT_FLAGS, 4, 0}};
+    struct sgx545_session s = {.services = 1, .device = 2, .initializer = 1, .init_info = 1};
+    const unsigned invalid[] = {3, 12, 4095, 4097, 1U << 21, 0xffffffff};
+    unsigned bit, requested, token, i;
+    for (bit = 0; bit <= 21; bit++) {
+        requested = bit ? 1U << (bit - 1) : 0;
+        f.in[2] = 99; f.in[5] = requested;
+        assert(!run(&s, &f, 6) && f.device_buffers == 1);
+        assert(f.last_alignment == (requested > 4096 ? requested : 4096));
+        assert(word(&f, 8) == 4 && f.in[5] == requested);
+        token = word(&f, 1); f.in[2] = token;
+        assert(!run(&s, &f, 7) && !f.device_buffers);
+    }
+    f.in[2] = 99;
+    for (i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
+        f.in[5] = invalid[i];
+        assert(run(&s, &f, 6) == -EINVAL && !f.device_buffers);
+    }
+    f.in[5] = 16; f.fail_out = 1;
+    assert(run(&s, &f, 6) == -EFAULT && !f.device_buffers && f.last_alignment == 4096);
+}
+
 int main(void)
 {
 	struct fake f = {.count = 1};
@@ -550,6 +576,7 @@ int main(void)
 	connect_flags_protocol();
 	acquire_selector_protocol();
 	initializer_allocation_flags();
+	initializer_small_alignment();
 	puts("SGX545 bridge protocol tests passed: services, initializer ownership, heap info, device allocation validation and rollback");
 	return 0;
 }

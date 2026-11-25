@@ -1,0 +1,55 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.9.5",
+  "transport_version_unchanged": "0.1.4",
+  "previous_hardware_result": "d2500hn-small-alignment.json",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "change": "Accept zero or power-of-two byte alignments through 1 MiB; normalize internal native VA alignment to max(request,4096), preserving requested byte count.",
+  "scope": {
+    "subpage_allocator_added": false,
+    "native_MMU_minimum_alignment": 4096,
+    "CPU_cache_and_GPU_PTE_policy_changed": false,
+    "private_initializer_bundle_rebuild_required": false,
+    "runner_services_version_guard_updated": true
+  },
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 20,
+    "focused_sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "protocol_cases": [
+      "zero and every power of two from 1 byte through 1 MiB",
+      "4-byte logical size preserved and original request left unchanged",
+      "non-powers-of-two and excessive alignments rejected",
+      "alignment=16 copyout rollback frees allocation"
+    ],
+    "native_MMU_source": "one-page coherent/EDM mapping and cleanup pass for both SGX revision profiles, alongside existing cases",
+    "updated_i386_client": "compiled and QEMU selftest passed; device-intel now tests exact 4-byte/alignment=16 request, page-sized zeroed mapping, PTE readback, CPU roundtrip and free with live mapping"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_build": "passed",
+      "services_compiler_warnings": 0,
+      "source_fixtures": "passed",
+      "original_Intel_ABI_audit": "passed",
+      "services_sha256": "a120528f5ee3d66b51d193bf216a6c600a47e8f18b31a03595de6a3bf25fedff"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_build": "passed",
+      "services_compiler_warnings": 0,
+      "source_fixtures": "passed",
+      "original_Intel_ABI_audit": "passed",
+      "services_sha256": "c04c5d633a3b287475f0f691768d5ff61c1780607b75c73b588318d92f98dc81"
+    }
+  ],
+  "hardware_status": "pending",
+  "GPU_execution_enabled": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
+  "updated_common_client_sha256": "80e21da2527ed251c79bf5ba0cfeaa75721a8bd466cbf58ca1da374e5fc304c3"
+}

@@ -74,10 +74,11 @@
     "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
     "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
   },
-  "hardware_status": "pending",
+  "hardware_status": "passed device-intel on all three heaps and first real 8192/8-byte allocations; stopped at 4-byte alignment=16 request",
   "GPU_execution_enabled": false,
   "GPU_DMA_coherence_or_protection_enforcement_verified": false,
   "proprietary_libraries_executed_in_cloud": false,
   "display_parent_changed": false,
-  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
+  "hardware_result": "d2500hn-small-alignment.json"
 }
