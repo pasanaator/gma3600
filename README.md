@@ -31,6 +31,8 @@ The original Intel CONNECT/free test and both
 The services 0.9.1 [original Intel enumeration and allocation tests](docs/SGX545-ENUMERATION-TESTING.md)
 also passed on the Atom. A new [private initializer capture tool](docs/SGX545-INITIALIZER-CAPTURE.md)
 can now observe the unmodified i386 Intel initializer's real requests on that hardware.
+Transport 0.1.1 fixes the PCI-only open seen in the first real capture; rebuild
+the private bundle before repeating it.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

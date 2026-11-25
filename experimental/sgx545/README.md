@@ -27,6 +27,8 @@ including retained allocations released on unload. Services 0.9.1 fixes the
 [The 0.9.1 hardware tests passed](../../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic is [real Intel initializer capture](../../docs/SGX545-INITIALIZER-CAPTURE.md),
 using a private runtime and limited libdrm transport with the existing child.
+Use transport 0.1.1: the first 0.1.0 capture stopped before the bridge because
+Intel selects `pci:0000:00:02.0` with a NULL driver name.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result

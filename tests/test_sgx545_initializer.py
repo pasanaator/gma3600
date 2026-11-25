@@ -50,7 +50,7 @@ class InitializerTests(unittest.TestCase):
     def test_runtime_and_intel_artifact_hashes_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = {"schema": 1, "transport_version": "0.1.0", "artifact_sha256": {}}
+            manifest = {"schema": 1, "transport_version": "0.1.1", "artifact_sha256": {}}
             for name in runner.ARTIFACTS:
                 file = folder / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -58,6 +58,10 @@ class InitializerTests(unittest.TestCase):
                 manifest["artifact_sha256"][name] = hashlib.sha256(file.read_bytes()).hexdigest()
             (folder / "bundle.json").write_text(json.dumps(manifest))
             runner.verify_bundle(folder)
+            (folder / "bundle.json").write_text(json.dumps({**manifest, "transport_version": "0.1.0"}))
+            with self.assertRaisesRegex(ValueError, "Rebuild.*0.1.1"):
+                runner.verify_bundle(folder)
+            (folder / "bundle.json").write_text(json.dumps(manifest))
             (folder / "sysroot/lib/i386-linux-gnu/libc.so.6").write_bytes(b"changed")
             with self.assertRaisesRegex(ValueError, "artifact changed"):
                 runner.verify_bundle(folder)
@@ -135,7 +139,7 @@ class InitializerTests(unittest.TestCase):
             status_path, status = self.target(folder / "sys")
             report = folder / "report.json"
             argv = ["run", "--bundle", str(folder), "--capture", "--report", str(report)]
-            manifest = {"artifact_sha256": {"fixture": "mock"}}
+            manifest = {"transport_version": "0.1.1", "artifact_sha256": {"fixture": "mock"}}
             def child(*args, **kwargs):
                 self.assertEqual(json.loads(report.read_text())["outcome"], "capture_pending")
                 self.assertNotIn("LD_PRELOAD", kwargs["env"])

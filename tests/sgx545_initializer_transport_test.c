@@ -40,6 +40,20 @@ int main(void)
 	assert(input != MAP_FAILED && (unsigned long)input <= 0xfffff000UL);
 	assert(drmOpen("i915", NULL) == -EINVAL && !opens);
 	assert(drmOpen("psb", "pci:0:2:0") == -EINVAL && !opens);
+	assert(drmOpen(NULL, NULL) == -EINVAL && !opens);
+	assert(drmOpen(NULL, "pci:0000:00:03.0") == -EINVAL && !opens);
+	assert(drmOpen(NULL, "pci:0001:00:02.0") == -EINVAL && !opens);
+	assert(drmOpen(NULL, "pci:0000:00:02.1") == -EINVAL && !opens);
+	assert(drmOpen("i915", "pci:0000:00:02.0") == -EINVAL && !opens);
+	/* Reproduce the observed Intel selector, then its master check and first
+	 * bridge request on the returned file. This failed before the PCI fix. */
+	fd = drmOpen(NULL, "pci:0000:00:02.0");
+	assert(fd > 0 && !drmCommandNone(fd, 21));
+	assert(!drmCommandWrite(fd, 0x12, &wire, 28) && ioctls == 1);
+	assert(!drmClose(fd) && !descriptor_count);
+	ioctls = 0;
+	fd = drmOpen("psb", "pci:0000:00:02.0");
+	assert(fd > 0 && !drmClose(fd));
 	fail_open = 1;
 	assert(drmOpen("psb", NULL) == -EACCES);
 	fail_open = 0; fd = drmOpen("psb", NULL); other = drmOpen("pvrsrvkm", NULL);

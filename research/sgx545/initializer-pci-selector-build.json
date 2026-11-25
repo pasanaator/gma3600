@@ -1,0 +1,35 @@
+{
+  "transport_version": "0.1.1",
+  "services_module_version_unchanged": "0.9.1",
+  "hardware_evidence": "d2500hn-initializer-open.json",
+  "scope": "Fix only the PCI-only open rejected before the real initializer could send bridge requests",
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 20,
+    "native_transport_sanitizers": [
+      "AddressSanitizer",
+      "UndefinedBehaviorSanitizer"
+    ],
+    "i386_bundle_build": "passed without compiler/linker warnings",
+    "project_owned_i386_fixture_under_QEMU": "passed; loader, runtime and exact selector validation",
+    "exact_Intel_sequence_with_mocked_backend": "PCI-only open, master check, bridge command and close passed",
+    "other_PCI_domains_devices_functions_and_conflicting_names": "rejected before opening a file",
+    "proprietary_libraries_executed_in_cloud": false
+  },
+  "artifact_sha256": {
+    "sgx545-initializer": "86fa8a03a51497f441405d2292480d2684bcc0582ca65f28c2c8994ccfc112e5",
+    "lib/libdrm.so.2": "6e6832b464065a6c1230efcfd0acfe36ec1057296eda01027e2306d88ff80759",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_capture_after_fix": "pending",
+  "GPU_execution_enabled": false,
+  "kernel_or_display_driver_changed": false,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

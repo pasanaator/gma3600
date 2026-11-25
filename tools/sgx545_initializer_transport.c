@@ -33,18 +33,35 @@ static int owned(int fd)
 	return 0;
 }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.1.1"; }
+
+EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
+{
+	/* Intel selects the integrated GPU by PCI address, with a NULL name.
+	 * Named opens are also supported, but neither selector may identify a
+	 * different driver/device. Never turn this into general DRM discovery. */
+	return (name || busid) &&
+		(!name || !strcmp(name, "psb") || !strcmp(name, "pvrsrvkm")) &&
+		(!busid || !strcmp(busid, "pci:0000:00:02.0"));
+}
 
 EXPORT int drmOpen(const char *name, const char *busid)
 {
 	int fd;
 	fprintf(stderr, "TRANSPORT open name=%s busid=%s\n", name ? name : "(null)", busid ? busid : "(null)");
-	if (!name || (strcmp(name, "psb") && strcmp(name, "pvrsrvkm")) || busid)
+	if (!gma3600_sgx_transport_accepts_device(name, busid)) {
+		fprintf(stderr, "BLOCK open selector\n");
 		return -EINVAL;
+	}
 	if (descriptor_count == 32) return -EMFILE;
 	fd = transport_open("/dev/gma3600-sgx-bridge", O_RDWR | O_CLOEXEC);
-	if (fd < 0) return -errno;
+	if (fd < 0) {
+		int error = errno;
+		fprintf(stderr, "TRANSPORT open_failed errno=%d\n", error);
+		return -error;
+	}
 	descriptors[descriptor_count++] = fd;
+	fprintf(stderr, "TRANSPORT opened fd=%d\n", fd);
 	return fd;
 }
 
@@ -71,7 +88,7 @@ EXPORT int drmDropMaster(int fd)
 
 EXPORT int drmCommandNone(int fd, unsigned long command)
 {
-	fprintf(stderr, "TRANSPORT none command=%lu\n", command);
+	fprintf(stderr, "TRANSPORT none command=%lu fd=%d\n", command, fd);
 	if (!owned(fd)) return -EBADF;
 	/* Original PVR_DRM_IS_MASTER_CMD. The kernel still checks initializer
 	 * capability/ownership; no KMS master is acquired or released here. */

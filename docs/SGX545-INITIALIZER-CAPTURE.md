@@ -1,5 +1,13 @@
 # Capture the real Intel initializer's requests
 
+**Current transport: 0.1.1.** The first real capture loaded the Intel libraries
+but stopped at `drmOpen(NULL, "pci:0000:00:02.0")`: transport 0.1.0 rejected PCI-only
+opens. No bridge commands ran, and the supplied unload log confirmed zero pages
+and blocked accesses. Version 0.1.1 accepts this exact integrated-GPU selector,
+keeps rejecting other devices, and logs the opened fd or open error. Rebuild the
+private bundle before repeating capture; the kernel modules stay at 0.9.1.
+See the [hardware report](../research/sgx545/d2500hn-initializer-open.json).
+
 The [0.9.1 hardware tests passed](../research/sgx545/d2500hn-enumeration.json).
 The next diagnostic invokes the **unmodified Intel `SrvInit()`** with the
 original `libsrv_init.so` and `libsrv_um.so`, on the user's Intel GMA3600.
@@ -41,10 +49,14 @@ python3 tools/sgx545_initializer_run.py --bundle "$init_build" --selftest
 ```
 
 The final line must be `PASS: private i386 loader, project-owned fixture and
-limited libdrm transport`. This selftest executes only the open-source fixture,
+limited libdrm transport`, with `transport=0.1.1` in the loader line. This selftest
+checks the observed PCI-only selector and rejects other devices without opening
+hardware. It executes only the open-source fixture,
 including in cloud validation under QEMU. It does not initialize the GPU.
 The pinned dependency list and validation results are recorded in
 [the build record](../research/sgx545/initializer-capture-build.json).
+The [0.1.1 validation record](../research/sgx545/initializer-pci-selector-build.json)
+also covers PCI open, master check and bridge forwarding with a mocked backend.
 
 ## Capture on the Atom, using a fresh services child
 

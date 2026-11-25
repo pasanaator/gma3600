@@ -24,7 +24,9 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("schema") != 1 or manifest.get("transport_version") != "0.1.0" or set(hashes) != ARTIFACTS:
+    if manifest.get("transport_version") != "0.1.1":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.1.1 is required")
+    if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
         if hashlib.sha256((bundle / name).read_bytes()).hexdigest() != expected:
@@ -132,6 +134,7 @@ def main():
             after, cleanup_ok = {"status_error": str(error)}, False
         outcome = "initializer_returned_failure_with_clean_resources" if code == 3 and cleanup_ok else "inspect_report"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
+                  "transport_version": manifest["transport_version"],
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
                   "bundle_artifact_sha256": manifest["artifact_sha256"],
