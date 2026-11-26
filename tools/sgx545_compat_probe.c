@@ -29,6 +29,7 @@ _Static_assert(sizeof(struct sgx545_init_control) == 24, "initializer control AB
 _Static_assert(sizeof(struct sgx545_init_content) == 48, "initializer content ABI");
 _Static_assert(sizeof(struct sgx545_native_cycle) == 48, "native CPU cycle ABI");
 _Static_assert(sizeof(struct sgx545_native_runtime) == 56, "native binding lease ABI");
+_Static_assert(sizeof(struct sgx545_bm_check) == 48, "native BM alias ABI");
 static int original_intel_abi;
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
@@ -961,6 +962,31 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
                 fail("retained native query reply", response.state.bound);
             stage_query(control_fd, other, message.stage, 11, total_pages);
         }
+        if (native_mode == 4) {
+            struct sgx545_bm_check check = {.services = other, .stage = message.stage};
+            temporary = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+            if (temporary >= 0xfffff001U) fail("BM copyout page", temporary);
+            *(volatile struct sgx545_bm_check *)temporary = check;
+            expect("BM copyout mprotect", sys3(125, temporary, 4096, 1), 0);
+            expect("BM aliases are retired before a reply fault", sys3(54, control_fd, SGX545_IOCTL_BM_CHECK, temporary), -14);
+            expect("BM copyout munmap", sys3(91, temporary, 4096, 0), 0);
+            for (i = 0; i < 11; i++) {
+                struct sgx545_init_content content;
+                check = (struct sgx545_bm_check){.services = other, .stage = message.stage, .index = i};
+                expect("native BM wrap/getters/PTE/free/reuse", sys3(54, control_fd, SGX545_IOCTL_BM_CHECK, ptr(&check)), 0);
+                if (check.token != allocations[i].kernel_mem || check.original_address != allocations[i].mem.device_address ||
+                    !check.alias_address || check.alias_address == check.original_address || (check.alias_address & 4095) ||
+                    check.bytes != allocations[i].mem.alloc_size || check.pages != (check.bytes + 4095) / 4096 ||
+                    check.memory_flags != allocations[i].mem.flags || check.passes != 2 || check.pt_before != check.pt_after)
+                    fail("native BM reply", check.passes);
+                content = content_query(control_fd, other, message.stage, i);
+                if (content.flags || content.current_hash != expected_content[i].hash) fail("native BM preserved backing bytes", i);
+            }
+            response = request; response.operation = SGX545_NATIVE_QUERY;
+            expect("native binding survived real BM map/free", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), 0);
+            stage_query(control_fd, other, message.stage, 11, total_pages);
+            say("PASS: native BM wrapping, real handle getters, CPU-order physical/PTE readback, GPU permissions, two VA reuse cycles, retirement and unchanged backing on 11 buffers\n");
+        }
         response = request; response.operation = SGX545_NATIVE_UNBIND;
         expect("explicit native unbind", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), 0);
         if (response.state.bound || response.state.restored != 1) fail("native unbind restored state", response.state.restored);
@@ -1018,10 +1044,10 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 native_cycle=48 native_runtime=56 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 native_cycle=48 native_runtime=56 bm_check=48 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | --native-cycle | --native-runtime | --native-runtime-close | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | --native-cycle | --native-runtime | --native-runtime-close | --native-bm | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
@@ -1033,6 +1059,7 @@ int probe_main(unsigned *initial_stack)
 		else if (same(argv[1], "--device-intel")) { init_mode = 6; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage")) { init_mode = 8; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage-close")) { init_mode = 9; original_intel_abi = 1; }
+		else if (same(argv[1], "--native-bm")) { init_mode = 14; original_intel_abi = 1; }
 		else if (same(argv[1], "--native-runtime")) { init_mode = 12; original_intel_abi = 1; }
 		else if (same(argv[1], "--native-runtime-close")) { init_mode = 13; original_intel_abi = 1; }
 		else if (same(argv[1], "--native-cycle")) { init_mode = 11; original_intel_abi = 1; }

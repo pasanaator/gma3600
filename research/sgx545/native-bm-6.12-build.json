@@ -1,0 +1,123 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.15.0",
+  "private_transport_version": "0.7.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-native-runtime.json",
+  "changes": [
+    "Add root-only per-stage/per-buffer 48-byte BM_CHECK with file service-token, stage/PID/capability, content and no-live-CPU-VMA checks",
+    "Call actual native WrapMemory through a restricted constructor for kernel-only scatter/WC aliases of existing pinned backing; preserve coherency, EDM and read/write PTE attributes",
+    "Verify real BM CPU/OS/GPU handle getters, BM_GetPhysPageAddr for every CPU-order page, native PTE attributes, BM_Free retirement, table counts/capacity and two matching VA reuse cycles",
+    "Fix WrapMemory failure cleanup to unregister only when an OS memory handle was actually obtained; failed registration must not unregister caller-owned CPU memory with a NULL handle",
+    "Preserve the original allocations and addresses, verify their contents/PTEs after alias cleanup, and quarantine original pins if retirement cannot be proven",
+    "Run BM checks while the native CPU binding is retained, then query that binding again before content readback, unbind and abort",
+    "Expose cumulative bm_checks and bm_errors; successful capture requires complete matching BM/content rows and clean error/resource counters",
+    "Enforce four public firmware sizes: CMDTA_SHARED=480, TRANSFERCMD_SHARED=220, HOST_CTL=68 and COMMAND=32; audit shared-command member offsets independently from original Intel i386 source",
+    "Upgrade compiler-only ABI metadata schema to 3; nine private firmware structure definitions remain unavailable and require future firmware confirmation"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 27,
+    "native_BM_source": "ASan/UBSan for both profiles; actual WrapMemory, DevMemoryAlloc, DevMemoryFree, FreeBuf, BM_Free and getter bodies; BM buffer/mapping definitions from native headers; OS registration/device/MMU callbacks mocked",
+    "native_BM_cases": [
+      "two complete native wrap/free/getter cycles with VA reuse",
+      "five allocation failure positions",
+      "OS registration failure with NULL-handle cleanup guard",
+      "MMU allocation failure after registration",
+      "bad physical getter/PTE detection",
+      "uncertain retirement reported as EUCLEAN",
+      "unchanged populated backing",
+      "read-only/write-only/RW/coherent/EDM attributes"
+    ],
+    "actual_native_MMU": "actual source routines with allocation seams; observation of live PTEs returns EUCLEAN without unmapping; retired aliases and table/capacity checks pass; existing scatter/boundary/rollback cases pass",
+    "actual_bridge_functions": "ASan/UBSan; service/PID/output validation, checks while bound, normal counts, allocation errors retaining a usable stage, and uncertain alias retirement quarantining pins; existing lifetime tests remain passing",
+    "actual_ELF32_transport_mock": "21 full handoff scenarios passed under QEMU, including BM ioctl failures, bad replies and failed post-BM native query, with unbind/abort cleanup",
+    "private_fixture": "0.7.0 project-owned i386 loader/fixture passed under QEMU; no proprietary library execution",
+    "report_gates": "missing/mismatched BM rows, bad alias/size/permissions/counts, failed reuse/retirement or incomplete native/content/resource checks cannot report native_bm_verified_with_clean_resources"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "compiled_core_inputs_match_final_repository": true,
+      "services_compiler_warnings": 0,
+      "actual_native_BM_MMU_and_initializer_source_fixtures": "passed ASan/UBSan for both profiles",
+      "original_Intel_ABI_audit": "passed schema 3; original i386, compat i386 and actual amd64 public firmware controls and offsets match",
+      "firmware_fields": {
+        "firmware_command_bytes": 32,
+        "firmware_ccb_bytes": 8192,
+        "firmware_ccb_control_bytes": 8,
+        "firmware_host_control_bytes": 68,
+        "firmware_power_offset": 4,
+        "firmware_interrupt_offset": 32,
+        "firmware_interrupt_clear_offset": 36,
+        "firmware_ta_shared_bytes": 480,
+        "firmware_ta_source_sync_offset": 48,
+        "firmware_ta_dependency_offset": 176,
+        "firmware_ta_status_offset": 192,
+        "firmware_transfer_shared_bytes": 220,
+        "firmware_transfer_src_offset": 4,
+        "firmware_transfer_dst_offset": 136,
+        "firmware_transfer_status_offset": 188
+      },
+      "services_sha256": "54a0491add00af8a723c560fd51d21310c91bd15340ddfebebe853cabdee1155",
+      "client_sha256": "dbc3bd93b5d13f478f33c1178df4a65a59c4abb1d9468615527ede451ef19f98"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "compiled_core_inputs_match_final_repository": true,
+      "services_compiler_warnings": 0,
+      "actual_native_BM_MMU_and_initializer_source_fixtures": "passed ASan/UBSan for both profiles",
+      "original_Intel_ABI_audit": "passed schema 3; original i386, compat i386 and actual amd64 public firmware controls and offsets match",
+      "firmware_fields": {
+        "firmware_command_bytes": 32,
+        "firmware_ccb_bytes": 8192,
+        "firmware_ccb_control_bytes": 8,
+        "firmware_host_control_bytes": 68,
+        "firmware_power_offset": 4,
+        "firmware_interrupt_offset": 32,
+        "firmware_interrupt_clear_offset": 36,
+        "firmware_ta_shared_bytes": 480,
+        "firmware_ta_source_sync_offset": 48,
+        "firmware_ta_dependency_offset": 176,
+        "firmware_ta_status_offset": 192,
+        "firmware_transfer_shared_bytes": 220,
+        "firmware_transfer_src_offset": 4,
+        "firmware_transfer_dst_offset": 136,
+        "firmware_transfer_status_offset": 188
+      },
+      "services_sha256": "036dbc13aa6aa1686dfa6da0423d06e32ef03b42abf459802f86ebdbdae41c11",
+      "client_sha256": "dbc3bd93b5d13f478f33c1178df4a65a59c4abb1d9468615527ede451ef19f98"
+    }
+  ],
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "7efb663cf306478c19aa7b970582684d1305a8ec1ae163669829cbd3ee9b5c50",
+    "lib/libdrm.so.2": "0eb4bd775e79936edbdc9ff407ece5b1739bd9b955d4bc79cb29a9204745bade",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending --native-bm and real Intel native BM alias capture",
+  "hardware_expected": {
+    "synthetic_bm_checks": 12,
+    "real_bm_checks": 15,
+    "bm_errors": 0,
+    "native_bindings_after": 0,
+    "unload_pages_live": 0
+  },
+  "GPU_execution_enabled": false,
+  "GPU_DMA_or_firmware_compatibility_verified": false,
+  "allocator_replaced": false,
+  "native_BM_objects_retained": false,
+  "native_ResMan_registration_enabled": false,
+  "display_parent_changed": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

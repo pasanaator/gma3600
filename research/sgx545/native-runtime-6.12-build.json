@@ -67,7 +67,7 @@
     "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
     "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
   },
-  "hardware_status": "pending --native-runtime, --native-runtime-close and real Intel retained binding capture",
+  "hardware_status": "passed --native-runtime, --native-runtime-close and real Intel retained binding capture; see d2500hn-native-runtime.json",
   "GPU_execution_enabled": false,
   "native_BM_or_ResMan_registration_enabled": false,
   "GPU_DMA_or_firmware_compatibility_verified": false,

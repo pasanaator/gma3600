@@ -35,10 +35,13 @@ The real initializer now allocates coherent/EDM buffers and obtains mapping meta
 The latest Atom run passed all 15 Intel CPU mapping releases: 97,660 bytes
 remained unchanged after every CPU VMA closed, with clean teardown.
 The native CPU bind/CCB write/readback/restore test also passed with the real
-Intel initializer. Services 0.14.0 and transport 0.6.0 now retain that binding
-across calls with file ownership, query/unbind, transactional reply handling,
-and automatic abort/last-close/detach cleanup before staged RAM is released.
-This new retained lifetime awaits hardware testing. Rebuild the child and private bundle.
+Intel initializer. Retained binding, explicit abort and last-close cleanup also
+passed on the Atom. Services 0.15.0 / transport 0.7.0 now exercise the native
+buffer manager's kernel-only wrapping, handle getters, PTE permissions, free
+and VA reuse through temporary aliases of the staged pages. The current
+allocator keeps the original GPU addresses. Four public firmware layouts are
+now enforced and independently audited against Intel's source. This new native
+BM path awaits hardware testing; rebuild the child and private bundle.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

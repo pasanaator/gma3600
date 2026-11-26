@@ -279,6 +279,19 @@ int main(void)
     fail_pt_at = 0;
     assert(!gma3600_sgx_mmu_exercise(&heap, physical, 4, 1, &out));
     persistent_bindings(&heap, physical);
+    {
+        struct gma_sgx_mmu_binding alias = {0};
+        unsigned before, tables, address;
+        assert(!gma3600_sgx_mmu_checkpoint(&heap, &before, &tables) && !tables);
+        assert(!gma3600_sgx_mmu_bind_flags(&heap, physical, 4, 4096, PVRSRV_MEM_READ, &alias));
+        address = alias.address;
+        assert(gma3600_sgx_mmu_retired(&heap, address, alias.bytes, before, &tables) == -EUCLEAN);
+        assert(alias.live && reservations && pt_pages); /* An observation never unmaps live pages. */
+        assert(!gma3600_sgx_mmu_unbind(&alias));
+        assert(!gma3600_sgx_mmu_retired(&heap, address, 16384, before, &tables) && !tables);
+        assert(gma3600_sgx_mmu_retired(&heap, address, 16384, before - 1, &tables) == -EUCLEAN);
+        assert(gma3600_sgx_mmu_retired(&heap, address + 1, 16384, before, &tables) == -EINVAL);
+    }
     /* Repeated frees in a partial, single-PT heap must preserve capacity too. */
     arena_desc.ui32Size = 127 * 4096;
     heap.ui32PageTableCount = 1; heap.ui32PTETotalUsable = 127;

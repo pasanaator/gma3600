@@ -19,9 +19,9 @@ class InitAbiAuditTests(unittest.TestCase):
     def test_section_schema_rejects_truncation_unknown_magic_and_version(self):
         names = audit.field_names()
         values = [0] * len(names)
-        values[:2] = [0x53475841, 2]
+        values[:2] = [0x53475841, 3]
         encoded = struct.pack("<" + "I" * len(values), *values)
-        self.assertEqual(audit.decode_manifest(encoded, names)["version"], 2)
+        self.assertEqual(audit.decode_manifest(encoded, names)["version"], 3)
         for invalid in (encoded[:-1], encoded + b"\0", b"BAD!" + encoded[4:],
                         encoded[:4] + struct.pack("<I", 1) + encoded[8:]):
             with self.assertRaises(ValueError):

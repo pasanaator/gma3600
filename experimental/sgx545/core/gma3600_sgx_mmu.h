@@ -22,4 +22,7 @@ int gma3600_sgx_mmu_bind_flags(void *heap, const __u32 *physical, __u32 count,
 int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *physical,
 	__u32 count, __u32 *tables);
 int gma3600_sgx_mmu_unbind(struct gma_sgx_mmu_binding *binding);
+/* Inspect native BM-owned aliases without taking or freeing their VA lease. */
+int gma3600_sgx_mmu_checkpoint(void *heap, __u32 *capacity, __u32 *tables);
+int gma3600_sgx_mmu_retired(void *heap, __u32 address, __u32 bytes, __u32 capacity, __u32 *tables);
 #endif

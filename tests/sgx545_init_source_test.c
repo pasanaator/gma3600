@@ -30,7 +30,7 @@ static void setup(unsigned count)
     wire.info.hwperf = 106; wire.info.ta_signature = 107; wire.info.signature_3d = 108;
     wire.info.build_options = caps.build_options;
     memcpy(wire.info.struct_sizes, caps.struct_sizes, sizeof(caps.struct_sizes));
-    for (i = 0; i < 11; i++) wire.info.struct_sizes[i] = (i + 1) * 4;
+    for (i = 0; i < 11; i++) if (!caps.struct_sizes[i]) wire.info.struct_sizes[i] = (i + 1) * 4;
     wire.info.scripts.part1[0] = (struct sgx545_init_command32){1, 0x80, 0x12345678};
     wire.info.scripts.part1[1].op = 2;
     wire.info.scripts.part1[63].op = 0xffffffff; /* Unused tail is normalized, not executed. */
@@ -101,6 +101,10 @@ int main(void)
     setup(9); wire.info.mem_handles[17] = wire.info.ccb;
     assert(gma_sgx_init_tokens(&wire, tokens, &count) == -EINVAL);
     setup(9); wire.info.build_options ^= 0x80;
+    assert(gma_sgx_init_translate(&wire, memory, 9, &output) == -EPROTO); zero_output();
+    setup(9); wire.info.struct_sizes[1] += 4;
+    assert(gma_sgx_init_translate(&wire, memory, 9, &output) == -EPROTO); zero_output();
+    setup(9); wire.info.struct_sizes[3] += 4;
     assert(gma_sgx_init_translate(&wire, memory, 9, &output) == -EPROTO); zero_output();
     setup(9); wire.info.struct_sizes[11]++;
     assert(gma_sgx_init_translate(&wire, memory, 9, &output) == -EPROTO); zero_output();

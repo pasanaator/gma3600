@@ -24,8 +24,10 @@ runner = load("sgx545_initializer_run")
 
 
 def content_trace():
-    lines = ["RUNTIME bound=1 queried=1 unbound=1 buffers=11 pages=40 errno=0 gpu_execution=disabled", "NATIVE bound=1 restored=1 ccb_bytes=8192 slots=256 read=0 write=0 roundtrip=1 buffers=11 pages=40 gpu_execution=disabled", "HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=40 errno=0 gpu_execution=disabled"]
+    lines = ["RUNTIME bound=1 queried=1 unbound=1 buffers=11 pages=11 errno=0 gpu_execution=disabled", "NATIVE bound=1 restored=1 ccb_bytes=8192 slots=256 read=0 write=0 roundtrip=1 buffers=11 pages=11 gpu_execution=disabled", "HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=11 errno=0 gpu_execution=disabled"]
+    lines.append("BM_SUMMARY checked=11 buffers=11 pages=11 errno=0 gpu_execution=disabled")
     for i in range(11):
+        lines.append(f"BM index={i} handle={0x100+i:08x} original={0xf2000000+i*4096:08x} alias={0xf3000000+i*4096:08x} bytes=4 pages=1 memory_flags=0202420b passes=2 pt_before=1 pt_after=1")
         lines.append(f"CONTENT index={i} handle={0x100+i:08x} bytes=4 address={0xf2000000+i*4096:08x} memory_flags=0202420b "
                      "baseline=12345678 current=12345678 nonzero=1 padding_nonzero=0 changed=0 mapped=0")
         lines.append(f"MAP_RELEASE handle={0x100+i:08x} unmap=1 address={0x70000000+i*4096:08x} bytes=4096")
@@ -60,7 +62,7 @@ class InitializerTests(unittest.TestCase):
     def test_runtime_and_intel_artifact_hashes_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = {"schema": 1, "transport_version": "0.6.0", "artifact_sha256": {}}
+            manifest = {"schema": 1, "transport_version": "0.7.0", "artifact_sha256": {}}
             for name in runner.ARTIFACTS:
                 file = folder / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +71,7 @@ class InitializerTests(unittest.TestCase):
             (folder / "bundle.json").write_text(json.dumps(manifest))
             runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps({**manifest, "transport_version": "0.1.0"}))
-            with self.assertRaisesRegex(ValueError, "Rebuild.*0.6.0"):
+            with self.assertRaisesRegex(ValueError, "Rebuild.*0.7.0"):
                 runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps(manifest))
             (folder / "sysroot/lib/i386-linux-gnu/libc.so.6").write_bytes(b"changed")
@@ -81,7 +83,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host2",
-            "module/gma3600_sgx_services/version": "0.14.0",
+            "module/gma3600_sgx_services/version": "0.15.0",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +94,7 @@ class InitializerTests(unittest.TestCase):
         status = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled", "pages_live": "4"}
         status.update({key: "0" for key in ("blocked_hw_accesses", "init_ran", "files", "connections", "bridge_errors",
             "heap_handles", "init_running", "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases",
-            "device_allocations", "device_pages", "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors")})
+            "device_allocations", "device_pages", "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors", "bm_errors")})
         p = root / "bus/auxiliary/devices/gma3600.sgx.0/services"
         p.parent.mkdir(parents=True)
         return p, status
@@ -105,7 +107,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.14.0")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.15.0")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1")):
                 self.write_status(path, {**status, key: value})
@@ -130,7 +132,7 @@ class InitializerTests(unittest.TestCase):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
             (root / "module/gma3600_sgx_services/version").write_text("0.9.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.14.0"):
+            with self.assertRaisesRegex(ValueError, "services 0.15.0"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):
@@ -144,12 +146,12 @@ class InitializerTests(unittest.TestCase):
         self.assertEqual(capture[2], "/bundle/lib:/bundle/sysroot/lib/i386-linux-gnu")
 
     def test_handoff_report_requires_complete_cpu_cycle(self):
-        line = "HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=40 errno=0 gpu_execution=disabled\n"
+        line = "HANDOFF validated=1 staged=1 queried=1 aborted=1 buffers=11 pages=11 errno=0 gpu_execution=disabled\n"
         self.assertTrue(runner.handoff_status(line)["cpu_cycle_passed"])
         self.assertIsNone(runner.handoff_status("BRIDGE command=6 in=24 out=76\n"))
         for old, new in (("queried=1", "queried=0"), ("aborted=1", "aborted=0"),
                          ("errno=0", "errno=5"), ("buffers=11", "buffers=8"),
-                         ("pages=40", "pages=1")):
+                         ("pages=11", "pages=1")):
             self.assertFalse(runner.handoff_status(line.replace(old, new))["cpu_cycle_passed"])
         failed = line.replace("errno=0", "errno=5")
         self.assertFalse(runner.handoff_status(line + failed)["cpu_cycle_passed"])
@@ -181,7 +183,8 @@ class InitializerTests(unittest.TestCase):
         for old, new in (("current=12345678", "current=12345679"), ("changed=0", "changed=1"),
                          ("handle=00000101", "handle=00000100"), ("bytes=44", "bytes=45"),
                          ("nonzero=1", "nonzero=5"), ("errno=0", "errno=5")):
-            changed = trace.replace(old, new, 1) if old != "errno=0" else trace.replace("changed=0 errno=0 mapped=0", "changed=0 errno=5 mapped=0")
+            content_trace_only = "\n".join(line for line in trace.splitlines() if not line.startswith("BM"))
+            changed = content_trace_only.replace(old, new, 1) if old != "errno=0" else content_trace_only.replace("changed=0 errno=0 mapped=0", "changed=0 errno=5 mapped=0")
             self.assertFalse(runner.content_status(changed, runner.handoff_status(changed))["verified"])
         partial = "\n".join(line for line in trace.splitlines() if not line.startswith("CONTENT index=10 "))
         self.assertFalse(runner.content_status(partial, handoff)["verified"])
@@ -194,7 +197,7 @@ class InitializerTests(unittest.TestCase):
         for old, new in (("bound=1", "bound=0"), ("restored=1", "restored=0"), ("slots=256", "slots=128"),
                          ("read=0 write=0", "read=0 write=1"), ("read=0 write=0", "read=256 write=256"),
                          ("roundtrip=1", "roundtrip=0"), ("ccb_bytes=8192", "ccb_bytes=32"),
-                         ("buffers=11 pages=40", "buffers=10 pages=40")):
+                         ("buffers=11 pages=11", "buffers=10 pages=11")):
             self.assertFalse(runner.native_cycle_status(next(line for line in trace.splitlines() if line.startswith("NATIVE ")).replace(old, new, 1), handoff)["verified"])
         self.assertFalse(runner.native_cycle_status("", handoff)["verified"])
         self.assertFalse(runner.native_cycle_status(trace + trace, handoff)["verified"])
@@ -207,11 +210,24 @@ class InitializerTests(unittest.TestCase):
         trace = content_trace(); handoff = runner.handoff_status(trace)
         self.assertTrue(runner.native_runtime_status(trace, handoff)["verified"])
         for old, new in (("bound=1", "bound=0"), ("queried=1", "queried=0"), ("unbound=1", "unbound=0"),
-                         ("buffers=11", "buffers=10"), ("pages=40", "pages=39"), ("errno=0", "errno=5")):
+                         ("buffers=11", "buffers=10"), ("pages=11", "pages=39"), ("errno=0", "errno=5")):
             self.assertFalse(runner.native_runtime_status(trace.replace(old, new, 1), handoff)["verified"])
         self.assertFalse(runner.native_runtime_status("", handoff)["verified"])
         self.assertFalse(runner.native_runtime_status(trace + trace, handoff)["verified"])
-        self.assertEqual(runner.first_failed_request("BRIDGE command=99 in=2068 out=8\nRUNTIME bound=1 queried=0 unbound=1 buffers=11 pages=40 errno=5 gpu_execution=disabled\n")["phase"], "native_runtime")
+        self.assertEqual(runner.first_failed_request("BRIDGE command=99 in=2068 out=8\nRUNTIME bound=1 queried=0 unbound=1 buffers=11 pages=11 errno=5 gpu_execution=disabled\n")["phase"], "native_runtime")
+
+    def test_native_bm_requires_matching_buffers_reuse_and_retirement(self):
+        trace = content_trace(); handoff = runner.handoff_status(trace)
+        contents = runner.content_status(trace, handoff)
+        self.assertTrue(runner.bm_status(trace, handoff, contents)["verified"])
+        bm_lines = "\n".join(line for line in trace.splitlines() if line.startswith("BM"))
+        for old, new in (("alias=f3000000", "alias=f2000000"), ("alias=f3000000", "alias=f3000001"),
+                         ("passes=2", "passes=1"), ("pt_after=1", "pt_after=2"), ("bytes=4", "bytes=8"),
+                         ("pages=1 ", "pages=2 "), ("handle=00000100", "handle=00000101"), ("errno=0", "errno=5")):
+            self.assertFalse(runner.bm_status(bm_lines.replace(old, new, 1), handoff, contents)["verified"])
+        self.assertFalse(runner.bm_status("", handoff, contents)["verified"])
+        self.assertFalse(runner.bm_status(bm_lines + "\n" + bm_lines, handoff, contents)["verified"])
+        self.assertEqual(runner.first_failed_request("BRIDGE command=99 in=2068 out=8\nBM_SUMMARY checked=3 buffers=11 pages=3 errno=5 gpu_execution=disabled\n")["phase"], "native_bm")
 
     def test_mapping_release_requires_kernel_observed_unmapped_buffers(self):
         trace = content_trace()
@@ -233,7 +249,7 @@ class InitializerTests(unittest.TestCase):
             status_path, status = self.target(folder / "sys")
             report = folder / "report.json"
             argv = ["run", "--bundle", str(folder), "--capture", "--report", str(report)]
-            manifest = {"transport_version": "0.6.0", "artifact_sha256": {"fixture": "mock"}}
+            manifest = {"transport_version": "0.7.0", "artifact_sha256": {"fixture": "mock"}}
             def child(*args, **kwargs):
                 self.assertEqual(json.loads(report.read_text())["outcome"], "capture_pending")
                 self.assertNotIn("LD_PRELOAD", kwargs["env"])
@@ -258,7 +274,7 @@ class InitializerTests(unittest.TestCase):
                 run.return_value = runner.subprocess.CompletedProcess([], 3, "", content_trace())
                 self.assertEqual(runner.main(), 0)
                 result = json.loads(Path(argv[-1]).read_text())
-                self.assertEqual(result["outcome"], "native_runtime_verified_with_clean_resources")
+                self.assertEqual(result["outcome"], "native_bm_verified_with_clean_resources")
                 self.assertTrue(result["handoff"]["cpu_cycle_passed"])
                 self.assertTrue(result["contents"]["verified"])
                 self.assertTrue(result["mapping_releases"]["all_staged_cpu_mappings_released"])
@@ -271,6 +287,12 @@ class InitializerTests(unittest.TestCase):
                 argv[-1] = str(folder / "missing-runtime.json")
                 run.return_value = runner.subprocess.CompletedProcess([], 3, "", "\n".join(
                     line for line in content_trace().splitlines() if not line.startswith("RUNTIME ")))
+                self.assertEqual(runner.main(), 1)
+                self.assertEqual(json.loads(Path(argv[-1]).read_text())["outcome"], "inspect_report")
+                run.return_value = runner.subprocess.CompletedProcess([], 3, "", content_trace())
+                argv[-1] = str(folder / "missing-bm.json")
+                run.return_value = runner.subprocess.CompletedProcess([], 3, "", "\n".join(
+                    line for line in content_trace().splitlines() if not line.startswith("BM")))
                 self.assertEqual(runner.main(), 1)
                 self.assertEqual(json.loads(Path(argv[-1]).read_text())["outcome"], "inspect_report")
                 run.return_value = runner.subprocess.CompletedProcess([], 3, "", content_trace())

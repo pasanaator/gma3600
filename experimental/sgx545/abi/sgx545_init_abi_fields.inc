@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /* Shared compiler measurements, not an executable initialization interface. */
 SGX545_ABI_VALUE(magic, 0x53475841U)
-SGX545_ABI_VALUE(version, 2U)
+SGX545_ABI_VALUE(version, 3U)
 SGX545_ABI_VALUE(pointer_bytes, sizeof(void *))
 SGX545_ABI_VALUE(core_revision_profile, SGX_CORE_REV)
 SGX545_ABI_VALUE(build_options, SGX_BUILD_OPTIONS)
@@ -65,3 +65,11 @@ SGX545_ABI_VALUE(wire_enumerate_reply_bytes, sizeof(struct sgx545_intel_enumerat
 SGX545_ABI_VALUE(wire_device_identifier_bytes, sizeof(struct sgx545_intel_device_id32))
 SGX545_ABI_VALUE(wire_device_free_request_bytes, 12U + sizeof(struct sgx545_client_mem32))
 SGX545_ABI_VALUE(wire_device_free_reply_bytes, sizeof(struct sgx545_handle_out))
+SGX545_ABI_VALUE(firmware_ta_shared_bytes, sizeof(SGXMKIF_CMDTA_SHARED))
+SGX545_ABI_VALUE(firmware_ta_source_sync_offset, __builtin_offsetof(SGXMKIF_CMDTA_SHARED, asSrcSyncs))
+SGX545_ABI_VALUE(firmware_ta_dependency_offset, __builtin_offsetof(SGXMKIF_CMDTA_SHARED, sTA3DDependency))
+SGX545_ABI_VALUE(firmware_ta_status_offset, __builtin_offsetof(SGXMKIF_CMDTA_SHARED, sCtlTAStatusInfo))
+SGX545_ABI_VALUE(firmware_transfer_shared_bytes, sizeof(SGXMKIF_TRANSFERCMD_SHARED))
+SGX545_ABI_VALUE(firmware_transfer_src_offset, __builtin_offsetof(SGXMKIF_TRANSFERCMD_SHARED, asSrcSyncs))
+SGX545_ABI_VALUE(firmware_transfer_dst_offset, __builtin_offsetof(SGXMKIF_TRANSFERCMD_SHARED, asDstSyncs))
+SGX545_ABI_VALUE(firmware_transfer_status_offset, __builtin_offsetof(SGXMKIF_TRANSFERCMD_SHARED, sCtlStatusInfo))

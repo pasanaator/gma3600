@@ -1,0 +1,19 @@
+--- a/services4/srvkm/common/buffer_manager.c
++++ b/services4/srvkm/common/buffer_manager.c
+@@ -607,7 +607,7 @@
+ 	}
+ 
+ 	/* pMapping must be valid: if the allocation failed, we'd have returned */
+-	if(pMapping->CpuVAddr || pMapping->hOSMemHandle)
++	if(pMapping->hOSMemHandle)
+ 	{
+ 		switch(pMapping->eCpuMemoryOrigin)
+ 		{
+@@ -3483,3 +3483,7 @@
+ /******************************************************************************
+  End of file (buffer_manager.c)
+ ******************************************************************************/
++
++#if defined(GMA3600_SGX_PREPARE_ONLY)
++#include "gma3600_sgx_bm.inc"
++#endif

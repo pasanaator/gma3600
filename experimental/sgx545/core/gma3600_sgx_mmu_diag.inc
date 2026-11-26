@@ -185,6 +185,44 @@ out:
 #endif
 }
 
+int gma3600_sgx_mmu_checkpoint(void *native_heap, __u32 *capacity, __u32 *tables)
+{
+#if defined(FIX_HW_BRN_31620) || defined(SUPPORT_SGX_MMU_DUMMY_PAGE) || defined(SUPPORT_SGX_MMU_BYPASS)
+	return -EOPNOTSUPP;
+#else
+	MMU_HEAP *heap = native_heap;
+	if (!heap || heap->ui32DataPageSize != 4096 || heap->ui32PDShift != 22 ||
+	    heap->psDevArena->psDeviceMemoryHeapInfo->psLocalDevMemArena ||
+	    (heap->psDevArena->DevMemHeapType != DEVICE_MEMORY_HEAP_SHARED &&
+	     heap->psDevArena->DevMemHeapType != DEVICE_MEMORY_HEAP_SHARED_EXPORTED)) return -EOPNOTSUPP;
+	*capacity = heap->ui32PTETotalUsable; *tables = gma_mmu_table_count(heap);
+	return 0;
+#endif
+}
+
+int gma3600_sgx_mmu_retired(void *native_heap, __u32 address, __u32 bytes, __u32 capacity, __u32 *tables)
+{
+#if defined(FIX_HW_BRN_31620) || defined(SUPPORT_SGX_MMU_DUMMY_PAGE) || defined(SUPPORT_SGX_MMU_BYPASS)
+	return -EOPNOTSUPP;
+#else
+	MMU_HEAP *heap = native_heap;
+	IMG_UINT32 i, ignored;
+	if (gma3600_sgx_mmu_checkpoint(heap, &ignored, tables)) return -EOPNOTSUPP;
+	if (address && ((address & 4095) || !bytes || (bytes & 4095) ||
+	    (IMG_UINT64)address + bytes > 0x100000000ULL)) return -EINVAL;
+	OSMemoryBarrier();
+	for (i = 0; address && i < bytes; i += 4096) {
+		IMG_UINT32 page = address + i;
+		MMU_PT_INFO *pt = heap->psMMUContext->apsPTInfoList[page >> heap->ui32PDShift];
+		IMG_UINT32 index = (page & heap->ui32PTMask) >> heap->ui32PTShift;
+		if (pt && pt->PTPageCpuVAddr && (((IMG_UINT32 *)pt->PTPageCpuVAddr)[index] & SGX_MMU_PTE_VALID)) return -EUCLEAN;
+	}
+	gma_mmu_trim_empty(heap);
+	*tables = gma_mmu_table_count(heap);
+	return heap->ui32PTETotalUsable == capacity ? 0 : -EUCLEAN;
+#endif
+}
+
 int gma3600_sgx_mmu_exercise(void *native_heap, const __u32 *physical, __u32 count,
 	__u32 flags, struct sgx545_mmu_check *result)
 {

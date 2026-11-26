@@ -11,9 +11,10 @@
 #include "gma3600_sgx_mmu.h"
 
 typedef uint32_t u32;
+typedef uint64_t u64;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors; };
 struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; struct sgx545_content_measure content; };
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
@@ -35,6 +36,7 @@ int gma3600_sgx_mmu_verify(struct gma_sgx_mmu_binding *binding, const __u32 *phy
 { assert(binding->live && count == 4); *tables = 1; return 0; }
 int gma3600_sgx_mmu_unbind(struct gma_sgx_mmu_binding *binding)
 {
+    if (binding->failed) return -EIO;
     if (fail_unbind) { fail_unbind--; return -EIO; }
     if (binding->live) { assert(live_bindings > 0); live_bindings--; binding->live = 0; }
     return 0;
@@ -102,6 +104,15 @@ static int gma_sgx_init_translate(const struct sgx545_init2_in32 *wire,
 static int gma_sgx_init_check(const struct gma_sgx_native_init *out,
     const struct gma_sgx_init_memory *memory, u32 count)
 { assert(out->count == count); return memcmp(out->memory, memory, count * sizeof(*memory)) ? -EIO : 0; }
+static int fail_bm;
+static int gma3600_sgx_bm_cycle(void *heap, const __u32 *physical, __u32 count,
+    void *linear, __u32 bytes, __u32 flags, struct sgx545_bm_check *out)
+{
+    assert(heap && linear && bytes == 16384 && count == 4 && visiting_buffer && visiting_buffer->pins);
+    assert(physical[0] == 0x1000 && physical[1] == 0x9000 && physical[2] == 0x3000 && physical[3] == 0x7000);
+    if (fail_bm) { int ret = fail_bm; fail_bm = 0; return ret; }
+    out->passes = 2; out->alias_address = 0xf5800000; out->pt_before = out->pt_after = 1; return 0;
+}
 static unsigned native_calls;
 static int fail_native;
 static int gma3600_sgx_native_cycle(void *device, struct gma_sgx_native_init *snapshot, struct sgx545_native_cycle *out)
@@ -707,6 +718,33 @@ static void initializer_stage_lifetime(void)
             runtime.state.services = sibling->session.services; runtime.state.device = sibling->session.device;
             assert(stage_runtime(sibling, &runtime, publish_runtime, NULL) == -EPERM);
             assert(!bridge_release(NULL, &third) && native_live && b->stats.native_bindings == 1);
+            {
+                struct sgx545_bm_check check = {.services = controller->session.services, .stage = message.stage};
+                struct sgx545_bm_check prefix = check;
+                struct gma_sgx_device_allocation *a = b->stage->allocations;
+                check.services++; assert(stage_bm_check(controller, &check) == -ENOENT);
+                check = prefix; check.index = 9; assert(stage_bm_check(controller, &check) == -EINVAL);
+                check = prefix; check.token = 1; assert(stage_bm_check(controller, &check) == -EINVAL);
+                check = prefix; controller->owner = &foreign;
+                assert(stage_bm_check(controller, &check) == -EPERM); controller->owner = &current_pid;
+                for (i = 0; i < 9; i++) {
+                    check = prefix; check.index = i;
+                    assert(!stage_bm_check(controller, &check) && check.passes == 2 && check.pages == 4);
+                    assert(check.token == tokens[i] && check.original_address != check.alias_address);
+                }
+                assert(b->stats.bm_checks == 9);
+                check = prefix; fail_bm = -ENOMEM;
+                assert(stage_bm_check(controller, &check) == -ENOMEM && !b->stage->dirty && native_live);
+                assert(b->stats.bm_errors == 1);
+                if (mode == 9) {
+                    while (a->token != tokens[0]) a = a->next;
+                    check = prefix; fail_bm = -EUCLEAN;
+                    assert(stage_bm_check(controller, &check) == -EUCLEAN && b->stage->dirty && a->binding.failed);
+                    assert(b->stats.bm_errors == 2 && live_bindings == 9 && native_live);
+                    /* Test-only recovery: production quarantines the pinned RAM. */
+                    a->binding.failed = 0; b->stage->dirty = false;
+                }
+            }
             runtime = clean;
             assert(stage_runtime(controller, &runtime, publish_runtime, NULL) == -EBUSY);
             runtime.operation = SGX545_NATIVE_QUERY;

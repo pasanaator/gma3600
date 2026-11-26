@@ -219,6 +219,12 @@ struct sgx545_native_runtime {
 	struct sgx545_native_cycle state;
 	__u32 operation, reserved;
 };
+/* Temporary kernel-only native BM aliases; no device addresses are replaced. */
+#define SGX545_IOCTL_BM_CHECK 0xc030470bU
+struct sgx545_bm_check {
+	__u32 services, stage, index, token, original_address, alias_address;
+	__u32 bytes, pages, memory_flags, passes, pt_before, pt_after;
+};
 struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero, mapped_vmas; };
 static inline struct sgx545_content_measure sgx545_measure_content(const void *linear,
 	__u32 bytes, __u32 mapped_bytes)

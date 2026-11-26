@@ -49,7 +49,7 @@ def decode_manifest(data, names):
     if len(data) != len(names) * 4:
         raise ValueError("Incorrect ABI section length")
     result = dict(zip(names, struct.unpack("<" + "I" * len(names), data)))
-    if result.get("magic") != 0x53475841 or result.get("version") != 2:
+    if result.get("magic") != 0x53475841 or result.get("version") != 3:
         raise ValueError("Unknown ABI manifest magic/version")
     return result
 

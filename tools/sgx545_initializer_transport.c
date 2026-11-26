@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.6.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.7.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -146,6 +146,28 @@ static int content_readback(int fd, unsigned services, unsigned stage,
  * command itself is NEVER forwarded, and failure is returned even after this
  * diagnostic cycle passes. Native initialization and script execution stay
  * unreachable. The kernel owns all authorization, validation and lifetimes. */
+static int bm_readback(int fd, unsigned services, unsigned stage, const unsigned *roles, unsigned buffers, unsigned pages)
+{
+	unsigned index, checked = 0, total_pages = 0;
+	int error = 0;
+	for (index = 0; index < buffers; index++) {
+		struct sgx545_bm_check check = {.services = services, .stage = stage, .index = index};
+		if (transport_ioctl(fd, SGX545_IOCTL_BM_CHECK, &check) < 0) { error = errno; break; }
+		if (check.services != services || check.stage != stage || check.index != index || check.token != roles[index] ||
+		    !check.original_address || !check.alias_address || check.original_address == check.alias_address ||
+		    (check.original_address & 4095) || (check.alias_address & 4095) || !check.bytes || check.bytes > SGX545_BUFFER_MAX_BYTES ||
+		    check.pages != (check.bytes + 4095) / 4096 || !sgx545_device_effective_flags_valid(check.memory_flags) ||
+		    check.passes != 2 || check.pt_before != check.pt_after) { error = EPROTO; break; }
+		fprintf(stderr, "BM index=%u handle=%08x original=%08x alias=%08x bytes=%u pages=%u memory_flags=%08x passes=%u pt_before=%u pt_after=%u\n",
+			check.index, check.token, check.original_address, check.alias_address, check.bytes, check.pages,
+			check.memory_flags, check.passes, check.pt_before, check.pt_after);
+		checked++; total_pages += check.pages;
+	}
+	if (!error && total_pages != pages) error = EPROTO;
+	fprintf(stderr, "BM_SUMMARY checked=%u buffers=%u pages=%u errno=%d gpu_execution=disabled\n", checked, buffers, total_pages, error);
+	return error;
+}
+
 static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned device,
 	const unsigned *roles, unsigned buffers, unsigned pages)
 {
@@ -169,6 +191,15 @@ static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned d
 		else if (reply.operation != SGX545_NATIVE_QUERY || reply.reserved ||
 			 memcmp(&reply.state, &previous, sizeof(previous))) error = EPROTO;
 		else queried = 1;
+		if (!error) error = bm_readback(fd, services, stage, roles, buffers, pages);
+		if (!error) {
+			queried = 0;
+			reply = request; reply.operation = SGX545_NATIVE_QUERY;
+			if (transport_ioctl(fd, SGX545_IOCTL_NATIVE_RUNTIME, &reply) < 0) error = errno;
+			else if (reply.operation != SGX545_NATIVE_QUERY || reply.reserved ||
+				 memcmp(&reply.state, &previous, sizeof(previous))) error = EPROTO;
+			else queried = 1;
+		}
 		if (!error) error = content_readback(fd, services, stage, roles, buffers);
 	}
 	/* Always unbind a delivered BIND, even on a malformed reply, query error or

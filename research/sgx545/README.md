@@ -98,6 +98,13 @@ query/unbind, abort/close/detach ordering and cache-bit preservation. See the
 This is still CPU-only native integration; it does not register BM objects,
 run firmware, enable IRQ/power or establish GPU execution.
 
+The [retained native binding checkpoint passed](d2500hn-native-runtime.json),
+including both synthetic lifetime modes and the real Intel initializer.
+The next [native BM build checkpoint](native-bm-6.12-build.json) tests real native
+wrapping/freeing through temporary kernel-only aliases of pinned pages. It also
+extends the independent Intel compiler audit to the shared TA/transfer layouts.
+See the [hardware instructions](../../docs/SGX545-INITIALIZER-CAPTURE.md).
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

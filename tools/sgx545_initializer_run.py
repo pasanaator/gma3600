@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.6.0":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.6.0 is required")
+    if manifest.get("transport_version") != "0.7.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.7.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,14 +54,14 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.14.0":
-        raise ValueError("Capture currently requires host2 and tested services 0.14.0")
+    if host != "1.0.4-sgx-host2" or child != "0.15.0":
+        raise ValueError("Capture currently requires host2 and tested services 0.15.0")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
     required.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
                     "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
-                    "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors")})
+                    "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors", "bm_errors")})
     if any(status.get(key) != value for key, value in required.items()):
         raise ValueError("Services must be fresh, idle and prepare-only; unload/reload the child after any initializer test")
     return {"parent_version": host, "services_version": child, "status": status}
@@ -71,7 +71,7 @@ def clean_status(status):
     expected = {"state": "prepared", "gpu_execution": "disabled", "blocked_hw_accesses": "0", "pages_live": "4"}
     expected.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
                     "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
-                    "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors")})
+                    "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors", "bm_errors")})
     return all(status.get(key) == value for key, value in expected.items())
 
 
@@ -107,6 +107,10 @@ def first_failed_request(stderr):
             return {**current, "unsupported": True}
         if current["command"] == 99 and re.fullmatch(r"NATIVE errno=\d+", line):
             return {**current, "errno": int(line.split("=")[1]), "phase": "native_cpu_cycle"}
+        if current["command"] == 99 and line.startswith("BM_SUMMARY "):
+            failure = re.search(r"errno=(\d+)", line)
+            if failure and int(failure[1]):
+                return {**current, "errno": int(failure[1]), "phase": "native_bm"}
         if current["command"] == 99 and line.startswith("RUNTIME "):
             runtime = native_runtime_status(line, None)
             if runtime.get("errno"):
@@ -163,6 +167,28 @@ def native_runtime_status(stderr, handoff):
                               status["bound"] == status["queried"] == status["unbound"] == 1 and not status["errno"] and
                               status["buffers"] == handoff["buffers"] and status["pages"] == handoff["pages"])
     return status
+
+
+def bm_status(stderr, handoff, contents):
+    rows = []
+    for match in re.finditer(r"^BM index=(\d+) handle=([0-9a-f]+) original=([0-9a-f]+) alias=([0-9a-f]+) bytes=(\d+) pages=(\d+) memory_flags=([0-9a-f]+) passes=(\d+) pt_before=(\d+) pt_after=(\d+)$", stderr, re.M):
+        rows.append(dict(zip(("index", "handle", "original_address", "alias_address", "bytes", "pages", "memory_flags", "passes", "pt_before", "pt_after"),
+                             (int(v, 16 if i in (1, 2, 3, 6) else 10) for i, v in enumerate(match.groups())))))
+    summaries = re.findall(r"^BM_SUMMARY checked=(\d+) buffers=(\d+) pages=(\d+) errno=(\d+) gpu_execution=disabled$", stderr, re.M)
+    summary = dict(zip(("checked", "buffers", "pages", "errno"), map(int, summaries[-1]))) if summaries else None
+    valid = bool(len(summaries) == 1 and handoff and handoff["cpu_cycle_passed"] and contents["verified"] and
+                 not summary["errno"] and summary["checked"] == summary["buffers"] == handoff["buffers"] == len(rows) and
+                 summary["pages"] == handoff["pages"] == sum(r["pages"] for r in rows) and
+                 [r["index"] for r in rows] == list(range(len(rows))))
+    if valid:
+        for row, content in zip(rows, contents["buffers"]):
+            valid = bool(valid and row["handle"] == content["handle"] and
+                         row["original_address"] == content["address"] and row["bytes"] == content["bytes"] and
+                         row["memory_flags"] == content["memory_flags"] and row["pages"] == (row["bytes"] + 4095) // 4096 and
+                         row["passes"] == 2 and row["pt_before"] == row["pt_after"] and
+                         row["alias_address"] != row["original_address"] and row["alias_address"] > 0 and
+                         not (row["alias_address"] & 4095))
+    return {"buffers": rows, "summary": summary, "verified": bool(valid)}
 
 
 def mapping_release_status(stderr, contents):
@@ -245,15 +271,16 @@ def main():
         mappings = mapping_release_status(stderr, contents)
         native = native_cycle_status(stderr, handoff)
         runtime = native_runtime_status(stderr, handoff)
+        bm = bm_status(stderr, handoff, contents)
         if outcome != "inspect_report" and handoff and handoff["cpu_cycle_passed"]:
-            outcome = "native_runtime_verified_with_clean_resources" if mappings["all_staged_cpu_mappings_released"] and native["verified"] and runtime["verified"] else "inspect_report"
+            outcome = "native_bm_verified_with_clean_resources" if mappings["all_staged_cpu_mappings_released"] and native["verified"] and runtime["verified"] and bm["verified"] else "inspect_report"
         if contents["summary"] and not contents["verified"]:
             outcome = "inspect_report"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
                   "contents": contents,
-                  "mapping_releases": mappings, "native_cycle": native, "native_runtime": runtime,
+                  "mapping_releases": mappings, "native_cycle": native, "native_runtime": runtime, "native_bm": bm,
                   "first_failed_request": first_failed_request(stderr),
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
@@ -264,12 +291,15 @@ def main():
         report_stream.truncate()
         report_stream.close()
         print("Initializer diagnostic report:", args.report)
-        if outcome == "native_runtime_verified_with_clean_resources":
+        if outcome == "native_bm_verified_with_clean_resources":
+            print("Native BM aliases, getters, PTE attributes, VA reuse and retirement verified:", bm["summary"])
             print("Retained native binding, query, content checks and unbind verified:", runtime)
             print("Native CPU bind, CCB write/readback/restore and unbind verified:", native)
             print("CPU buffer contents, staging, PTE query and abort verified:", contents["summary"])
             print("Legacy CPU mappings released; staged RAM and GPU PTEs remained valid.")
             print("The Intel initializer is deliberately returned a failure after that diagnostic cycle.")
+        elif bm["summary"] and not bm["verified"]:
+            print("Native BM verification incomplete:", bm["summary"])
         elif "bound" in runtime and not runtime["verified"]:
             print("Retained native binding cycle incomplete:", runtime)
             if report["first_failed_request"]:

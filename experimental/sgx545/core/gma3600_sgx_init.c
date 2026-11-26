@@ -37,7 +37,9 @@ void gma_sgx_init_requirements(struct sgx545_init_requirements *out)
 	out->minimum_bytes[5] = sizeof(PVRSRV_SGX_MISCINFO_INFO);
 	out->minimum_bytes[6] = sizeof(SGXMKIF_HWPERF_CB);
 	memset(out->struct_sizes, 0, sizeof(out->struct_sizes));
-	/* Other eleven sizes require the actual userspace/firmware contract. */
+	/* Nine private structures still require the firmware-reported contract. */
+	out->struct_sizes[1] = sizeof(SGXMKIF_CMDTA_SHARED);
+	out->struct_sizes[3] = sizeof(SGXMKIF_TRANSFERCMD_SHARED);
 	out->struct_sizes[11] = sizeof(SGXMKIF_HOST_CTL);
 	out->struct_sizes[12] = sizeof(SGXMKIF_COMMAND);
 }
