@@ -71,6 +71,7 @@ static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_VALIDATE) == sizeof(struct sgx545_init
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTROL) == sizeof(struct sgx545_init_control));
 static_assert(_IOC_SIZE(SGX545_IOCTL_INIT_CONTENT) == sizeof(struct sgx545_init_content));
 static_assert(_IOC_SIZE(SGX545_IOCTL_NATIVE_CYCLE) == sizeof(struct sgx545_native_cycle));
+static_assert(_IOC_SIZE(SGX545_IOCTL_NATIVE_RUNTIME) == sizeof(struct sgx545_native_runtime));
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -122,6 +123,8 @@ struct gma_sgx_stage {
 	struct pid *owner;
 	u32 id, count, tokens[SGX545_INIT_MAX_BUFFERS];
 	bool dirty;
+	void *runtime;
+	struct gma_sgx_file *runtime_owner;
 };
 
 static void bridge_free(struct kref *ref);
@@ -622,11 +625,27 @@ static int stage_publish(struct gma_sgx_file *f, const struct sgx545_init2_in32 
 	return 0;
 }
 
+static int stage_runtime_stop(struct gma_sgx_bridge *b)
+{
+	struct gma_sgx_stage *s = b->stage;
+	int ret;
+
+	if (!s || !s->runtime) return 0;
+	ret = gma3600_sgx_native_end(&s->runtime);
+	s->runtime_owner = NULL; b->stats.native_bindings = 0;
+	if (ret) b->stats.native_errors++;
+	return ret;
+}
+
 static int stage_abort(struct gma_sgx_bridge *b)
 {
 	struct gma_sgx_stage *s = b->stage;
 
+	int error;
+
 	if (!s) return 0;
+	error = stage_runtime_stop(b);
+	if (error) { s->dirty = true; b->stats.stage_errors++; return error; }
 	while (s->allocations) {
 		struct gma_sgx_device_allocation *a = s->allocations;
 		u32 pages = a->binding.pages, before = b->stats.device_allocations;
@@ -750,11 +769,62 @@ static int stage_native_cycle(struct gma_sgx_file *f, struct sgx545_native_cycle
 	return 0;
 }
 
+static int stage_runtime(struct gma_sgx_file *f, struct sgx545_native_runtime *message,
+	int (*publish)(void *, const struct sgx545_native_runtime *), void *context)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct gma_sgx_stage *s = b->stage;
+	struct sgx545_native_cycle *out = &message->state;
+	void *node;
+	int ret, cleanup;
+
+	if (message->reserved || message->operation > SGX545_NATIVE_UNBIND || out->flags || out->buffers || out->pages ||
+	    out->ccb_bytes || out->slots || out->read_offset || out->write_offset || out->bound || out->restored) return -EINVAL;
+	if (!s || out->stage != s->id || !f->session.services || out->services != f->session.services ||
+	    !f->session.device || out->device != f->session.device || !f->device_handle) return -ENOENT;
+	if (f->owner != s->owner || !OSProcHasPrivSrvInit()) return -EPERM;
+	if (message->operation == SGX545_NATIVE_BIND) {
+		if (s->runtime) return -EBUSY;
+		ret = stage_native_verify(f, s->id);
+		if (ret) return ret;
+		ret = PVRSRVLookupHandle(f->handles, &node, f->device_handle, PVRSRV_HANDLE_TYPE_DEV_NODE);
+		if (ret) return -ENOENT;
+		ret = gma3600_sgx_native_begin(node, &s->snapshot, &s->runtime, out);
+		if (ret) return ret;
+		s->runtime_owner = f; b->stats.native_bindings = 1;
+		ret = stage_native_verify(f, s->id);
+		if (!ret) {
+			out->buffers = b->stats.staged_buffers; out->pages = b->stats.staged_pages;
+			ret = publish(context, message);
+		}
+		if (!ret) return 0;
+		/* A failed BIND reply must never create an invisible retained lease. */
+		cleanup = stage_runtime_stop(b);
+		return cleanup ? cleanup : ret;
+	}
+	if (!s->runtime) return -ENOENT;
+	if (s->runtime_owner != f) return -EPERM;
+	if (message->operation == SGX545_NATIVE_UNBIND) {
+		ret = stage_runtime_stop(b); /* Even changed data cannot prevent unbind. */
+		out->restored = 1;
+	} else {
+		ret = stage_native_verify(f, s->id);
+		if (!ret) ret = gma3600_sgx_native_query(s->runtime, out);
+	}
+	if (ret) return ret;
+	out->buffers = b->stats.staged_buffers; out->pages = b->stats.staged_pages;
+	return publish(context, message);
+}
+
 static int backend_disconnect(void *ctx)
 {
 	struct gma_sgx_file *f = ctx;
 	int ret;
 
+	if (f->bridge->stage && f->bridge->stage->runtime_owner == f) {
+		ret = stage_abort(f->bridge);
+		if (ret) return ret;
+	}
 	if (f->bridge->init_owner == f)
 		backend_init_abort(f, 0);
 	while (f->device_allocations) {
@@ -985,6 +1055,11 @@ static int stage_copy_result(void *context, const struct sgx545_init_stage *mess
 	return copy_to_user(context, message, sizeof(*message)) ? -EFAULT : 0;
 }
 
+static int runtime_copy_result(void *context, const struct sgx545_native_runtime *message)
+{
+	return copy_to_user(context, message, sizeof(*message)) ? -EFAULT : 0;
+}
+
 static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned long arg)
 {
 	struct gma_sgx_bridge *b = f->bridge;
@@ -995,11 +1070,13 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 		struct sgx545_init_control control;
 		struct sgx545_init_content content;
 		struct sgx545_native_cycle native;
+		struct sgx545_native_runtime runtime;
 	} message;
 	u32 size = cmd == SGX545_IOCTL_INIT_REQUIREMENTS ? sizeof(message.caps) :
 		(cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_VALIDATE) ? sizeof(message.stage) :
 		cmd == SGX545_IOCTL_INIT_CONTENT ? sizeof(message.content) :
-		cmd == SGX545_IOCTL_NATIVE_CYCLE ? sizeof(message.native) : sizeof(message.control);
+		cmd == SGX545_IOCTL_NATIVE_CYCLE ? sizeof(message.native) :
+		cmd == SGX545_IOCTL_NATIVE_RUNTIME ? sizeof(message.runtime) : sizeof(message.control);
 	int ret;
 
 	if (copy_from_user(&message, (void __user *)arg, size)) return -EFAULT;
@@ -1013,8 +1090,12 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 	}
 	mutex_lock(&b->lock);
 	if (!b->online) { ret = -ENODEV; goto out; }
+	if (b->stats.native_bindings && cmd != SGX545_IOCTL_NATIVE_RUNTIME && cmd != SGX545_IOCTL_INIT_CONTROL &&
+	    cmd != SGX545_IOCTL_INIT_CONTENT) { ret = -EBUSY; goto out; }
 	LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
-	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS) ret = stage_requirements(f, &message.caps);
+	if (cmd == SGX545_IOCTL_NATIVE_RUNTIME)
+		ret = stage_runtime(f, &message.runtime, runtime_copy_result, (void __user *)arg);
+	else if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS) ret = stage_requirements(f, &message.caps);
 	else if (cmd == SGX545_IOCTL_INIT_STAGE)
 		ret = stage_publish(f, wire, &message.stage, stage_copy_result, (void __user *)arg);
 	else if (cmd == SGX545_IOCTL_INIT_VALIDATE) ret = stage_validate(f, wire, &message.stage);
@@ -1022,7 +1103,7 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 	else if (cmd == SGX545_IOCTL_NATIVE_CYCLE) ret = stage_native_cycle(f, &message.native);
 	else ret = stage_control(f, &message.control);
 	/* STAGE copies its result transactionally. QUERY/ABORT own no new resource. */
-	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
+	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_NATIVE_RUNTIME && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
 	LinuxUnLockMutex(&gPVRSRVLock);
 out:
 	mutex_unlock(&b->lock);
@@ -1040,11 +1121,11 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
 	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK && cmd != SGX545_IOCTL_INIT_REQUIREMENTS &&
-	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_NATIVE_CYCLE)
+	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_NATIVE_CYCLE && cmd != SGX545_IOCTL_NATIVE_RUNTIME)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
-	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT || cmd == SGX545_IOCTL_NATIVE_CYCLE)
+	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT || cmd == SGX545_IOCTL_NATIVE_CYCLE || cmd == SGX545_IOCTL_NATIVE_RUNTIME)
 		return bridge_init_ioctl(f, cmd, arg);
 	if (cmd == SGX545_IOCTL_DEVICE_CHECK) {
 		struct sgx545_device_check check;
@@ -1053,6 +1134,7 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		mutex_lock(&b->lock);
 		if (!b->online) ret = -ENODEV;
+		else if (b->stats.native_bindings) ret = -EBUSY;
 		else {
 			LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
 			ret = bridge_device_check(f, &check);
@@ -1070,6 +1152,7 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		mutex_lock(&b->lock);
 		if (!b->online) ret = -ENODEV;
+		else if (b->stats.native_bindings) ret = -EBUSY;
 		else {
 			LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
 			ret = bridge_mmu_check(f, &check);
@@ -1087,6 +1170,7 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			return -EFAULT;
 		mutex_lock(&b->lock);
 		if (!b->online) ret = -ENODEV;
+		else if (b->stats.native_bindings) ret = -EBUSY;
 		else if (!f->session.services || check.services != f->session.services) ret = -ENOENT;
 		else if (b->init_owner != f) ret = -EACCES;
 		else ret = gma_sgx_buffer_check(b->buffers, f, check.handle, check.expected, check.fill);
@@ -1101,6 +1185,8 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	mutex_lock(&b->lock);
 	if (!b->online) {
 		ret = -ENODEV;
+	} else if (b->stats.native_bindings && (request.bridge_id & 255) != SGX545_CMD_DISCONNECT) {
+		ret = -EBUSY;
 	} else {
 		LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
 		ret = sgx545_bridge_execute(&f->session, &bridge_ops, f, &request);
@@ -1123,6 +1209,7 @@ static int bridge_mmap(struct file *file, struct vm_area_struct *vma)
 	 * Return a retryable error instead of blocking the fault's mmap read lock. */
 	if (!mutex_trylock(&b->lock)) return -EAGAIN;
 	if (!b->online) ret = -ENODEV;
+	else if (b->stats.native_bindings) ret = -EBUSY;
 	else ret = gma_sgx_buffer_mmap(b->buffers, f, vma);
 	mutex_unlock(&b->lock);
 	return ret;
@@ -1171,11 +1258,11 @@ static void bridge_stop(void *data)
 	stage_abort(b); /* Native PTEs disappear before common DDK teardown. */
 	LinuxUnLockMutex(&gPVRSRVLock);
 	gma_sgx_buffers_stop(b->buffers);
-	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u\n",
+	pr_info("gma3600 SGX bridge stopped: files=%u connections=%u errors=%u heap_handles=%u init_running=%u init_ran=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u native_bindings=%u native_errors=%u\n",
 		b->stats.files, b->stats.connections, b->stats.errors,
 		b->stats.heap_handles, b->stats.init_running, b->stats.init_ran,
 		b->stats.device_allocations, b->stats.device_pages, b->stats.device_errors,
-		b->stats.stages, b->stats.staged_buffers, b->stats.staged_pages, b->stats.stage_errors);
+		b->stats.stages, b->stats.staged_buffers, b->stats.staged_pages, b->stats.stage_errors, b->stats.native_bindings, b->stats.native_errors);
 	mutex_unlock(&b->lock);
 	kref_put(&b->ref, bridge_free);
 }

@@ -13,7 +13,7 @@
 typedef uint32_t u32;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors; };
 struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; struct sgx545_content_measure content; };
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
@@ -110,6 +110,30 @@ static int gma3600_sgx_native_cycle(void *device, struct gma_sgx_native_init *sn
     if (fail_native) return fail_native;
     out->bound = out->restored = 1; out->flags = SGX545_NATIVE_CCB_ROUNDTRIP;
     out->ccb_bytes = 8192; out->slots = 256;
+    return 0;
+}
+static unsigned native_live, native_stops;
+static int fail_native_end;
+static int gma3600_sgx_native_begin(void *device, struct gma_sgx_native_init *snapshot,
+    void **runtime, struct sgx545_native_cycle *out)
+{
+    assert(!*runtime && !native_live);
+    int ret = gma3600_sgx_native_cycle(device, snapshot, out);
+    if (ret) return ret;
+    out->restored = 0; *runtime = &fake_device; native_live = 1;
+    return 0;
+}
+static int gma3600_sgx_native_query(void *runtime, struct sgx545_native_cycle *out)
+{
+    assert(runtime == &fake_device && native_live && live_bindings >= 9);
+    out->bound = 1; out->restored = 0; out->flags = SGX545_NATIVE_CCB_ROUNDTRIP;
+    out->ccb_bytes = 8192; out->slots = 256; return 0;
+}
+static int gma3600_sgx_native_end(void **runtime)
+{
+    assert(*runtime == &fake_device && native_live && live_bindings >= 9);
+    *runtime = NULL; native_live = 0; native_stops++;
+    if (fail_native_end) { fail_native_end = 0; return -EUCLEAN; }
     return 0;
 }
 struct list_head { struct list_head *next, *prev; };
@@ -546,10 +570,12 @@ static void device_allocation_lifetime(void)
 
 static int publish_stage(void *context, const struct sgx545_init_stage *message)
 { assert(message->stage && message->buffers == 9 && message->pages == 36); return context ? -EFAULT : 0; }
+static int publish_runtime(void *context, const struct sgx545_native_runtime *message)
+{ assert(message->state.buffers == 9 && message->state.pages == 36); return context ? -EFAULT : 0; }
 static void initializer_stage_lifetime(void)
 {
     unsigned mode, i;
-    for (mode = 0; mode < 5; mode++) {
+    for (mode = 0; mode < 10; mode++) {
         struct device dev = {0};
         struct gma_sgx_bridge *b = start(&dev);
         struct file first, second;
@@ -661,6 +687,61 @@ static void initializer_stage_lifetime(void)
         }
         assert(!bridge_release(NULL, &first) && live_bindings == 9);
         assert(!stage_control(controller, &control)); /* creator and native handles gone */
+        if (mode >= 5) {
+            struct sgx545_native_runtime runtime = {.state = {.services = controller->session.services,
+                .stage = message.stage, .device = controller->session.device}};
+            struct sgx545_native_runtime clean = runtime;
+            unsigned before_stops = native_stops;
+            struct file third;
+            struct gma_sgx_file *sibling = open_(b, &third);
+            u32 sibling_token;
+            struct vm_area_struct blocked_vma = {0};
+            assert(!backend_connect(sibling, &sibling_token)); sibling->session.services = sibling_token;
+            attach_device(sibling); sibling->session.device = 2000;
+            assert(stage_runtime(controller, &runtime, publish_runtime, &dev) == -EFAULT);
+            assert(!native_live && !b->stats.native_bindings && b->stage && live_bindings == 9);
+            runtime = clean;
+            assert(!stage_runtime(controller, &runtime, publish_runtime, NULL) && native_live && b->stats.native_bindings == 1);
+            assert(bridge_mmap(&second, &blocked_vma) == -EBUSY);
+            runtime = clean; runtime.operation = SGX545_NATIVE_QUERY;
+            runtime.state.services = sibling->session.services; runtime.state.device = sibling->session.device;
+            assert(stage_runtime(sibling, &runtime, publish_runtime, NULL) == -EPERM);
+            assert(!bridge_release(NULL, &third) && native_live && b->stats.native_bindings == 1);
+            runtime = clean;
+            assert(stage_runtime(controller, &runtime, publish_runtime, NULL) == -EBUSY);
+            runtime.operation = SGX545_NATIVE_QUERY;
+            assert(!stage_runtime(controller, &runtime, publish_runtime, NULL) && runtime.state.bound && !runtime.state.restored);
+            runtime = clean; runtime.operation = SGX545_NATIVE_QUERY;
+            controller->owner = &foreign;
+            assert(stage_runtime(controller, &runtime, publish_runtime, NULL) == -EPERM); controller->owner = &current_pid;
+            if (mode == 5) {
+                runtime = clean; runtime.operation = SGX545_NATIVE_UNBIND;
+                assert(stage_runtime(controller, &runtime, publish_runtime, &dev) == -EFAULT);
+                assert(runtime.state.restored && !runtime.state.bound && !native_live && live_bindings == 9);
+                runtime = clean; runtime.operation = SGX545_NATIVE_QUERY;
+                assert(stage_runtime(controller, &runtime, publish_runtime, NULL) == -ENOENT);
+                control.operation = SGX545_STAGE_ABORT; assert(!stage_control(controller, &control));
+                assert(!bridge_release(NULL, &second)); stop(&dev);
+            } else if (mode == 6) {
+                assert(!bridge_release(NULL, &second) && !b->stage && !native_live && !live_bindings);
+                stop(&dev);
+            } else if (mode == 7) {
+                stop(&dev); ddk_alive = 0;
+                assert(!b->stage && !native_live && !live_bindings);
+                assert(!bridge_release(NULL, &second)); ddk_alive = 1;
+            } else {
+                control.operation = SGX545_STAGE_ABORT;
+                if (mode == 8) fail_unbind = 1; else fail_native_end = 1;
+                assert(stage_control(controller, &control) == (mode == 8 ? -EIO : -EUCLEAN));
+                assert(b->stats.native_errors == (mode == 9));
+                assert(!native_live && !b->stats.native_bindings && b->stage && live_bindings == 9);
+                assert(!stage_control(controller, &control));
+                assert(!native_live && !live_bindings && !b->stage);
+                assert(!bridge_release(NULL, &second)); stop(&dev);
+            }
+            assert(native_stops == before_stops + 2);
+            empty(); continue;
+        }
         if (mode == 0 || mode == 1) {
             control.operation = SGX545_STAGE_ABORT;
             if (mode == 1) {

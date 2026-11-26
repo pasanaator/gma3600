@@ -6,7 +6,8 @@
  * they have no native BM/resource-manager registration and MUST NOT be passed
  * to DevInitSGXPart2KM, native free, power, or command-submission functions.
  * The audited gma3600_sgx_native_cycle may borrow them for InitDevInfo's
- * CPU-only prefix, then immediately remove every live native reference.
+ * CPU-only prefix, or hold a file-owned CPU binding lease until explicit/automatic unbind.
+ * Neither path registers these descriptors with BM/ResMan or enables hardware.
  */
 struct gma_sgx_init_memory {
 	__u32 token, address, bytes, flags;
@@ -24,4 +25,8 @@ int gma_sgx_init_check(const struct gma_sgx_native_init *snapshot,
 	const struct gma_sgx_init_memory *memory, __u32 count);
 int gma3600_sgx_native_cycle(void *device_node, struct gma_sgx_native_init *snapshot,
 	struct sgx545_native_cycle *out);
+int gma3600_sgx_native_begin(void *device_node, struct gma_sgx_native_init *snapshot,
+	void **runtime, struct sgx545_native_cycle *out);
+int gma3600_sgx_native_query(void *runtime, struct sgx545_native_cycle *out);
+int gma3600_sgx_native_end(void **runtime);
 #endif

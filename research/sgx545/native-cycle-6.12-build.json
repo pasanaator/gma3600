@@ -65,7 +65,7 @@
     "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
     "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
   },
-  "hardware_status": "pending: --native-cycle and real Intel initializer native CPU capture",
+  "hardware_status": "passed synthetic --native-cycle and real Intel initializer CPU cycle; see d2500hn-native-cycle.json",
   "GPU_execution_enabled": false,
   "GPU_DMA_or_firmware_compatibility_verified": false,
   "proprietary_libraries_executed_in_cloud": false,

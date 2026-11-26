@@ -115,6 +115,33 @@ int main(void)
         assert(gma3600_sgx_native_cycle(&node, &snapshot, &result) == -EOPNOTSUPP);
     }
     teardown();
-    puts("Native SGX CPU cycle passed: actual InitDevInfo/DeinitDevInfo, CCB roundtrip, offsets 0/255, failure rollback and exact device restoration");
+    setup();
+    {
+        void *runtime = NULL, *second = NULL;
+        struct sgx545_native_cycle result = {.services = 12, .stage = 13, .device = 14};
+        PVRSRV_SGX_CCB_CTL *control = memory[1].linear;
+        snapshot.info.ui32CacheControl = 0x40;
+        assert(!gma3600_sgx_native_begin(&node, &snapshot, &runtime, &result));
+        assert(runtime && allocated == 2 && result.bound && !result.restored && dev.psKernelCCBInfo);
+        assert((dev.ui32CacheControl & 0xc0) == 0xc0);
+        assert(gma3600_sgx_native_begin(&node, &snapshot, &second, &result) == -EBUSY && !second);
+        dev.ui32CacheControl |= 0x1000; /* Interleaved existing-heap PTE cleanup. */
+        assert(!gma3600_sgx_native_query(runtime, &result) && result.services == 12 && result.stage == 13 && result.device == 14);
+        control->ui32WriteOffset = 1;
+        assert(gma3600_sgx_native_query(runtime, &result) == -EUCLEAN);
+        control->ui32WriteOffset = 0;
+        assert(!gma3600_sgx_native_query(runtime, &result));
+        assert(!gma3600_sgx_native_end(&runtime) && !runtime && !allocated);
+        before.ui32CacheControl |= 0x1040;
+        assert(!memcmp(&dev, &before, sizeof(dev)));
+        assert(gma3600_sgx_native_end(&runtime) == -ENOENT);
+        assert(!gma3600_sgx_native_begin(&node, &snapshot, &runtime, &result));
+        dev.psKernelCCBInfo = (void *)1; /* Never dereference/free an alien CCB. */
+        assert(gma3600_sgx_native_query(runtime, &result) == -EUCLEAN);
+        assert(gma3600_sgx_native_end(&runtime) == -EUCLEAN && !runtime && !allocated);
+        assert(!memcmp(&dev, &before, sizeof(dev)));
+    }
+    teardown();
+    puts("Native SGX CPU cycle passed: actual InitDevInfo/DeinitDevInfo, CCB roundtrip, offsets 0/255, retained binding/query/unbind, cache-bit preservation, corrupt pointer recovery and failure restoration");
     return 0;
 }

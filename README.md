@@ -34,10 +34,11 @@ can now observe the unmodified i386 Intel initializer's real requests on that ha
 The real initializer now allocates coherent/EDM buffers and obtains mapping metadata.
 The latest Atom run passed all 15 Intel CPU mapping releases: 97,660 bytes
 remained unchanged after every CPU VMA closed, with clean teardown.
-Services 0.13.0 and transport 0.5.0 add an audited native CPU bind/unbind cycle:
-actual DDK command-buffer pointers, a 32-byte slot write/readback/restore, and
-complete device-state restoration. Rebuild the child and private bundle; this
-new cycle awaits hardware testing.
+The native CPU bind/CCB write/readback/restore test also passed with the real
+Intel initializer. Services 0.14.0 and transport 0.6.0 now retain that binding
+across calls with file ownership, query/unbind, transactional reply handling,
+and automatic abort/last-close/detach cleanup before staged RAM is released.
+This new retained lifetime awaits hardware testing. Rebuild the child and private bundle.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

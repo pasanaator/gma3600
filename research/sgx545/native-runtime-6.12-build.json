@@ -1,0 +1,78 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.14.0",
+  "private_transport_version": "0.6.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-native-cycle.json",
+  "changes": [
+    "Add 56-byte NATIVE_RUNTIME ABI with file-owned BIND, QUERY and UNBIND; keep native CPU prefix active between ioctls without enabling hardware",
+    "Stage continues to pin backing RAM and native PTEs; BIND requires no CPU VMAs, unchanged content and valid native metadata/PTEs",
+    "QUERY checks live native device/CCB pointers and unchanged empty ring; unrelated bridge operations, MMU diagnostics and new CPU mappings return EBUSY while bound",
+    "Roll back a failed BIND copyout; retain leases on QUERY faults; finish UNBIND before publishing its reply",
+    "Retire native CCB metadata and device pointers before staged RAM/PTE release on explicit unbind, stage abort, owner disconnect/last-close and auxiliary detach",
+    "Preserve all accumulated MMU cache-invalidation bits across retained binding; keep the original exact restoration semantics for the single-ioctl cycle",
+    "Recover only the owned CCB allocation after a failed native integrity check; retain stage allocations for cleanup retry and expose native_errors",
+    "Add native_bindings/native_errors status and require clean counters plus complete retained lifetime in successful real initializer reports",
+    "Real transport runs the previous transient regression followed by retained BIND/QUERY/content checks/UNBIND/ABORT; always attempt unbind and abort after a delivered bind/stage"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 26,
+    "actual_native_source": "real InitDevInfo/DeinitDevInfo and SGX data types; allocation/barrier seams and outer device container mocked; both revision profiles under ASan/UBSan",
+    "native_lifetime_cases": [
+      "retained binding and separate queries",
+      "duplicate binding rejection",
+      "MMU cache-bit accumulation survives unbind",
+      "changed ring and corrupt live-pointer detection",
+      "safe owned allocation recovery after integrity failure",
+      "both allocation failures and exact transient restoration",
+      "slots 0 and 255"
+    ],
+    "actual_bridge_functions": "ASan/UBSan; failed BIND reply rollback, QUERY lifetime, UNBIND reply failure, same-PID other-file rejection, foreign PID rejection, mmap busy guard, explicit stage abort, owner last-close, auxiliary detach, failed PTE teardown after unbind and native-integrity-error cleanup retry",
+    "actual_ELF32_transport_mock": "18 whole-handoff scenarios passed under QEMU; BIND/QUERY/UNBIND ioctl errors and malformed replies, content failures, unbind plus stage-abort cleanup; no legacy success returned",
+    "private_fixture": "0.6.0 project-owned i386 loader/fixture passed under QEMU; proprietary libraries not executed",
+    "report_gates": "missing or incomplete retained lifecycle, wrong counts, errors or unclean resources cannot produce native_runtime_verified_with_clean_resources"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "compiled_core_inputs_match_final_repository": true,
+      "actual_DDK_native_MMU_and_translation_tests": "ASan/UBSan passed for both profiles",
+      "original_Intel_ABI_audit": "passed; i386 initializer=2068 and native initializer=2192 bytes with explicit translation",
+      "services_sha256": "550affc26f8fe4f4162374d7545c89a958c102b0a28e3ce765f46935c304a267",
+      "client_sha256": "662d284040c0ffe27edd7a43adc6f350f62dc9bafb70f72cbcf885183c153110"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "services_compiler_warnings": 0,
+      "compiled_core_inputs_match_final_repository": true,
+      "actual_DDK_native_MMU_and_translation_tests": "ASan/UBSan passed for both profiles",
+      "original_Intel_ABI_audit": "passed; i386 initializer=2068 and native initializer=2192 bytes with explicit translation",
+      "services_sha256": "5ca2c8b3bdeb3f4b1320a7ed6cd628bccc2c663883afb7798e11907e61608d73",
+      "client_sha256": "662d284040c0ffe27edd7a43adc6f350f62dc9bafb70f72cbcf885183c153110"
+    }
+  ],
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "e2012531ec5a50d179c8185ec2d1c629afeba72c55893a0206576c4b651beb43",
+    "lib/libdrm.so.2": "fdf3d247529c69b9d8c9f33d5c7e36fbd1ab174383ce717b78d26fadc19eccca",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending --native-runtime, --native-runtime-close and real Intel retained binding capture",
+  "GPU_execution_enabled": false,
+  "native_BM_or_ResMan_registration_enabled": false,
+  "GPU_DMA_or_firmware_compatibility_verified": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "display_parent_changed": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

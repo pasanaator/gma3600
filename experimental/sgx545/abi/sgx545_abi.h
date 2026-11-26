@@ -209,6 +209,16 @@ struct sgx545_native_cycle {
 	__u32 services, stage, device, flags, buffers, pages;
 	__u32 ccb_bytes, slots, read_offset, write_offset, bound, restored;
 };
+/* CPU binding lease. All output fields and reserved must be zero on input.
+ * This does not register BM objects or enable hardware execution. */
+#define SGX545_IOCTL_NATIVE_RUNTIME 0xc038470aU
+#define SGX545_NATIVE_BIND 0U
+#define SGX545_NATIVE_QUERY 1U
+#define SGX545_NATIVE_UNBIND 2U
+struct sgx545_native_runtime {
+	struct sgx545_native_cycle state;
+	__u32 operation, reserved;
+};
 struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero, mapped_vmas; };
 static inline struct sgx545_content_measure sgx545_measure_content(const void *linear,
 	__u32 bytes, __u32 mapped_bytes)

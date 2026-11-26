@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.5.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.6.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -146,6 +146,48 @@ static int content_readback(int fd, unsigned services, unsigned stage,
  * command itself is NEVER forwarded, and failure is returned even after this
  * diagnostic cycle passes. Native initialization and script execution stay
  * unreachable. The kernel owns all authorization, validation and lifetimes. */
+static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned device,
+	const unsigned *roles, unsigned buffers, unsigned pages)
+{
+	struct sgx545_native_runtime request = {.state = {.services = services, .stage = stage, .device = device}};
+	struct sgx545_native_runtime reply = request;
+	int error = 0, bound = 0, queried = 0, unbound = 0;
+
+	if (transport_ioctl(fd, SGX545_IOCTL_NATIVE_RUNTIME, &reply) < 0) error = errno;
+	else {
+		bound = 1;
+		if (reply.state.services != services || reply.state.stage != stage || reply.state.device != device ||
+		    reply.operation != SGX545_NATIVE_BIND || reply.reserved || reply.state.bound != 1 || reply.state.restored ||
+		    reply.state.flags != SGX545_NATIVE_CCB_ROUNDTRIP || reply.state.buffers != buffers || reply.state.pages != pages ||
+		    reply.state.ccb_bytes != 8192 || reply.state.slots != 256 || reply.state.read_offset >= 256 ||
+		    reply.state.read_offset != reply.state.write_offset) error = EPROTO;
+	}
+	if (!error) {
+		struct sgx545_native_cycle previous = reply.state;
+		reply = request; reply.operation = SGX545_NATIVE_QUERY;
+		if (transport_ioctl(fd, SGX545_IOCTL_NATIVE_RUNTIME, &reply) < 0) error = errno;
+		else if (reply.operation != SGX545_NATIVE_QUERY || reply.reserved ||
+			 memcmp(&reply.state, &previous, sizeof(previous))) error = EPROTO;
+		else queried = 1;
+		if (!error) error = content_readback(fd, services, stage, roles, buffers);
+	}
+	/* Always unbind a delivered BIND, even on a malformed reply, query error or
+	 * content failure. The caller additionally aborts the entire stage. */
+	if (bound) {
+		reply = request; reply.operation = SGX545_NATIVE_UNBIND;
+		if (transport_ioctl(fd, SGX545_IOCTL_NATIVE_RUNTIME, &reply) < 0) { if (!error) error = errno; }
+		else if (reply.state.services != services || reply.state.stage != stage || reply.state.device != device ||
+			 reply.operation != SGX545_NATIVE_UNBIND || reply.reserved || reply.state.flags || reply.state.bound ||
+			 reply.state.restored != 1 || reply.state.buffers != buffers || reply.state.pages != pages ||
+			 reply.state.ccb_bytes || reply.state.slots || reply.state.read_offset || reply.state.write_offset) {
+			if (!error) error = EPROTO;
+		} else unbound = 1;
+	}
+	fprintf(stderr, "RUNTIME bound=%d queried=%d unbound=%d buffers=%u pages=%u errno=%d gpu_execution=disabled\n",
+		bound, queried, unbound, buffers, pages, error);
+	return error;
+}
+
 static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 {
 	struct sgx545_init2_in32 request;
@@ -212,7 +254,7 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 		else {
 			fprintf(stderr, "NATIVE bound=%u restored=%u ccb_bytes=%u slots=%u read=%u write=%u roundtrip=1 buffers=%u pages=%u gpu_execution=disabled\n",
 				native.bound, native.restored, native.ccb_bytes, native.slots, native.read_offset, native.write_offset, native.buffers, native.pages);
-			error = content_readback(fd, wire->services, stage.stage, roles, buffers);
+			error = runtime_handoff(fd, wire->services, stage.stage, request.device, roles, buffers, pages);
 		}
 	}
 	/* Always attempt cleanup after a delivered STAGE, including query failure. */

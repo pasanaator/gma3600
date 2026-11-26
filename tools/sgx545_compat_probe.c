@@ -28,6 +28,7 @@ _Static_assert(sizeof(struct sgx545_init_stage) == 32, "initializer staging ABI"
 _Static_assert(sizeof(struct sgx545_init_control) == 24, "initializer control ABI");
 _Static_assert(sizeof(struct sgx545_init_content) == 48, "initializer content ABI");
 _Static_assert(sizeof(struct sgx545_native_cycle) == 48, "native CPU cycle ABI");
+_Static_assert(sizeof(struct sgx545_native_runtime) == 56, "native binding lease ABI");
 static int original_intel_abi;
 
 /* mmap2 needs all six i386 syscall registers, including saved EBP. */
@@ -748,7 +749,7 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 	struct sgx545_map_info_out map = {0};
 	struct sgx545_device_check walk;
 	unsigned in[6] = {0, device, 0, SGX545_DEVICE_FLAGS, 0, 4096};
-	unsigned i, data_heap = 0, code_heap = 0, total_pages = 0, first_size, other, temporary, bit;
+	unsigned i, data_heap = 0, code_heap = 0, total_pages = 0, first_size, other, temporary, bit, runtime_device = 0;
 	volatile unsigned *memory, *code_memory = 0;
 	volatile struct sgx545_init_stage *readonly;
 	int control_fd, child, status;
@@ -908,6 +909,7 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
         w = package(1, other, acquire, 12, &acquired, 8);
         expect("native controller acquire", call(control_fd, &w), 0);
         if (acquired.error || !acquired.handle) fail("native controller device handle", acquired.error);
+        runtime_device = acquired.handle;
         cycle = (struct sgx545_native_cycle){.services = other, .stage = message.stage, .device = 0xffffffff};
         expect("native cycle rejects unknown device", sys3(54, control_fd, SGX545_IOCTL_NATIVE_CYCLE, ptr(&cycle)), -2);
         cycle.device = acquired.handle;
@@ -928,7 +930,47 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
         }
         say("PASS: actual native CPU bind, 32-byte CCB write/readback/restore, unbind, copyout fault and unchanged staged contents; GPU execution disabled\n");
     }
-	if (!leave_staged) {
+	if (native_mode >= 2) {
+        struct sgx545_native_runtime request = {.state = {.services = other, .stage = message.stage, .device = runtime_device}};
+        struct sgx545_native_runtime response = request;
+        struct sgx545_enumerate_out enumeration = {0};
+        temporary = probe_mmap2(~0U, 4096, 3, 0x22, 0);
+        if (temporary >= 0xfffff001U) fail("runtime copyout page", temporary);
+        *(volatile struct sgx545_native_runtime *)temporary = request;
+        expect("runtime copyout mprotect", sys3(125, temporary, 4096, 1), 0);
+        expect("retained bind reply fault rolls back", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, temporary), -14);
+        expect("runtime bind after rollback", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), 0);
+        if (response.state.bound != 1 || response.state.restored || response.state.flags != SGX545_NATIVE_CCB_ROUNDTRIP ||
+            response.state.buffers != 11 || response.state.pages != total_pages || response.state.ccb_bytes != 8192 ||
+            response.state.slots != 256 || response.state.read_offset || response.state.write_offset) fail("runtime bind reply", response.state.flags);
+        response = request;
+        expect("duplicate native bind rejected", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), -16);
+        w = package(0, other, 0, 0, &enumeration, sizeof(enumeration));
+        expect("unrelated bridge operations blocked while bound", call(control_fd, &w), -16);
+        expect("new CPU mapping blocked while bound", probe_mmap2(control_fd, first_size, 3, 1, allocations[0].kernel_mem), -16);
+        expect("runtime copyout page write enable", sys3(125, temporary, 4096, 3), 0);
+        response = request; response.operation = SGX545_NATIVE_QUERY;
+        *(volatile struct sgx545_native_runtime *)temporary = response;
+        expect("runtime query copyout mprotect", sys3(125, temporary, 4096, 1), 0);
+        expect("query reply fault preserves native lease", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, temporary), -14);
+        expect("runtime copyout munmap", sys3(91, temporary, 4096, 0), 0);
+        for (i = 0; i < 3; i++) {
+            response = request; response.operation = SGX545_NATIVE_QUERY;
+            expect("retained native pointers survive separate calls", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), 0);
+            if (!response.state.bound || response.state.restored || response.state.buffers != 11 || response.state.pages != total_pages)
+                fail("retained native query reply", response.state.bound);
+            stage_query(control_fd, other, message.stage, 11, total_pages);
+        }
+        response = request; response.operation = SGX545_NATIVE_UNBIND;
+        expect("explicit native unbind", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), 0);
+        if (response.state.bound || response.state.restored != 1) fail("native unbind restored state", response.state.restored);
+        response = request; response.operation = SGX545_NATIVE_QUERY;
+        expect("retired native lease inaccessible", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), -2);
+        response = request;
+        expect("native binding can be reacquired", sys3(54, control_fd, SGX545_IOCTL_NATIVE_RUNTIME, ptr(&response)), 0);
+        say("PASS: retained native binding, repeated queries, BIND copyout rollback, QUERY fault retention, busy guards and explicit unbind/rebind\n");
+    }
+	if (!leave_staged && native_mode != 3) {
 		control = (struct sgx545_init_control){other, message.stage, SGX545_STAGE_ABORT, 0, 0, 0};
 		expect("explicit staged initializer abort", sys3(54, control_fd, SGX545_IOCTL_INIT_CONTROL, ptr(&control)), 0);
 		if (control.buffers || control.pages) fail("staging abort counters", control.buffers);
@@ -940,8 +982,9 @@ static void stage_test(int fd, unsigned services, unsigned device, const char *p
 		}
 	}
 	expect("close staging control connection", sys3(6, control_fd, 0, 0), 0);
+	if (native_mode >= 2) say(native_mode == 3 ? "PASS: owning file close retired native binding before staged RAM/PTE release\n" : "PASS: staged abort retired native binding before staged RAM/PTE release\n");
 	say("PASS: i386 initializer staging, native snapshot, ownership rollback, creator-close lifetime and ");
-	say(leave_staged ? "driver-owned retention for unload\n" : "explicit staged abort\n");
+	say(leave_staged ? "driver-owned retention for unload\n" : native_mode == 3 ? "automatic close abort\n" : "explicit staged abort\n");
 	if (leave_staged) {
 		say("Check sysfs: stages=1 staged_buffers=11 staged_pages="); number(total_pages);
 		say(" files=0 connections=0 buffer_maps=0 init_running=0; unload must release all pages\n");
@@ -975,10 +1018,10 @@ int probe_main(unsigned *initial_stack)
 		if (!sgx545_heap_valid(&disabled)) fail("disabled PB heap rejected", 9);
 		disabled.handle = 1;
 		if (sgx545_heap_valid(&disabled)) fail("disabled heap handle accepted", 9);
-		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 native_cycle=48 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
+		say("PASS: ELF32 i386 executable; envelope=28 CONNECT=8/12 FREE_DEVICE_IN=60/12 FREE_DEVICE_OUT=8/4 init2_wire=2068 stage=32 control=24 native_cycle=48 native_runtime=56 ENUMERATE=328/200 handle=8 heap=24 init_info=776 client_mem=48 alloc=56 map_info=20 mmu_check=40 device_alloc=76 device_check=24 mmap2=passed disabled_heap=accepted\n");
 		return 0;
 	}
-	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | --native-cycle | device-path]\n"); return 2; }
+	if (argc > 2) { say("Usage: sgx545-compat-probe [--selftest | --init-info | --init-close | --buffers | --buffers-close | --mmu | --device | --device-close | --device-intel | --init-stage | --init-stage-close | --map-release | --native-cycle | --native-runtime | --native-runtime-close | device-path]\n"); return 2; }
 	if (argc == 2) {
 		if (same(argv[1], "--init-info")) init_mode = 1;
 		else if (same(argv[1], "--init-close")) init_mode = 2;
@@ -990,6 +1033,8 @@ int probe_main(unsigned *initial_stack)
 		else if (same(argv[1], "--device-intel")) { init_mode = 6; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage")) { init_mode = 8; original_intel_abi = 1; }
 		else if (same(argv[1], "--init-stage-close")) { init_mode = 9; original_intel_abi = 1; }
+		else if (same(argv[1], "--native-runtime")) { init_mode = 12; original_intel_abi = 1; }
+		else if (same(argv[1], "--native-runtime-close")) { init_mode = 13; original_intel_abi = 1; }
 		else if (same(argv[1], "--native-cycle")) { init_mode = 11; original_intel_abi = 1; }
 		else if (same(argv[1], "--map-release")) { init_mode = 10; original_intel_abi = 1; }
 		else path = argv[1];
@@ -1066,7 +1111,7 @@ int probe_main(unsigned *initial_stack)
 			return 0;
 		}
 		if (init_mode >= 8) {
-			stage_test(fd, services, device, path, init_mode == 9, init_mode == 11);
+			stage_test(fd, services, device, path, init_mode == 9, init_mode >= 11 ? init_mode - 10 : 0);
 			return 0;
 		}
 		if (init_mode >= 6) {

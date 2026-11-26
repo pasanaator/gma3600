@@ -96,7 +96,7 @@ def build(output, cache, cc, offline=False):
     for path in [output / "sgx545-initializer", *sorted(lib.iterdir()),
                  *(runtime / name for name in ("ld-2.15.so", "libc.so.6", "libdl.so.2", "libpthread.so.0", "librt.so.1"))]:
         artifacts[str(path.relative_to(output))] = hashlib.sha256(path.read_bytes()).hexdigest()
-    report = {"schema": 1, "transport_version": "0.5.0", "packages": PACKAGES,
+    report = {"schema": 1, "transport_version": "0.6.0", "packages": PACKAGES,
               "artifact_sha256": artifacts, "proprietary_code_executed": False,
               "packages_installed": False, "kernel_or_display_driver_changed": False,
               "runtime_scope": "Normal-use initializer API trace through a private, limited libdrm transport; not a security sandbox or hardware execution test"}

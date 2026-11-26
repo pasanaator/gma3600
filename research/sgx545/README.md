@@ -90,6 +90,14 @@ write/readback/restore; see [the build record](native-cycle-6.12-build.json).
 GPU firmware execution, hardware DMA, native resource registration and rendering
 remain unverified.
 
+The [transient native CPU cycle passed on the Atom](d2500hn-native-cycle.json),
+including the real Intel initializer, 15 unchanged buffers and zero-page unload.
+Services 0.14.0 / transport 0.6.0 now add retained file-owned binding and native
+query/unbind, abort/close/detach ordering and cache-bit preservation. See the
+[retained runtime build record](native-runtime-6.12-build.json).
+This is still CPU-only native integration; it does not register BM objects,
+run firmware, enable IRQ/power or establish GPU execution.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version
