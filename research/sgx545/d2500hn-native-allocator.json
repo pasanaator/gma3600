@@ -1,0 +1,59 @@
+{
+  "source": "User SSH transcript, uploaded 2026-11-26",
+  "transcript_sha256": "769cd85335b60bf81c92d814e1f8b8711336e291a961db66627b501c7832c36f",
+  "checkpoint": "82baae5 / services 0.16.0 / transport 0.8.0",
+  "hardware": "Intel D2500HN / Debian 13 amd64 / Linux 6.12.117 / VGA",
+  "synthetic_modes_passed": [
+    "--device-intel",
+    "--device-close",
+    "--native-alloc",
+    "--native-alloc-close"
+  ],
+  "real_initializer": {
+    "buffers": 15,
+    "pages": 36,
+    "logical_bytes": 97660,
+    "nonzero_bytes": 32815,
+    "populated_buffers": 9,
+    "native_ownership": {
+      "checked": 15,
+      "buffers": 15,
+      "pages": 36,
+      "errno": 0
+    },
+    "native_bm": {
+      "checked": 15,
+      "buffers": 15,
+      "pages": 36,
+      "errno": 0
+    },
+    "native_runtime": {
+      "bound": 1,
+      "queried": 1,
+      "unbound": 1,
+      "buffers": 15,
+      "pages": 36,
+      "errno": 0,
+      "verified": true
+    },
+    "handoff": {
+      "validated": 1,
+      "staged": 1,
+      "queried": 1,
+      "aborted": 1,
+      "buffers": 15,
+      "pages": 36,
+      "errno": 0,
+      "cpu_cycle_passed": true
+    },
+    "contents_verified": true
+  },
+  "cleanup": {
+    "all_live_and_error_counters_zero": true,
+    "allocator": "native_bm",
+    "final_unload": "[2800.421077] result=0 pages_live=0 blocked_hw_accesses=0"
+  },
+  "GPU_execution_enabled": false,
+  "GPU_DMA_or_firmware_compatibility_verified": false,
+  "next_step": "Audit exact initializer register scripts; bounded native reset/start source simulation before live firmware startup"
+}

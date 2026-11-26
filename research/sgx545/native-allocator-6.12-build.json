@@ -85,5 +85,6 @@
   "display_parent_changed": false,
   "proprietary_libraries_executed_in_cloud": false,
   "private_initializer_bundle_rebuild_required": true,
-  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md",
+  "hardware_validation": "d2500hn-native-allocator.json; all requested modes and all 15 real buffers / 36 pages passed with clean teardown"
 }

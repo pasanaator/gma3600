@@ -145,6 +145,9 @@ static void handoff_tests(unsigned *input)
 		request->info.host_control = 0x103; request->info.ta3d_control = 0x104; request->info.misc = 0x105;
 		request->info.hwperf = 0x106; request->info.ta_signature = 0x107; request->info.signature_3d = 0x108;
 		request->info.mem_handles[0] = 0x109; request->info.mem_handles[17] = 0x10a;
+		request->info.scripts.part1[0] = (struct sgx545_init_command32){1, 0x100, 0x12345678};
+		request->info.scripts.part1[1].op = 2;
+		request->info.scripts.part2[0].op = request->info.scripts.deinit[0].op = 2;
 		output[0] = output[1] = 0xfefefefe;
 		query_calls = abort_calls = sequence_count = content_calls = native_calls = 0;
 		fail_command = mode == 1 ? SGX545_IOCTL_INIT_REQUIREMENTS : mode == 2 ? SGX545_IOCTL_INIT_VALIDATE :

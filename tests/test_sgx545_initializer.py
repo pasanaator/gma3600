@@ -34,10 +34,41 @@ def content_trace():
                      "baseline=12345678 current=12345678 nonzero=1 padding_nonzero=0 changed=0 mapped=0")
         lines.append(f"MAP_RELEASE handle={0x100+i:08x} unmap=1 address={0x70000000+i*4096:08x} bytes=4096")
     lines.append("CONTENT_SUMMARY checked=11 buffers=11 bytes=44 nonzero_bytes=11 populated=11 changed=0 errno=0 mapped=0")
+    return "\n".join(lines) + "\n" + startup_trace()
+
+
+def startup_trace():
+    lines = []
+    for name in ("part1", "part2", "deinit"):
+        lines += [f"SCRIPT_WRITE name={name} index=0 offset=00000100 value=12345678",
+                  f"SCRIPT name={name} writes=1 halt=1"]
+    lines += ["BOOT_CONTROL task0=00000001 task1=00000002 clock0=00000003 clock1=00000004 status_reg=00000100 status_mask=00000001 cache=00000000"]
+    for name, count in (("KICK", 11), ("DATA", 24)):
+        lines += [f"BOOT_{name} index={i} value={i:08x}" for i in range(count)]
     return "\n".join(lines) + "\n"
 
 
 class InitializerTests(unittest.TestCase):
+    def test_startup_script_audit_captures_order_values_and_requires_complete_input(self):
+        trace = startup_trace()
+        result = runner.startup_inputs(trace)
+        self.assertTrue(result["complete"])
+        self.assertFalse(result["register_policy_reviewed"])
+        self.assertFalse(result["hardware_execution_tested"])
+        self.assertEqual(result["scripts"]["part1"]["writes"], [{"index": 0, "offset": 256, "value": 0x12345678}])
+        self.assertEqual(result["kick"], list(range(11)))
+        self.assertNotEqual(result["sha256"], runner.startup_inputs(trace.replace("value=12345678", "value=12345679"))["sha256"])
+        for changed in (trace.replace("BOOT_KICK index=0 value=00000000\n", ""),
+                        trace.replace("offset=00000100", "offset=00000101"),
+                        trace.replace("offset=00000100", "offset=00004000"),
+                        trace.replace("SCRIPT name=part1 writes=1 halt=1", "SCRIPT name=part1 writes=2 halt=1"),
+                        trace.replace("SCRIPT name=part1 writes=1 halt=1", "SCRIPT name=part1 writes=1 halt=0"),
+                        trace.replace("BOOT_DATA index=1 ", "BOOT_DATA index=0 "),
+                        trace + "SCRIPT name=part1 writes=1 halt=1\n",
+                        trace.replace("BOOT_CONTROL", "MISSING_CONTROL")):
+            self.assertFalse(runner.startup_inputs(changed)["complete"])
+        self.assertFalse(runner.startup_inputs("")["complete"])
+
     def test_pinned_package_validation_rejects_tampering_and_length(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "fixture.deb"
@@ -64,7 +95,7 @@ class InitializerTests(unittest.TestCase):
     def test_runtime_and_intel_artifact_hashes_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = {"schema": 1, "transport_version": "0.8.0", "artifact_sha256": {}}
+            manifest = {"schema": 1, "transport_version": "0.9.0", "artifact_sha256": {}}
             for name in runner.ARTIFACTS:
                 file = folder / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -73,7 +104,7 @@ class InitializerTests(unittest.TestCase):
             (folder / "bundle.json").write_text(json.dumps(manifest))
             runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps({**manifest, "transport_version": "0.1.0"}))
-            with self.assertRaisesRegex(ValueError, "Rebuild.*0.8.0"):
+            with self.assertRaisesRegex(ValueError, "Rebuild.*0.9.0"):
                 runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps(manifest))
             (folder / "sysroot/lib/i386-linux-gnu/libc.so.6").write_bytes(b"changed")
@@ -110,6 +141,8 @@ class InitializerTests(unittest.TestCase):
             path, status = self.target(root)
             self.write_status(path, status)
             self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.16.0")
+            (root / "module/gma3600_sgx_services/version").write_text("0.17.0\n")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.17.0")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1"),
                                ("allocator", "mmu"), ("bm_allocations", "1"), ("bm_pages", "1")):
@@ -268,7 +301,7 @@ class InitializerTests(unittest.TestCase):
             status_path, status = self.target(folder / "sys")
             report = folder / "report.json"
             argv = ["run", "--bundle", str(folder), "--capture", "--report", str(report)]
-            manifest = {"transport_version": "0.8.0", "artifact_sha256": {"fixture": "mock"}}
+            manifest = {"transport_version": "0.9.0", "artifact_sha256": {"fixture": "mock"}}
             def child(*args, **kwargs):
                 self.assertEqual(json.loads(report.read_text())["outcome"], "capture_pending")
                 self.assertNotIn("LD_PRELOAD", kwargs["env"])

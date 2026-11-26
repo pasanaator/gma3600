@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.8.0":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.8.0 is required")
+    if manifest.get("transport_version") != "0.9.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.9.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,8 +54,8 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child != "0.16.0":
-        raise ValueError("Capture currently requires host2 and tested services 0.16.0")
+    if host != "1.0.4-sgx-host2" or child not in ("0.16.0", "0.17.0"):
+        raise ValueError("Capture currently requires host2 and services 0.16.0 or 0.17.0")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled", "allocator": "native_bm",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
@@ -73,6 +73,38 @@ def clean_status(status):
                     "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
                     "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors", "bm_errors", "bm_allocations", "bm_pages")})
     return all(status.get(key) == value for key, value in expected.items())
+
+
+def startup_inputs(stderr):
+    """Capture a reviewable boot input set, not permission to execute it.
+
+    Register offsets being in the SGX window proves neither register semantics
+    nor safe values. A live executor must enforce its own reviewed policy.
+    """
+    scripts = {}
+    complete = True
+    for name, limit in (("part1", 64), ("part2", 64), ("deinit", 16)):
+        entries = re.findall(r"^SCRIPT_WRITE name=" + name + r" index=(\d+) offset=([0-9a-f]{8}) value=([0-9a-f]{8})$", stderr, re.M)
+        writes = [{"index": int(i), "offset": int(offset, 16), "value": int(value, 16)} for i, offset, value in entries]
+        summaries = re.findall(r"^SCRIPT name=" + name + r" writes=(\d+) halt=1$", stderr, re.M)
+        valid = len(summaries) == 1 and int(summaries[0]) == len(writes) < limit
+        valid = valid and all(w["index"] == i and w["offset"] < 0x4000 and not w["offset"] & 3 for i, w in enumerate(writes))
+        scripts[name] = {"writes": writes, "terminated_and_complete": valid}
+        complete = complete and valid
+    control = re.findall(r"^BOOT_CONTROL task0=([0-9a-f]{8}) task1=([0-9a-f]{8}) clock0=([0-9a-f]{8}) clock1=([0-9a-f]{8}) "
+                         r"status_reg=([0-9a-f]{8}) status_mask=([0-9a-f]{8}) cache=([0-9a-f]{8})$", stderr, re.M)
+    controls = dict(zip(("task0", "task1", "clock0", "clock1", "status_reg", "status_mask", "cache"),
+                        (int(v, 16) for v in control[0]))) if len(control) == 1 else {}
+    vectors = {}
+    for label, count in (("KICK", 11), ("DATA", 24)):
+        matches = re.findall(r"^BOOT_" + label + r" index=(\d+) value=([0-9a-f]{8})$", stderr, re.M)
+        vectors[label.lower()] = [int(value, 16) for _, value in matches]
+        complete = complete and len(matches) == count and all(int(index) == i for i, (index, _) in enumerate(matches))
+    complete = complete and bool(controls) and controls["status_reg"] < 0x4000 and not controls["status_reg"] & 3
+    payload = {"scripts": scripts, "control": controls, **vectors}
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return {**payload, "complete": bool(complete), "sha256": digest, "register_policy_reviewed": False,
+            "hardware_execution_tested": False}
 
 
 def handoff_status(stderr):
@@ -295,15 +327,19 @@ def main():
         runtime = native_runtime_status(stderr, handoff)
         bm = bm_status(stderr, handoff, contents)
         ownership = ownership_status(stderr, handoff, contents)
+        startup = startup_inputs(stderr)
         if outcome != "inspect_report" and handoff and handoff["cpu_cycle_passed"]:
             outcome = "native_allocator_verified_with_clean_resources" if mappings["all_staged_cpu_mappings_released"] and native["verified"] and runtime["verified"] and bm["verified"] and ownership["verified"] else "inspect_report"
         if contents["summary"] and not contents["verified"]:
+            outcome = "inspect_report"
+        if handoff and handoff["cpu_cycle_passed"] and not startup["complete"]:
             outcome = "inspect_report"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
                   "contents": contents,
                   "mapping_releases": mappings, "native_cycle": native, "native_runtime": runtime, "native_bm": bm, "native_ownership": ownership,
+                  "startup_inputs": startup,
                   "first_failed_request": first_failed_request(stderr),
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
@@ -314,6 +350,8 @@ def main():
         report_stream.truncate()
         report_stream.close()
         print("Initializer diagnostic report:", args.report)
+        if startup["complete"]:
+            print("Ordered firmware register scripts and boot controls captured for review:", startup["sha256"])
         if outcome == "native_allocator_verified_with_clean_resources":
             print("Original allocations retain native BM/OS ownership and snapshot handles:", ownership["summary"])
             print("Native BM aliases, getters, PTE attributes, VA reuse and retirement verified:", bm["summary"])
@@ -322,6 +360,8 @@ def main():
             print("CPU buffer contents, staging, PTE query and abort verified:", contents["summary"])
             print("Legacy CPU mappings released; staged RAM and GPU PTEs remained valid.")
             print("The Intel initializer is deliberately returned a failure after that diagnostic cycle.")
+        elif handoff and handoff["cpu_cycle_passed"] and not startup["complete"]:
+            print("Firmware startup input trace incomplete; inspect startup_inputs and rebuild the capture bundle.")
         elif ownership["summary"] and not ownership["verified"]:
             print("Original native BM ownership verification incomplete:", ownership["summary"])
         elif bm["summary"] and not bm["verified"]:

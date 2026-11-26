@@ -63,6 +63,8 @@ def main():
                     str(core), str(output / "bm")], check=True)
     subprocess.run([sys.executable, str(root / "tests/sgx545_native_source_test.py"),
                     str(core), str(output / "native")], check=True)
+    subprocess.run([sys.executable, str(root / "tests/sgx545_firmware_source_test.py"),
+                    str(core), str(output / "firmware")], check=True)
 
 
 if __name__ == "__main__":

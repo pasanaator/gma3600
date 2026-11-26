@@ -1,0 +1,146 @@
+--- a/services4/srvkm/devices/sgx/sgxreset.c
++++ b/services4/srvkm/devices/sgx/sgxreset.c
+@@ -375,7 +375,7 @@
+  @Return   Nothing
+ 
+ ******************************************************************************/
+-static IMG_VOID SGXResetInvalDC(PVRSRV_SGXDEV_INFO	*psDevInfo,
++static PVRSRV_ERROR SGXResetInvalDC(PVRSRV_SGXDEV_INFO	*psDevInfo,
+ 							    IMG_UINT32			ui32PDUMPFlags,
+ 								IMG_BOOL			bPDump)
+ {
+@@ -420,7 +420,7 @@
+ 							IMG_FALSE) != PVRSRV_OK)
+ 		{
+ 			PVR_DPF((PVR_DBG_ERROR,"Wait for DC invalidate failed."));
+-			PVR_DBG_BREAK;
++			return PVRSRV_ERROR_TIMEOUT;
+ 		}
+ 
+ 		if (bPDump)
+@@ -429,6 +429,7 @@
+ 		}
+ 	}
+ #endif /* SGX_FEATURE_MULTIPLE_MEM_CONTEXTS */
++	return PVRSRV_OK;
+ }
+ #endif /* SGX_FEATURE_MP */
+ 
+@@ -450,12 +451,13 @@
+  @Return   IMG_VOID
+ 
+ ******************************************************************************/
+-IMG_VOID SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
++PVRSRV_ERROR SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
+ 				  IMG_BOOL				bHardwareRecovery,
+ 				  IMG_UINT32			ui32PDUMPFlags)
+ #if !defined(SGX_FEATURE_MP)
+ {
+-	IMG_UINT32 ui32RegVal;
++	IMG_UINT32 ui32RegVal, ui32FaultAttempts = 0;
++	PVRSRV_ERROR eError;
+ #if defined(EUR_CR_BIF_INT_STAT_FAULT_REQ_MASK)
+ 	const IMG_UINT32 ui32BifFaultMask = EUR_CR_BIF_INT_STAT_FAULT_REQ_MASK;
+ #else
+@@ -570,7 +572,8 @@
+ 		SGXResetSoftReset(psDevInfo, IMG_FALSE, ui32PDUMPFlags, IMG_TRUE);
+ 		SGXResetSleep(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
+ 
+-		SGXResetInvalDC(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
++		eError = SGXResetInvalDC(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
++		if (eError != PVRSRV_OK) goto reset_failed;
+ 
+ 		/*
+ 			Check for a page fault from parts of SGX which do not have a reset.
+@@ -586,6 +589,13 @@
+ 				break;
+ 			}
+ 
++			/* Each retry maps one dummy page. Never spin forever on a stuck
++			 * requester; do not kick firmware after this failure. */
++			if (ui32FaultAttempts++ >= 64) {
++				eError = PVRSRV_ERROR_TIMEOUT;
++				goto reset_failed;
++			}
++
+ 			/*
+ 				There is a page fault, so reset the BIF again, map in the dummy page,
+ 				bring the BIF up and invalidate the Directory Cache.
+@@ -620,7 +630,8 @@
+ 			SGXResetSleep(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
+ 
+ 			/* Invalidate Directory Cache. */
+-			SGXResetInvalDC(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
++			eError = SGXResetInvalDC(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
++			if (eError != PVRSRV_OK) goto reset_failed;
+ 
+ 			/* Unmap the dummy page and try again. */
+ 			psDevInfo->pui32BIFResetPD[ui32PDIndex] = 0;
+@@ -656,7 +667,8 @@
+ #endif
+ 
+ 	/* Invalidate BIF Directory cache. */
+-	SGXResetInvalDC(psDevInfo, ui32PDUMPFlags, IMG_TRUE);
++	eError = SGXResetInvalDC(psDevInfo, ui32PDUMPFlags, IMG_TRUE);
++	if (eError != PVRSRV_OK) goto reset_failed;
+ 
+ 	PVR_DPF((PVR_DBG_MESSAGE,"Soft Reset of SGX"));
+ 
+@@ -669,6 +681,15 @@
+ 	SGXResetSleep(psDevInfo, ui32PDUMPFlags, IMG_TRUE);
+ 
+ 	PDUMPCOMMENTWITHFLAGS(ui32PDUMPFlags, "End of SGX reset sequence\r\n");
++	return PVRSRV_OK;
++
++reset_failed:
++	/* Retain the caller-owned page tables and backing. A reset assertion is
++	 * containment, not proof that bus mastering has stopped. The future live
++	 * owner must establish quiescence before freeing any GPU-visible RAM. */
++	SGXResetSoftReset(psDevInfo, IMG_TRUE, ui32PDUMPFlags, IMG_FALSE);
++	SGXResetSleep(psDevInfo, ui32PDUMPFlags, IMG_FALSE);
++	return eError;
+ }
+ 
+ #else
+@@ -815,6 +836,7 @@
+ 	SGXResetSetupBIFContexts(psDevInfo, ui32PDUMPFlags);
+ 	
+ 	PDUMPCOMMENTWITHFLAGS(ui32PDUMPFlags, "End of SGX MP reset sequence\r\n");
++	return PVRSRV_OK;
+ }	
+ #endif /* SGX_FEATURE_MP */
+ 
+--- a/services4/srvkm/devices/sgx/sgxinit.c
++++ b/services4/srvkm/devices/sgx/sgxinit.c
+@@ -555,6 +555,10 @@
+ 	IMG_BOOL				bPDumpIsSuspended = PDumpIsSuspended();
+ #endif /* PDUMP */
+ 
++	/* SGXWaitClocks divides by the timing supplied by the power owner.
++	 * A CPU-only InitDevInfo binding does not initialize that timing. */
++	if (!psDevInfo->ui32CoreClockSpeed) return PVRSRV_ERROR_INVALID_PARAMS;
++
+ #if defined(SGX_FEATURE_MP)
+ 	/* Slave core clocks must be enabled during reset */
+ #else
+@@ -580,7 +584,8 @@
+ 	bHardwareRecovery |= bFirstTime;
+ #endif /* SGX_FEATURE_MP */
+ 	
+-	SGXReset(psDevInfo, bHardwareRecovery, PDUMP_FLAGS_CONTINUOUS);
++	eError = SGXReset(psDevInfo, bHardwareRecovery, PDUMP_FLAGS_CONTINUOUS);
++	if (eError != PVRSRV_OK) return eError;
+ 
+ #if defined(EUR_CR_POWER)
+ #if defined(SGX531)
+--- a/services4/srvkm/devices/sgx/sgxinfokm.h
++++ b/services4/srvkm/devices/sgx/sgxinfokm.h
+@@ -560,7 +560,7 @@
+ 
+ IMG_VOID SGXOSTimer(IMG_VOID *pvData);
+ 
+-IMG_VOID SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
++PVRSRV_ERROR SGXReset(PVRSRV_SGXDEV_INFO	*psDevInfo,
+ 				  IMG_BOOL				bHardwareRecovery,
+ 				  IMG_UINT32			ui32PDUMPFlags);
+ 

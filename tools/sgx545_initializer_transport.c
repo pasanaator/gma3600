@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.8.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.9.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -112,6 +112,10 @@ static void script_metadata(const char *name, const struct sgx545_init_command32
 				name, i, commands[i].op, commands[i].offset);
 			return;
 		}
+		/* Values are initializer data, never executed by this transport. Keep
+		 * the ordered sequence for a separate firmware register-policy audit. */
+		fprintf(stderr, "SCRIPT_WRITE name=%s index=%u offset=%08x value=%08x\n",
+			name, i, commands[i].offset, commands[i].value);
 	}
 	fprintf(stderr, "SCRIPT name=%s writes=%u halt=0\n", name, count);
 }
@@ -279,6 +283,13 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	script_metadata("part1", request.info.scripts.part1, 64);
 	script_metadata("part2", request.info.scripts.part2, 64);
 	script_metadata("deinit", request.info.scripts.deinit, 16);
+	fprintf(stderr, "BOOT_CONTROL task0=%08x task1=%08x clock0=%08x clock1=%08x status_reg=%08x status_mask=%08x cache=%08x\n",
+		request.info.edm_task[0], request.info.edm_task[1], request.info.clock_control[0], request.info.clock_control[1],
+		request.info.clock_status_reg, request.info.clock_status_mask, request.info.cache_control);
+	for (i = 0; i < 11; i++)
+		fprintf(stderr, "BOOT_KICK index=%u value=%08x\n", i, request.info.host_kick[i]);
+	for (i = 0; i < 24; i++)
+		fprintf(stderr, "BOOT_DATA index=%u value=%08x\n", i, request.info.dev_data[i]);
 	validation = (struct sgx545_init_stage){.services = wire->services, .device = request.device,
 		.request = (unsigned)(unsigned long)&request, .request_bytes = sizeof(request)};
 	stage = validation;

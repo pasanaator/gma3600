@@ -1,0 +1,88 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.17.0",
+  "private_transport_version": "0.9.0",
+  "compatible_capture_services_versions": [
+    "0.16.0",
+    "0.17.0"
+  ],
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-native-allocator.json",
+  "production_GPU_execution_enabled": false,
+  "changes": [
+    "Bound native SGXReset fault draining to 64 dummy-page attempts, leaving reset asserted on failure and retaining caller-owned tables/backing",
+    "Return BIF directory invalidation timeout to SGXReset and SGXInitialise; do not run part2 or issue a firmware kick after reset failure",
+    "Reject zero core-clock timing before any startup MMIO, preventing division by zero in native SGXWaitClocks",
+    "Source-test complete native reset helpers and actual SGXInitialise first-kick body against simulated MMIO/time/completion for both compile profiles",
+    "Capture ordered initializer part1/part2/deinit register writes, EDM/clock controls, all 11 host kicks and all 24 device-data words; structural completeness plus SHA256 for review, never an execution whitelist",
+    "Permit services 0.16.0 capture with new transport so Atom need not rebuild/retest allocation groundwork"
+  ],
+  "validation": {
+    "host_suites": "12 C suites plus 29 Python unittests",
+    "native_source_simulation": {
+      "profiles": [
+        "10131",
+        "10141"
+      ],
+      "sanitizers": [
+        "address",
+        "undefined"
+      ],
+      "branches": [
+        "native multiple-context SGX545",
+        "forced single-context invalidation wait"
+      ],
+      "cases": [
+        "Successful first kick with one fault drained at VA 0xffffffff and dummy-PTE cleanup",
+        "Correct original EDM page directory installed before kick; first script before reset, second after reset and before kick",
+        "Stuck fault source stops after 65 status reads / 64 drain attempts with no second script or kick",
+        "Initial, mapped-fault and final-directory invalidation timeout propagation with no firmware kick",
+        "Microkernel completion and timeout response",
+        "Illegal part1/part2 operation stops startup",
+        "Missing timing rejected before all MMIO; actual SGXWaitClocks arithmetic tested with simulated OSWaitus"
+      ],
+      "mocked_boundaries": [
+        "MMIO registers",
+        "OSWaitus delay",
+        "poll helper",
+        "firmware completion",
+        "debug/PDump"
+      ]
+    },
+    "actual_ELF32_transport": "23 handoff scenarios passed under QEMU; 22 complete boot-input traces parsed from actual C transport output, with exact ordered values and vectors; requirements failure produced no complete trace",
+    "project_owned_i386_loader_fixture": "QEMU pass transport 0.9.0; proprietary Intel libraries not executed in cloud",
+    "kernel_profiles": {
+      "10131": {
+        "build": "passed",
+        "compiler_warnings": 0,
+        "modules": {
+          "host": "/workspace/gma3600-tools/legacy/firmware-final-10131/host/gma3600.ko",
+          "probe": "/workspace/gma3600-tools/legacy/firmware-final-10131/probe/gma3600_sgx_probe.ko",
+          "services_prepare_only": "/workspace/gma3600-tools/legacy/firmware-final-10131/core/gma3600_sgx_services.ko"
+        }
+      },
+      "10141": {
+        "build": "passed",
+        "compiler_warnings": 0,
+        "modules": {
+          "host": "/workspace/gma3600-tools/legacy/firmware-final-10141/host/gma3600.ko",
+          "probe": "/workspace/gma3600-tools/legacy/firmware-final-10141/probe/gma3600_sgx_probe.ko",
+          "services_prepare_only": "/workspace/gma3600-tools/legacy/firmware-final-10141/core/gma3600_sgx_services.ko"
+        }
+      }
+    },
+    "real_hardware_startup": "Not enabled or tested. Simulated completion does not verify GPU DMA, page walks, power isolation or firmware compatibility."
+  },
+  "remaining_for_first_live_start": [
+    "Review exact captured scripts and constrain register offsets/values/order",
+    "Dedicated exclusive boot owner; parent-coordinated power/reset and suspend/detach handling",
+    "Bounded one-shot start, polling-only completion, fault/status report",
+    "Prove DMA quiescence before release; retain/quarantine all GPU-visible pages on unresolved failure",
+    "Firmware-returned ABI/build/revision check, including nine private layouts"
+  ],
+  "artifacts": {
+    "experimental/sgx545/patches/0013-bound-reset-fault-drain-and-propagate-timeouts.patch": "eadcca08c62a627c43b89fd1796cf57a61aa4f788c7c541cd9f13fc3b6db8dbe",
+    "tests/sgx545_firmware_source_test.c": "a5489a91e101af65bbca3d2b32e2f611ba41907234b80b65f44da7a43c85d846",
+    "tests/sgx545_firmware_source_test.py": "10e53a51d7d6b076bb6a7be549052821b61e23de593d5c7cca1858b4f89eef03"
+  }
+}
