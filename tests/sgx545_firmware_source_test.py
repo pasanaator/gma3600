@@ -44,10 +44,12 @@ def main():
                 command += ["-DTEST_SINGLE_CONTEXT"]
             for path in (core / "include4", core / "services4/include", core / "services4/srvkm/include",
                          core / "services4/srvkm/hwdefs", core / "services4/srvkm/devices/sgx",
-                         core / "services4/system/cedarview_linux"):
+                         core / "services4/system/cedarview_linux", root / "experimental/sgx545/abi",
+                         root / "experimental/sgx545/core"):
                 command += ["-I", str(path)]
             binary = output / ("test-" + rev + ("-single" if single else ""))
-            subprocess.run(command + [str(root / "tests/sgx545_firmware_source_test.c"), "-o", str(binary)], check=True)
+            subprocess.run(command + [str(root / "tests/sgx545_firmware_source_test.c"),
+                           str(root / "experimental/sgx545/core/gma3600_sgx_boot.c"), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=10)
 
 

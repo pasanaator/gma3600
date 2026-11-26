@@ -12,6 +12,12 @@ typedef struct _PVRSRV_DEVICE_NODE_ PVRSRV_DEVICE_NODE;
 #include "sgxconfig.h"
 #include "sgxmmu.h"
 #include "sysinfo.h"
+#include "gma3600_sgx_boot.h"
+#include "fixtures/sgx545_boot_capture.h"
+
+_Static_assert(EUR_CR_EVENT_KICK2 == GMA_SGX_BOOT_KICK2, "boot kick register");
+_Static_assert(PVRSRV_USSE_EDM_INIT_COMPLETE == GMA_SGX_BOOT_INIT_COMPLETE, "boot completion bit");
+_Static_assert(EUR_CR_EVENT_HOST_ENABLE == 0x130 && EUR_CR_EVENT_HOST_ENABLE2 == 0x110, "boot IRQ masks");
 
 #ifdef TEST_SINGLE_CONTEXT
 #undef SGX_FEATURE_MULTIPLE_MEM_CONTEXTS
@@ -25,6 +31,7 @@ static IMG_UINT32 registers_[0x4000 / 4];
 static struct { unsigned offset, value; } writes[4096];
 static unsigned write_count, fault_reads, faults, fault_address, waits_us, polls, kicks;
 static unsigned fail_poll, init_complete;
+static unsigned captured_replay;
 
 static void write_reg(void *base, unsigned offset, unsigned value)
 {
@@ -32,6 +39,8 @@ static void write_reg(void *base, unsigned offset, unsigned value)
     assert(write_count < sizeof(writes) / sizeof(writes[0]));
     writes[write_count].offset = offset; writes[write_count++].value = value;
     registers_[offset / 4] = value;
+    if (captured_replay && (offset == EUR_CR_EVENT_HOST_ENABLE || offset == EUR_CR_EVENT_HOST_ENABLE2))
+        assert(value == 0);
     if (offset == EUR_CR_EVENT_KICK2) {
         assert(value == EUR_CR_EVENT_KICK2_NOW_MASK);
         /* The PD must be installed and all reset bits released first. */
@@ -171,6 +180,36 @@ int main(void)
     assert(!kicks && !fault_reads);
     setup(); dev.sScripts.asInitCommandsPart2[0].eOp = SGX_INIT_OP_ILLEGAL;
     assert(SGXInitialise(&dev, IMG_TRUE) == PVRSRV_ERROR_UNKNOWN_SCRIPT_OPERATION && !kicks);
+    /* Replay the user's real register inputs through actual native reset and
+     * SGXInitialise, after policy normalization. Firmware completion remains
+     * a simulated host-control write, never an execution of Intel firmware. */
+    setup(); captured_replay = 1;
+    {
+        struct gma_sgx_boot_plan plan;
+        unsigned phase;
+        assert(!gma_sgx_boot_plan_build(&captured_info, captured_memory, 15, &plan));
+        dev.ui32ClkGateCtl = plan.info.clock_control[0];
+        dev.ui32ClkGateCtl2 = plan.info.clock_control[1];
+        for (phase = 0; phase < 2; phase++) {
+            SGX_INIT_COMMAND *dst = phase ? dev.sScripts.asInitCommandsPart2 : dev.sScripts.asInitCommandsPart1;
+            const struct sgx545_init_command32 *src = phase ? plan.info.scripts.part2 : plan.info.scripts.part1;
+            for (i = 0; i < 64; i++) {
+                dst[i].eOp = src[i].op == 2 ? SGX_INIT_OP_HALT : SGX_INIT_OP_WRITE_HW_REG;
+                if (src[i].op == 2) break;
+                dst[i].sWriteHWReg.ui32Offset = src[i].offset;
+                dst[i].sWriteHWReg.ui32Value = src[i].value;
+            }
+            assert(i < 64);
+        }
+        assert(SGXInitialise(&dev, IMG_TRUE) == PVRSRV_OK && kicks == 1);
+        assert(write_count >= 39);
+        for (i = 0; i < 38; i++) {
+            assert(writes[write_count - 39 + i].offset == plan.info.scripts.part2[i].offset);
+            assert(writes[write_count - 39 + i].value == plan.info.scripts.part2[i].value);
+        }
+        assert(writes[write_count - 1].offset == EUR_CR_EVENT_KICK2);
+    }
+    puts("Captured D2500HN boot scripts replayed through actual native reset/start; host interrupts masked, original addresses preserved (simulated completion only)");
     puts("Native reset/start simulation: bounded fault drain, timeout propagation, PD setup, first kick and completion/failure passed (no hardware)");
     return 0;
 }

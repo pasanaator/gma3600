@@ -1,0 +1,90 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "host_version": "1.0.4-sgx-host2; unchanged",
+  "services_module_version": "0.17.0; prepare-only with dormant boot controller",
+  "transport_version": "0.9.0; unchanged",
+  "hardware_capture": "d2500hn-boot-inputs.json",
+  "register_audit": "d2500hn-boot-register-audit.json",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "hardware_capture_result": {
+    "outcome": "native_allocator_verified_with_clean_resources",
+    "original_buffers": 15,
+    "original_pages": 36,
+    "startup_input_sha256": "990775fd4e678a0686020040d2babd65dbc15b5a48cdf8cfa0be5dad59f5f835",
+    "register_writes": 49,
+    "unique_register_offsets": 41,
+    "names_in_both_public_headers": 22,
+    "offsets_absent_from_both": 19,
+    "resources_clean": true,
+    "actual_GPU_execution": false
+  },
+  "implementation": {
+    "policy": "Closed observed initializer recipe, original allocation identities/flags/sizes/ranges, direct pointer/base relationships, fixed controls and explicit polling IRQ normalization",
+    "owner": "Serialized one-shot controller, no new UAPI; READY and QUARANTINED retain ownership; release only before first possible write or after a separate quiescence hook proves safe; no automatic release retry after partial cleanup",
+    "deadline": "500 ms hardware-sequence deadline with independent 10000-read cap; individual platform hooks must be bounded",
+    "production_connection": "Compiled into services but has no bridge ioctl, module parameter or live provider; existing parent and prepare-only MMIO gate unchanged"
+  },
+  "validation": {
+    "host_C_suites": 13,
+    "python_unittests": 31,
+    "controller_sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "controller_cases": [
+      "Real captured input accepted; host IRQ unmask normalized to zero without mutating input",
+      "Every executed script operation/offset/value mutation rejected",
+      "Original token/size/flags, VA alignment/wrap/heap/nonoverlap, structure vector and host-kick checks",
+      "Alias pointer substitution rejected; trailing-after-HALT words discarded",
+      "Successful startup retains owner until explicit stop with proven quiescence",
+      "Failure at each of 45 controller writes with both failed and successful quiescence",
+      "Acquire/verify/reset/publish/status failure; interrupted status and one-shot retry rejection",
+      "Deadline in reset/poll; stalled or backwards clock and late completion",
+      "Quiescence failure or absent hook retains owner; partial release not retried",
+      "Detach forbids further provider calls and retains resources"
+    ],
+    "native_source_replay": "Actual native SGXReset/SGXInitialise/SGXWaitClocks with captured normalized scripts; exact 38-write part2 tail, original GPU pointer values, masked local IRQs and simulated first-kick/completion; ASan/UBSan both profiles and forced single-context variants",
+    "mocked_boundaries": [
+      "MMIO",
+      "OS delay",
+      "native poll helper and firmware completion",
+      "controller platform/resource hooks"
+    ],
+    "proprietary_execution_in_cloud": false,
+    "profiles": {
+      "10131": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": "/workspace/gma3600-tools/legacy/boot-owner-final-10131/host/gma3600.ko",
+          "probe": "/workspace/gma3600-tools/legacy/boot-owner-final-10131/probe/gma3600_sgx_probe.ko",
+          "services_prepare_only": "/workspace/gma3600-tools/legacy/boot-owner-final-10131/core/gma3600_sgx_services.ko"
+        }
+      },
+      "10141": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": "/workspace/gma3600-tools/legacy/boot-owner-final-10141/host/gma3600.ko",
+          "probe": "/workspace/gma3600-tools/legacy/boot-owner-final-10141/probe/gma3600_sgx_probe.ko",
+          "services_prepare_only": "/workspace/gma3600-tools/legacy/boot-owner-final-10141/core/gma3600_sgx_services.ko"
+        }
+      }
+    }
+  },
+  "remaining_live_integration": [
+    "Exclusive actual stage/native-binding and page-directory/reset-page owner, with module/parent pins",
+    "Parent power/suspend/detach coordination; host2 currently has no GPU boot authority",
+    "Connect dedicated bounded reset/MMIO/status hooks, without globally unblocking native writes",
+    "Preserve every GPU-visible page across close/remove on unproven shutdown; reboot-only retention is acceptable for the first opt-in trial",
+    "Actual firmware INIT_COMPLETE and subsequent ABI/build/revision reply; rendering/submission remains disabled"
+  ],
+  "artifacts": {
+    "experimental/sgx545/core/gma3600_sgx_boot.c": "054cc7e2820b2a7fb12acabfe46ccda9e49ce2a60101863a9044613e4d98eb80",
+    "experimental/sgx545/core/gma3600_sgx_boot.h": "7b3a8b99c0cc3d456b54122b5216caf95d52def736899e3f47416aeec0af4c2e",
+    "tests/sgx545_boot_test.c": "1430ac44083504157ac3e0c218ef88b34248fa7938430e164d69581858a8a74d",
+    "tests/fixtures/sgx545_boot_capture.h": "cde8a22ec2494cf03220de8bea4eb5c82ce50c90755c6cbe04d40dff092aed28",
+    "research/sgx545/d2500hn-boot-inputs.json": "e25dfa54ebf2d9a27ba735f2201140ae1210338f8104fd63cf85df75a4344597",
+    "research/sgx545/d2500hn-boot-register-audit.json": "356992c3b0dd40d9569833b554b913f0cacd1f271d16a4a3ae30cd5841e70a97"
+  }
+}

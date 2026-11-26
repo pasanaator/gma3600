@@ -44,6 +44,10 @@ trap 'rm -f "$test_binary"' EXIT
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_bridge_lifetime_test.py
 PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_buffers_test.py
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -Iexperimental/sgx545/abi -Iexperimental/sgx545/core tests/sgx545_boot_test.c \
+    experimental/sgx545/core/gma3600_sgx_boot.c -o "$test_binary"
+"$test_binary"
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=undefined \
     -Iexperimental/sgx545/abi -Itools tests/sgx545_heap_test.c -o "$test_binary"
 "$test_binary"

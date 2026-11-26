@@ -1,0 +1,822 @@
+{
+  "schema": 1,
+  "capture_evidence_consistent": true,
+  "startup_input_sha256": "990775fd4e678a0686020040d2babd65dbc15b5a48cdf8cfa0be5dad59f5f835",
+  "hardware_execution_enabled": false,
+  "execution_ready": false,
+  "headers": [
+    {
+      "path": "/workspace/gma3600-tools/legacy/cedarview-drm-official/usr/src/cedarview-drm-20120717/staging/cdv/pvr/services4/srvkm/hwdefs/sgx545defs.h",
+      "sha256": "ee1484a998060282cd7e8585fa0e5df2f7fd1833ba35afd507170d7fa27cdafc"
+    },
+    {
+      "path": "/workspace/gma3600-tools/legacy/firmware-final-10131/core/services4/srvkm/hwdefs/sgx545defs.h",
+      "sha256": "cd31d3740576b593d531c1461fcc8fe430f9b53ec57e9db0d5d16f898f62501e"
+    }
+  ],
+  "register_coverage": {
+    "writes": 49,
+    "unique_offsets": 41,
+    "names_in_all_headers": 22,
+    "absent_from_all_headers": [
+      316,
+      1256,
+      2048,
+      2052,
+      2064,
+      2068,
+      2072,
+      2560,
+      2648,
+      2664,
+      2668,
+      2672,
+      2676,
+      2680,
+      2684,
+      2688,
+      2732,
+      2748,
+      2864
+    ]
+  },
+  "address_checks": [
+    {
+      "name": "kernel_code_base_captured_encoding",
+      "offset": 2632,
+      "expected": 132382720,
+      "note": "Observed Intel encoding; no new assertion of undocumented address semantics",
+      "supplied": 132382720,
+      "matches_original": true
+    },
+    {
+      "name": "event_kicker_original_allocation",
+      "offset": 2756,
+      "expected": 4093652992,
+      "note": "Original allocation, not diagnostic alias",
+      "supplied": 4093652992,
+      "matches_original": true
+    },
+    {
+      "name": "boot_pds_original_allocation",
+      "offset": 2664,
+      "expected": 4060139520,
+      "note": "Observed pointer relationship; register unnamed in public headers",
+      "supplied": 4060139520,
+      "matches_original": true
+    }
+  ],
+  "scripts": [
+    {
+      "phase": "part1",
+      "index": 0,
+      "offset": 2648,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part1",
+      "index": 1,
+      "offset": 2764,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_EVENT_TIMER"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_EVENT_TIMER"
+        ],
+        [
+          "EUR_CR_EVENT_TIMER"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 0,
+      "offset": 2072,
+      "value": 2047,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 1,
+      "offset": 2064,
+      "value": 1,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 2,
+      "offset": 2068,
+      "value": 65535,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 3,
+      "offset": 304,
+      "value": 16384,
+      "names_in_all_headers": [
+        "EUR_CR_EVENT_HOST_ENABLE"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_EVENT_HOST_ENABLE"
+        ],
+        [
+          "EUR_CR_EVENT_HOST_ENABLE"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 4,
+      "offset": 272,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_EVENT_HOST_ENABLE2"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_EVENT_HOST_ENABLE2"
+        ],
+        [
+          "EUR_CR_EVENT_HOST_ENABLE2"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 5,
+      "offset": 316,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 6,
+      "offset": 2684,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 7,
+      "offset": 2688,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 8,
+      "offset": 2676,
+      "value": 2130432,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 9,
+      "offset": 1256,
+      "value": 256,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 10,
+      "offset": 2680,
+      "value": 44,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 11,
+      "offset": 2732,
+      "value": 69,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 12,
+      "offset": 2748,
+      "value": 14,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 13,
+      "offset": 2048,
+      "value": 48,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 14,
+      "offset": 2052,
+      "value": 65535,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 15,
+      "offset": 2560,
+      "value": 507904,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 16,
+      "offset": 2572,
+      "value": 66191360,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_0"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_0"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_0"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 17,
+      "offset": 2576,
+      "value": 66195456,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_1"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_1"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_1"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 18,
+      "offset": 2580,
+      "value": 66199552,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_2"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_2"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_2"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 19,
+      "offset": 2584,
+      "value": 66203648,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_3"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_3"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_3"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 20,
+      "offset": 2588,
+      "value": 66207744,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_4"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_4"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_4"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 21,
+      "offset": 2592,
+      "value": 66211840,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_5"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_5"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_5"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 22,
+      "offset": 2596,
+      "value": 66215936,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_6"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_6"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_6"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 23,
+      "offset": 2600,
+      "value": 66220032,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_7"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_7"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_7"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 24,
+      "offset": 2604,
+      "value": 66224128,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_8"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_8"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_8"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 25,
+      "offset": 2608,
+      "value": 66228224,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_9"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_9"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_9"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 26,
+      "offset": 2612,
+      "value": 33292288,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_10"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_10"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_10"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 27,
+      "offset": 2616,
+      "value": 33296384,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_11"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_11"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_11"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 28,
+      "offset": 2620,
+      "value": 33300480,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_12"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_12"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_12"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 29,
+      "offset": 2624,
+      "value": 33304576,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_13"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_13"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_13"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 30,
+      "offset": 2632,
+      "value": 132382720,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_15"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_15"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_15"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 31,
+      "offset": 2744,
+      "value": 4026531840,
+      "names_in_all_headers": [
+        "EUR_CR_PDS_EXEC_BASE"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_PDS_EXEC_BASE"
+        ],
+        [
+          "EUR_CR_PDS_EXEC_BASE"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 32,
+      "offset": 2864,
+      "value": 256,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 33,
+      "offset": 2756,
+      "value": 4093652992,
+      "names_in_all_headers": [
+        "EUR_CR_EVENT_KICKER"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_EVENT_KICKER"
+        ],
+        [
+          "EUR_CR_EVENT_KICKER"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 34,
+      "offset": 2664,
+      "value": 4060139520,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 35,
+      "offset": 2668,
+      "value": 1,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 36,
+      "offset": 2672,
+      "value": 6,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "part2",
+      "index": 37,
+      "offset": 2648,
+      "value": 570732559,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 0,
+      "offset": 2648,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 1,
+      "offset": 2664,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 2,
+      "offset": 2668,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 3,
+      "offset": 2672,
+      "value": 0,
+      "names_in_all_headers": [],
+      "names_by_header": [
+        [],
+        []
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 4,
+      "offset": 2632,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_USE_CODE_BASE_15"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_USE_CODE_BASE_15"
+        ],
+        [
+          "EUR_CR_USE_CODE_BASE_15"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 5,
+      "offset": 304,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_EVENT_HOST_ENABLE"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_EVENT_HOST_ENABLE"
+        ],
+        [
+          "EUR_CR_EVENT_HOST_ENABLE"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 6,
+      "offset": 272,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_EVENT_HOST_ENABLE2"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_EVENT_HOST_ENABLE2"
+        ],
+        [
+          "EUR_CR_EVENT_HOST_ENABLE2"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 7,
+      "offset": 0,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_CLKGATECTL"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_CLKGATECTL"
+        ],
+        [
+          "EUR_CR_CLKGATECTL"
+        ]
+      ],
+      "value_semantics_verified": false
+    },
+    {
+      "phase": "deinit",
+      "index": 8,
+      "offset": 4,
+      "value": 0,
+      "names_in_all_headers": [
+        "EUR_CR_CLKGATECTL2"
+      ],
+      "names_by_header": [
+        [
+          "EUR_CR_CLKGATECTL2"
+        ],
+        [
+          "EUR_CR_CLKGATECTL2"
+        ]
+      ],
+      "value_semantics_verified": false
+    }
+  ],
+  "polling_changes": [
+    {
+      "offset": 304,
+      "original": 16384,
+      "planned": 0
+    }
+  ],
+  "limits": [
+    "Header names do not prove register value semantics or safe sequencing",
+    "Observed-only recipe must stay restricted to the pinned initializer/profile",
+    "No hardware power, DMA, firmware completion or ABI compatibility validated by this audit",
+    "Boot controller is not connected to a live bridge/MMIO provider; parent ownership integration remains"
+  ]
+}

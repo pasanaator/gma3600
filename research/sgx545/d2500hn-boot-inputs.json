@@ -1,0 +1,985 @@
+{
+  "transport_version": "0.9.0",
+  "startup_inputs": {
+    "scripts": {
+      "part1": {
+        "writes": [
+          {
+            "index": 0,
+            "offset": 2648,
+            "value": 0
+          },
+          {
+            "index": 1,
+            "offset": 2764,
+            "value": 0
+          }
+        ],
+        "terminated_and_complete": true
+      },
+      "part2": {
+        "writes": [
+          {
+            "index": 0,
+            "offset": 2072,
+            "value": 2047
+          },
+          {
+            "index": 1,
+            "offset": 2064,
+            "value": 1
+          },
+          {
+            "index": 2,
+            "offset": 2068,
+            "value": 65535
+          },
+          {
+            "index": 3,
+            "offset": 304,
+            "value": 16384
+          },
+          {
+            "index": 4,
+            "offset": 272,
+            "value": 0
+          },
+          {
+            "index": 5,
+            "offset": 316,
+            "value": 0
+          },
+          {
+            "index": 6,
+            "offset": 2684,
+            "value": 0
+          },
+          {
+            "index": 7,
+            "offset": 2688,
+            "value": 0
+          },
+          {
+            "index": 8,
+            "offset": 2676,
+            "value": 2130432
+          },
+          {
+            "index": 9,
+            "offset": 1256,
+            "value": 256
+          },
+          {
+            "index": 10,
+            "offset": 2680,
+            "value": 44
+          },
+          {
+            "index": 11,
+            "offset": 2732,
+            "value": 69
+          },
+          {
+            "index": 12,
+            "offset": 2748,
+            "value": 14
+          },
+          {
+            "index": 13,
+            "offset": 2048,
+            "value": 48
+          },
+          {
+            "index": 14,
+            "offset": 2052,
+            "value": 65535
+          },
+          {
+            "index": 15,
+            "offset": 2560,
+            "value": 507904
+          },
+          {
+            "index": 16,
+            "offset": 2572,
+            "value": 66191360
+          },
+          {
+            "index": 17,
+            "offset": 2576,
+            "value": 66195456
+          },
+          {
+            "index": 18,
+            "offset": 2580,
+            "value": 66199552
+          },
+          {
+            "index": 19,
+            "offset": 2584,
+            "value": 66203648
+          },
+          {
+            "index": 20,
+            "offset": 2588,
+            "value": 66207744
+          },
+          {
+            "index": 21,
+            "offset": 2592,
+            "value": 66211840
+          },
+          {
+            "index": 22,
+            "offset": 2596,
+            "value": 66215936
+          },
+          {
+            "index": 23,
+            "offset": 2600,
+            "value": 66220032
+          },
+          {
+            "index": 24,
+            "offset": 2604,
+            "value": 66224128
+          },
+          {
+            "index": 25,
+            "offset": 2608,
+            "value": 66228224
+          },
+          {
+            "index": 26,
+            "offset": 2612,
+            "value": 33292288
+          },
+          {
+            "index": 27,
+            "offset": 2616,
+            "value": 33296384
+          },
+          {
+            "index": 28,
+            "offset": 2620,
+            "value": 33300480
+          },
+          {
+            "index": 29,
+            "offset": 2624,
+            "value": 33304576
+          },
+          {
+            "index": 30,
+            "offset": 2632,
+            "value": 132382720
+          },
+          {
+            "index": 31,
+            "offset": 2744,
+            "value": 4026531840
+          },
+          {
+            "index": 32,
+            "offset": 2864,
+            "value": 256
+          },
+          {
+            "index": 33,
+            "offset": 2756,
+            "value": 4093652992
+          },
+          {
+            "index": 34,
+            "offset": 2664,
+            "value": 4060139520
+          },
+          {
+            "index": 35,
+            "offset": 2668,
+            "value": 1
+          },
+          {
+            "index": 36,
+            "offset": 2672,
+            "value": 6
+          },
+          {
+            "index": 37,
+            "offset": 2648,
+            "value": 570732559
+          }
+        ],
+        "terminated_and_complete": true
+      },
+      "deinit": {
+        "writes": [
+          {
+            "index": 0,
+            "offset": 2648,
+            "value": 0
+          },
+          {
+            "index": 1,
+            "offset": 2664,
+            "value": 0
+          },
+          {
+            "index": 2,
+            "offset": 2668,
+            "value": 0
+          },
+          {
+            "index": 3,
+            "offset": 2672,
+            "value": 0
+          },
+          {
+            "index": 4,
+            "offset": 2632,
+            "value": 0
+          },
+          {
+            "index": 5,
+            "offset": 304,
+            "value": 0
+          },
+          {
+            "index": 6,
+            "offset": 272,
+            "value": 0
+          },
+          {
+            "index": 7,
+            "offset": 0,
+            "value": 0
+          },
+          {
+            "index": 8,
+            "offset": 4,
+            "value": 0
+          }
+        ],
+        "terminated_and_complete": true
+      }
+    },
+    "control": {
+      "task0": 2836,
+      "task1": 2848,
+      "clock0": 42666,
+      "clock1": 11184810,
+      "status_reg": 8,
+      "status_mask": 4294967263,
+      "cache": 2
+    },
+    "kick": [
+      285,
+      259,
+      0,
+      212,
+      235,
+      314,
+      371,
+      342,
+      0,
+      343,
+      0
+    ],
+    "data": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      768,
+      2368,
+      4026531840,
+      4177526784,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "complete": true,
+    "sha256": "990775fd4e678a0686020040d2babd65dbc15b5a48cdf8cfa0be5dad59f5f835",
+    "register_policy_reviewed": false,
+    "hardware_execution_tested": false
+  },
+  "contents": {
+    "buffers": [
+      {
+        "index": 0,
+        "handle": 6,
+        "bytes": 8192,
+        "address": 4093640704,
+        "memory_flags": 33702479,
+        "baseline_hash": 3166903749,
+        "current_hash": 3166903749,
+        "nonzero_bytes": 0,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 1,
+        "handle": 7,
+        "bytes": 8,
+        "address": 4093648896,
+        "memory_flags": 33702479,
+        "baseline_hash": 2615243109,
+        "current_hash": 2615243109,
+        "nonzero_bytes": 0,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 2,
+        "handle": 8,
+        "bytes": 4,
+        "address": 4093652992,
+        "memory_flags": 33702479,
+        "baseline_hash": 1268118805,
+        "current_hash": 1268118805,
+        "nonzero_bytes": 0,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 3,
+        "handle": 10,
+        "bytes": 68,
+        "address": 4093661184,
+        "memory_flags": 33702479,
+        "baseline_hash": 2212991509,
+        "current_hash": 2212991509,
+        "nonzero_bytes": 0,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 4,
+        "handle": 9,
+        "bytes": 236,
+        "address": 4093657088,
+        "memory_flags": 33702479,
+        "baseline_hash": 2992423317,
+        "current_hash": 2992423317,
+        "nonzero_bytes": 16,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 5,
+        "handle": 11,
+        "bytes": 84,
+        "address": 4093665280,
+        "memory_flags": 33702479,
+        "baseline_hash": 1198637397,
+        "current_hash": 1198637397,
+        "nonzero_bytes": 0,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 6,
+        "handle": 12,
+        "bytes": 25612,
+        "address": 4093669376,
+        "memory_flags": 33702479,
+        "baseline_hash": 4189303477,
+        "current_hash": 4189303477,
+        "nonzero_bytes": 0,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 7,
+        "handle": 13,
+        "bytes": 1568,
+        "address": 4093698048,
+        "memory_flags": 33702479,
+        "baseline_hash": 3112399791,
+        "current_hash": 3112399791,
+        "nonzero_bytes": 13,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 8,
+        "handle": 14,
+        "bytes": 8328,
+        "address": 4093702144,
+        "memory_flags": 33702479,
+        "baseline_hash": 3221067042,
+        "current_hash": 3221067042,
+        "nonzero_bytes": 65,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 9,
+        "handle": 15,
+        "bytes": 53096,
+        "address": 4060086272,
+        "memory_flags": 33702409,
+        "baseline_hash": 3604435456,
+        "current_hash": 3604435456,
+        "nonzero_bytes": 32503,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 10,
+        "handle": 16,
+        "bytes": 24,
+        "address": 4060139520,
+        "memory_flags": 33702409,
+        "baseline_hash": 688066038,
+        "current_hash": 688066038,
+        "nonzero_bytes": 8,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 11,
+        "handle": 17,
+        "bytes": 56,
+        "address": 4060143616,
+        "memory_flags": 33702409,
+        "baseline_hash": 3803702808,
+        "current_hash": 3803702808,
+        "nonzero_bytes": 22,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 12,
+        "handle": 18,
+        "bytes": 24,
+        "address": 4060147712,
+        "memory_flags": 33702409,
+        "baseline_hash": 2924287888,
+        "current_hash": 2924287888,
+        "nonzero_bytes": 8,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 13,
+        "handle": 19,
+        "bytes": 256,
+        "address": 4060151808,
+        "memory_flags": 33702409,
+        "baseline_hash": 447281654,
+        "current_hash": 447281654,
+        "nonzero_bytes": 125,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      },
+      {
+        "index": 14,
+        "handle": 20,
+        "bytes": 104,
+        "address": 4060155904,
+        "memory_flags": 33702409,
+        "baseline_hash": 2139185686,
+        "current_hash": 2139185686,
+        "nonzero_bytes": 55,
+        "padding_nonzero": 0,
+        "changed": 0,
+        "mapped": 0
+      }
+    ],
+    "summary": {
+      "checked": 15,
+      "buffers": 15,
+      "bytes": 97660,
+      "nonzero_bytes": 32815,
+      "populated": 9,
+      "changed": 0,
+      "errno": 0,
+      "mapped": 0
+    },
+    "verified": true,
+    "checksum": "FNV-1a-32; change detection only"
+  },
+  "native_ownership": {
+    "buffers": [
+      {
+        "index": 0,
+        "handle": 6,
+        "address": 4093640704,
+        "bytes": 8192,
+        "pages": 2,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 1,
+        "handle": 7,
+        "address": 4093648896,
+        "bytes": 8,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 2,
+        "handle": 8,
+        "address": 4093652992,
+        "bytes": 4,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 3,
+        "handle": 10,
+        "address": 4093661184,
+        "bytes": 68,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 4,
+        "handle": 9,
+        "address": 4093657088,
+        "bytes": 236,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 5,
+        "handle": 11,
+        "address": 4093665280,
+        "bytes": 84,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 6,
+        "handle": 12,
+        "address": 4093669376,
+        "bytes": 25612,
+        "pages": 7,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 7,
+        "handle": 13,
+        "address": 4093698048,
+        "bytes": 1568,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 8,
+        "handle": 14,
+        "address": 4093702144,
+        "bytes": 8328,
+        "pages": 3,
+        "memory_flags": 33702479,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 9,
+        "handle": 15,
+        "address": 4060086272,
+        "bytes": 53096,
+        "pages": 13,
+        "memory_flags": 33702409,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 10,
+        "handle": 16,
+        "address": 4060139520,
+        "bytes": 24,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 11,
+        "handle": 17,
+        "address": 4060143616,
+        "bytes": 56,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 12,
+        "handle": 18,
+        "address": 4060147712,
+        "bytes": 24,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 13,
+        "handle": 19,
+        "address": 4060151808,
+        "bytes": 256,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      },
+      {
+        "index": 14,
+        "handle": 20,
+        "address": 4060155904,
+        "bytes": 104,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "alignment": 4096,
+        "owned": 1,
+        "registered": 1,
+        "attached": 1
+      }
+    ],
+    "summary": {
+      "checked": 15,
+      "buffers": 15,
+      "pages": 36,
+      "errno": 0
+    },
+    "verified": true
+  },
+  "native_bm": {
+    "buffers": [
+      {
+        "index": 0,
+        "handle": 6,
+        "original_address": 4093640704,
+        "alias_address": 4093714432,
+        "bytes": 8192,
+        "pages": 2,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 1,
+        "handle": 7,
+        "original_address": 4093648896,
+        "alias_address": 4093714432,
+        "bytes": 8,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 2,
+        "handle": 8,
+        "original_address": 4093652992,
+        "alias_address": 4093714432,
+        "bytes": 4,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 3,
+        "handle": 10,
+        "original_address": 4093661184,
+        "alias_address": 4093714432,
+        "bytes": 68,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 4,
+        "handle": 9,
+        "original_address": 4093657088,
+        "alias_address": 4093714432,
+        "bytes": 236,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 5,
+        "handle": 11,
+        "original_address": 4093665280,
+        "alias_address": 4093714432,
+        "bytes": 84,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 6,
+        "handle": 12,
+        "original_address": 4093669376,
+        "alias_address": 4093714432,
+        "bytes": 25612,
+        "pages": 7,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 7,
+        "handle": 13,
+        "original_address": 4093698048,
+        "alias_address": 4093714432,
+        "bytes": 1568,
+        "pages": 1,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 8,
+        "handle": 14,
+        "original_address": 4093702144,
+        "alias_address": 4093714432,
+        "bytes": 8328,
+        "pages": 3,
+        "memory_flags": 33702479,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 9,
+        "handle": 15,
+        "original_address": 4060086272,
+        "alias_address": 4060160000,
+        "bytes": 53096,
+        "pages": 13,
+        "memory_flags": 33702409,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 10,
+        "handle": 16,
+        "original_address": 4060139520,
+        "alias_address": 4060160000,
+        "bytes": 24,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 11,
+        "handle": 17,
+        "original_address": 4060143616,
+        "alias_address": 4060160000,
+        "bytes": 56,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 12,
+        "handle": 18,
+        "original_address": 4060147712,
+        "alias_address": 4060160000,
+        "bytes": 24,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 13,
+        "handle": 19,
+        "original_address": 4060151808,
+        "alias_address": 4060160000,
+        "bytes": 256,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      },
+      {
+        "index": 14,
+        "handle": 20,
+        "original_address": 4060155904,
+        "alias_address": 4060160000,
+        "bytes": 104,
+        "pages": 1,
+        "memory_flags": 33702409,
+        "passes": 2,
+        "pt_before": 1,
+        "pt_after": 1
+      }
+    ],
+    "summary": {
+      "checked": 15,
+      "buffers": 15,
+      "pages": 36,
+      "errno": 0
+    },
+    "verified": true
+  },
+  "native_runtime": {
+    "bound": 1,
+    "queried": 1,
+    "unbound": 1,
+    "buffers": 15,
+    "pages": 36,
+    "errno": 0,
+    "verified": true
+  },
+  "handoff": {
+    "validated": 1,
+    "staged": 1,
+    "queried": 1,
+    "aborted": 1,
+    "buffers": 15,
+    "pages": 36,
+    "errno": 0,
+    "cpu_cycle_passed": true
+  },
+  "after": {
+    "state": "prepared",
+    "devices": "1",
+    "pages_live": "4",
+    "blocked_hw_accesses": "0",
+    "gpu_execution": "disabled",
+    "bridge": "enabled",
+    "files": "0",
+    "connections": "0",
+    "bridge_errors": "0",
+    "heap_handles": "0",
+    "init_running": "0",
+    "init_ran": "1",
+    "buffers": "0",
+    "buffer_pages": "0",
+    "buffer_maps": "0",
+    "buffer_errors": "0",
+    "device_allocations": "0",
+    "device_pages": "0",
+    "device_errors": "0",
+    "stages": "0",
+    "staged_buffers": "0",
+    "staged_pages": "0",
+    "stage_errors": "0",
+    "map_leases": "0",
+    "native_bindings": "0",
+    "native_errors": "0",
+    "bm_checks": "15",
+    "bm_errors": "0",
+    "allocator": "native_bm",
+    "bm_allocations": "0",
+    "bm_pages": "0"
+  },
+  "resources_clean": true,
+  "bundle_artifact_sha256": {
+    "sgx545-initializer": "a5d6fe7c82ab7c7b636f67a943fffec2116b4051570ac55f3375998afc7efe32",
+    "lib/libdrm.so.2": "da4aa375e9e6490a0ccaccf07aeb8a579f2ee0eeb6cc17097fdccc76cb5ceb13",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "source": "User SSH transcript uploaded 2026-11-26",
+  "transcript_sha256": "85b478d1ccbe62c2f944d22348bdacec8c2fddc4aec705e2e12f33047d0892d6",
+  "before_versions": {
+    "parent_version": "1.0.4-sgx-host2",
+    "services_version": "0.16.0"
+  },
+  "outcome": "native_allocator_verified_with_clean_resources",
+  "GPU_execution_enabled": false
+}

@@ -1,5 +1,12 @@
 # Firmware startup preparation and Intel initializer capture
 
+**The transport 0.9.0 boot-input capture has passed on the Atom.** Its ordered
+scripts and original addresses are now covered by the offline policy/controller
+and native source replay. See [first firmware boot](SGX545-FIRMWARE-BOOT.md) for
+the audit, tested controller and remaining live ownership integration. No new
+hardware capture or allocation-test loops are requested for this checkpoint.
+The commands below remain available for future diagnostic captures.
+
 Current private transport: **0.9.0**. Services **0.17.0** adds dormant native
 reset fixes; **the already tested 0.16.0 child also supports this capture**.
 Keep the working `1.0.4-sgx-host2` display parent loaded.
