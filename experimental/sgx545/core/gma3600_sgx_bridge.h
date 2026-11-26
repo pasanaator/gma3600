@@ -9,8 +9,9 @@ struct gma_sgx_bridge_stats {
 	u32 buffers, buffer_pages, buffer_maps, buffer_errors, map_leases;
 	u32 device_allocations, device_pages, device_errors;
 	u32 stages, staged_buffers, staged_pages, stage_errors;
-	u32 native_bindings, native_errors, bm_checks, bm_errors;
+	u32 native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages;
 };
+bool gma3600_sgx_native_bm_enabled(void);
 int gma3600_sgx_bridge_register(struct device *dev, struct gma_sgx_bridge **result);
 void gma3600_sgx_bridge_stats(struct gma_sgx_bridge *bridge,
 			     struct gma_sgx_bridge_stats *stats);

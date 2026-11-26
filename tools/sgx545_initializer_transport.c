@@ -35,7 +35,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.7.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.8.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -146,6 +146,28 @@ static int content_readback(int fd, unsigned services, unsigned stage,
  * command itself is NEVER forwarded, and failure is returned even after this
  * diagnostic cycle passes. Native initialization and script execution stay
  * unreachable. The kernel owns all authorization, validation and lifetimes. */
+static int ownership_readback(int fd, unsigned services, unsigned stage, const unsigned *roles, unsigned buffers, unsigned pages)
+{
+	unsigned i, checked = 0, total = 0;
+	int error = 0;
+	for (i = 0; i < buffers; i++) {
+		struct sgx545_bm_info info = {.services = services, .stage = stage, .index = i};
+		if (transport_ioctl(fd, SGX545_IOCTL_BM_INFO, &info) < 0) { error = errno; break; }
+		if (info.services != services || info.stage != stage || info.index != i || info.token != roles[i] || !info.address ||
+		    !info.bytes || info.bytes > SGX545_BUFFER_MAX_BYTES || info.pages != (info.bytes + 4095) / 4096 ||
+		    info.alignment < 4096 || info.alignment > SGX545_BUFFER_MAX_BYTES || (info.alignment & (info.alignment - 1)) ||
+		    (info.address & (info.alignment - 1)) || !sgx545_device_effective_flags_valid(info.memory_flags) ||
+		    info.owned != 1 || info.registered != 1 || info.attached != 1) { error = EPROTO; break; }
+		fprintf(stderr, "OWNED index=%u handle=%08x address=%08x bytes=%u pages=%u memory_flags=%08x alignment=%u owned=%u registered=%u attached=%u\n",
+			info.index, info.token, info.address, info.bytes, info.pages, info.memory_flags, info.alignment,
+			info.owned, info.registered, info.attached);
+		checked++; total += info.pages;
+	}
+	if (!error && total != pages) error = EPROTO;
+	fprintf(stderr, "OWNED_SUMMARY checked=%u buffers=%u pages=%u errno=%d allocator=native_bm\n", checked, buffers, total, error);
+	return error;
+}
+
 static int bm_readback(int fd, unsigned services, unsigned stage, const unsigned *roles, unsigned buffers, unsigned pages)
 {
 	unsigned index, checked = 0, total_pages = 0;
@@ -191,6 +213,7 @@ static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned d
 		else if (reply.operation != SGX545_NATIVE_QUERY || reply.reserved ||
 			 memcmp(&reply.state, &previous, sizeof(previous))) error = EPROTO;
 		else queried = 1;
+		if (!error) error = ownership_readback(fd, services, stage, roles, buffers, pages);
 		if (!error) error = bm_readback(fd, services, stage, roles, buffers, pages);
 		if (!error) {
 			queried = 0;

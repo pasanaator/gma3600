@@ -14,7 +14,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages; };
 struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; struct sgx545_content_measure content; };
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
@@ -112,6 +112,33 @@ static int gma3600_sgx_bm_cycle(void *heap, const __u32 *physical, __u32 count,
     assert(physical[0] == 0x1000 && physical[1] == 0x9000 && physical[2] == 0x3000 && physical[3] == 0x7000);
     if (fail_bm) { int ret = fail_bm; fail_bm = 0; return ret; }
     out->passes = 2; out->alias_address = 0xf5800000; out->pt_before = out->pt_after = 1; return 0;
+}
+static bool use_native_bm;
+static unsigned bm_live;
+static bool gma3600_sgx_native_bm_enabled(void) { return use_native_bm; }
+struct mock_bm_owner { struct gma_sgx_mmu_binding *binding; };
+static int gma3600_sgx_bm_allocate(void *heap, const __u32 *physical, __u32 count,
+    void *linear, __u32 bytes, __u32 flags, __u32 alignment, void **owner, struct gma_sgx_mmu_binding *binding)
+{
+    BM_HEAP *native_heap = heap;
+    struct mock_bm_owner *o;
+    int ret;
+    assert(!*owner && linear && bytes && use_native_bm);
+    ret = gma3600_sgx_mmu_bind_flags(native_heap->pMMUHeap, physical, count, alignment, flags & SGX545_DEVICE_MMU_FLAGS, binding);
+    if (ret) return ret;
+    o = calloc(1, sizeof(*o)); assert(o); o->binding = binding; *owner = o; bm_live++; return 0;
+}
+static int gma3600_sgx_bm_verify(void *owner, const __u32 *physical, __u32 count, __u32 *tables)
+{ struct mock_bm_owner *o = owner; assert(o && bm_live); return gma3600_sgx_mmu_verify(o->binding, physical, count, tables); }
+static int gma3600_sgx_bm_info(void *owner, void *memory, int attach)
+{ assert(owner && memory && bm_live); return 0; }
+static int gma3600_sgx_bm_release(void **owner)
+{
+    struct mock_bm_owner *o = *owner;
+    int ret;
+    assert(o && bm_live); ret = gma3600_sgx_mmu_unbind(o->binding);
+    if (ret) return ret;
+    free(o); *owner = NULL; bm_live--; return 0;
 }
 static unsigned native_calls;
 static int fail_native;
@@ -374,7 +401,7 @@ static struct gma_sgx_file *open_(struct gma_sgx_bridge *b, struct file *file)
 static void stop(struct device *dev)
 { dev->action(dev->data); dev->action = NULL; dev->data = NULL; }
 static void empty(void)
-{ assert(!allocations && !current_pid.refs && !misc_live && !watched_bridge); }
+{ assert(!allocations && !current_pid.refs && !misc_live && !watched_bridge && !bm_live); }
 
 static void attach_device(struct gma_sgx_file *f)
 {
@@ -733,6 +760,12 @@ static void initializer_stage_lifetime(void)
                     assert(check.token == tokens[i] && check.original_address != check.alias_address);
                 }
                 assert(b->stats.bm_checks == 9);
+                if (use_native_bm) {
+                    struct sgx545_bm_info info = {.services = controller->session.services, .stage = message.stage};
+                    assert(b->stats.bm_allocations == 9 && b->stats.bm_pages == 36);
+                    assert(!stage_bm_info(controller, &info) && info.owned && info.registered && info.attached);
+                    assert(info.token == tokens[0] && info.alignment == 4096 && info.pages == 4);
+                }
                 check = prefix; fail_bm = -ENOMEM;
                 assert(stage_bm_check(controller, &check) == -ENOMEM && !b->stage->dirty && native_live);
                 assert(b->stats.bm_errors == 1);
@@ -906,6 +939,10 @@ int main(void)
     mmu_bridge_validation();
     device_allocation_lifetime();
     initializer_stage_lifetime();
+    use_native_bm = true;
+    device_allocation_lifetime();
+    initializer_stage_lifetime();
+    use_native_bm = false;
     puts("SGX bridge lifetime tests passed: ownership, heap translation/rollback, device allocation/pin ordering, failed unmap retention, close and detach");
     return 0;
 }

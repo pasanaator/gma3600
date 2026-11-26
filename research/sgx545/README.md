@@ -105,6 +105,13 @@ wrapping/freeing through temporary kernel-only aliases of pinned pages. It also
 extends the independent Intel compiler audit to the shared TA/transfer layouts.
 See the [hardware instructions](../../docs/SGX545-INITIALIZER-CAPTURE.md).
 
+The [native BM hardware test passed](d2500hn-native-bm.json), including both
+alias cycles on all 15 real Intel buffers and clean native/OS/page teardown.
+The next [retained native allocator checkpoint](native-allocator-6.12-build.json)
+adds `native_bm=1` to keep native BM and OS objects from allocation through
+staging and cleanup. Modern backing-page and CPU VMA ownership remain separate;
+legacy ResMan/free and actual GPU execution are still unfinished.
+
 ## Retrieved artifact and provenance
 
 The Ubuntu archive provides `cedarview-graphics-drivers`, version

@@ -1,0 +1,46 @@
+--- a/services4/srvkm/common/buffer_manager.c
++++ b/services4/srvkm/common/buffer_manager.c
+@@ -418,12 +418,11 @@
+ 			IMG_SYS_PHYADDR *psAddr,
+ 			IMG_VOID *pvCPUVAddr,
+ 			IMG_UINT32 ui32Flags,
+-			BM_BUF *pBuf)
++			IMG_UINT32 ui32Alignment, BM_BUF *pBuf)
+ {
+ 	IMG_DEV_VIRTADDR DevVAddr = {0};
+ 	BM_MAPPING *pMapping;
+ 	IMG_BOOL bResult;
+-	IMG_SIZE_T const uPageSize = HOST_PAGESIZE();
+ 	/* We should not pass down R/W flags into the OS layers so create ui32Attribs */
+ 	IMG_UINT32 ui32Attribs = ui32Flags & ~(PVRSRV_MEM_READ | PVRSRV_MEM_WRITE);
+ 
+@@ -438,9 +437,9 @@
+               pvCPUVAddr, 
+               ui32Flags));
+ 
+-	PVR_ASSERT((psAddr->uiAddr & (uPageSize - 1)) == 0);
++	PVR_ASSERT((psAddr->uiAddr & (HOST_PAGESIZE() - 1)) == 0);
+ 	/* Only need lower 12 bits of the cpu addr - don't care what size a void* is */
+-	PVR_ASSERT(((IMG_UINTPTR_T)pvCPUVAddr & (uPageSize - 1)) == 0);
++	PVR_ASSERT(((IMG_UINTPTR_T)pvCPUVAddr & (HOST_PAGESIZE() - 1)) == 0);
+ 
+ 	uSize += uiBaseOffset;
+ 	uSize = HOST_PAGEALIGN (uSize);
+@@ -542,7 +541,7 @@
+ 							 pMapping,
+ 							 IMG_NULL,
+ 							 ui32Flags,
+-							 IMG_CAST_TO_DEVVADDR_UINT(uPageSize),
++							 ui32Alignment,
+ 							 &DevVAddr);
+ 	if (!bResult)
+ 	{
+@@ -1893,7 +1892,7 @@
+ 	/*
+ 	 * Actually perform the memory wrap.
+ 	 */
+-	if (WrapMemory (psBMHeap, uSize, uOffset, bPhysContig, psSysAddr, pvCPUVAddr, ui32Flags, pBuf) != IMG_TRUE)
++	if (WrapMemory (psBMHeap, uSize, uOffset, bPhysContig, psSysAddr, pvCPUVAddr, ui32Flags, HOST_PAGESIZE(), pBuf) != IMG_TRUE)
+ 	{
+ 		PVR_DPF((PVR_DBG_ERROR, "BM_Wrap: WrapMemory FAILED"));
+ 		OSFreeMem(PVRSRV_OS_PAGEABLE_HEAP, sizeof (BM_BUF), pBuf, IMG_NULL);

@@ -33,14 +33,17 @@ with no CPU VMAs, valid native PTEs and clean teardown. The [native CPU bind/CCB
 also passed with all 15 real Intel buffers. The
 [retained native binding tests](../../research/sgx545/d2500hn-native-runtime.json)
 now passed explicit unbind/abort, last-close and real initializer cleanup too.
-Services 0.15.0 / transport 0.7.0 exercise actual native `WrapMemory`, BM handle
-getters, `BM_GetPhysPageAddr` and `BM_Free` against the existing pinned WC pages.
-Temporary kernel-only aliases are mapped, verified and freed twice per buffer;
-original GPU addresses/content remain valid. This is not yet a replacement for
-the allocator or native ResMan registration. A failed OS registration no longer
-tries to unregister a NULL handle. The four available public firmware layouts
-are now compiler-audited and enforced; nine private layouts need future firmware
-confirmation. Rebuild the child and private bundle; BM hardware testing is pending.
+The [native BM alias hardware checkpoint](../../research/sgx545/d2500hn-native-bm.json)
+also passed all 15 Intel buffers, VA reuse, native getters/PTE permissions and
+zero-page teardown. Services 0.16.0 / transport 0.8.0 add `native_bm=1` to retain
+native BM/OS objects from the initial allocation instead of only creating test
+aliases later. The bridge supplies pinned WC pages; native BM manages the GPU
+VA/PTE and OS registration. Original requested alignment and logical sizes are
+preserved, and staged metadata borrows the real BM/OS handles. CPU VMAs retain
+backing pages independently after native GPU ownership ends. The default MMU
+allocator remains available; the new allocation backend awaits hardware tests.
+Legacy ResMan/free contracts and hardware startup remain unfinished. Rebuild
+the child and private bundle for retained allocation testing.
 Hardware execution remains disabled.
 
 ## D2500HN hardware result
@@ -254,11 +257,12 @@ Their provenance and static audit are recorded in
 
 ## Remaining implementation sequence
 
-1. Test the native BM alias path on the Atom with synthetic and real Intel
-   buffers. Retained native binding and its cleanup already passed on hardware.
-2. Integrate native BM objects into the allocator at allocation time, preserving
-   original address/alignment and payload semantics; add ResMan ownership and
-   rollback. Temporary aliases do not replace addresses embedded in GPU code.
+1. Test retained native allocation with alignment, sibling/free, live CPU VMAs,
+   staging, explicit abort and last-close cleanup, then the real initializer.
+   Native alias wrapping and cleanup already passed on the Atom.
+2. Complete legacy resource/command contracts as needed. Snapshot BM handles are
+   borrowed from bridge-owned objects and must not be freed by legacy ResMan or
+   full native part 2. Keep modern backing and native GPU ownership explicit.
 3. Port device DMA ownership, match the initializer/microkernel build, and
    connect the legacy ISR through the parent's interrupt API. Design bounded
    power/reset/recovery before allowing GPU execution.

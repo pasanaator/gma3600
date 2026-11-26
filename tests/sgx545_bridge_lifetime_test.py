@@ -29,7 +29,7 @@ def main():
         "static int bridge_device_check(", "static int stage_requirements(",
         "static int stage_prepare(", "static int stage_validate(", "static void stage_drop_metadata(", "static int stage_commit(",
         "static int stage_rollback(", "static int stage_publish(", "static int stage_runtime_stop(", "static int stage_abort(",
-        "static int stage_control(", "static int stage_content(", "static int stage_native_verify(", "static int bm_visit(", "static int stage_bm_check(", "static int stage_native_cycle(", "static int stage_runtime(", "static int backend_disconnect(", "static void bridge_free(struct kref *ref)\n{",
+        "static int stage_control(", "static int stage_content(", "static int stage_native_verify(", "static int bm_visit(", "static int stage_bm_check(", "static int stage_bm_info(", "static int stage_native_cycle(", "static int stage_runtime(", "static int backend_disconnect(", "static void bridge_free(struct kref *ref)\n{",
         "static void bridge_file_free(", "static int bridge_open(",
         "static int bridge_release(", "static void bridge_stop(",
         "static int bridge_mmap(",

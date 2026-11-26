@@ -20,7 +20,8 @@ static int corrupt_native;
 static int runtime_fail_op = -1, runtime_corrupt_op = -1, runtime_live;
 static int bm_fail_index = -1, bm_corrupt_index = -1, runtime_fail_requery;
 static unsigned runtime_queries;
-static unsigned sequence[40], sequence_count;
+static int owned_fail_index = -1, owned_corrupt_index = -1;
+static unsigned sequence[80], sequence_count;
 static int transport_open(const char *path, int flags)
 {
 	assert(!strcmp(path, "/dev/gma3600-sgx-bridge") && flags == (O_RDWR | O_CLOEXEC));
@@ -38,10 +39,19 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 {
 	assert(fd > 0 && arg); ioctls++;
 	if (fail_ioctl) { errno = EOPNOTSUPP; return -1; }
-	if (command == SGX545_IOCTL_BM_CHECK) {
+	if (command == SGX545_IOCTL_BM_INFO) {
+		struct sgx545_bm_info *info = arg;
+		assert(runtime_live && info->services == 10 && info->stage == 200 && info->index < 11 && !info->owned);
+		assert(sequence_count < 80); sequence[sequence_count++] = command;
+		if ((int)info->index == owned_fail_index) { errno = EIO; return -1; }
+		info->token = 0x100 + info->index; info->address = 0xf2000000 + info->index * 4096;
+		info->bytes = 4096; info->pages = 1; info->memory_flags = SGX545_INTEL_INIT_FLAGS | SGX545_HEAP_FLAGS;
+		info->alignment = 4096; info->owned = info->registered = 1;
+		info->attached = (int)info->index == owned_corrupt_index ? 0 : 1;
+	} else if (command == SGX545_IOCTL_BM_CHECK) {
 		struct sgx545_bm_check *check = arg;
 		assert(runtime_live && check->services == 10 && check->stage == 200 && check->index < 11 && !check->passes);
-		assert(sequence_count < 40); sequence[sequence_count++] = command;
+		assert(sequence_count < 80); sequence[sequence_count++] = command;
 		if ((int)check->index == bm_fail_index) { errno = EIO; return -1; }
 		check->token = 0x100 + check->index;
 		check->original_address = 0xf2000000 + check->index * 4096;
@@ -55,7 +65,7 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 		struct sgx545_native_cycle *state = &request->state;
 		unsigned op = request->operation;
 		assert(state->services == 10 && state->stage == 200 && state->device == 20 && !state->flags && !request->reserved);
-		assert(op <= SGX545_NATIVE_UNBIND && sequence_count < 40); sequence[sequence_count++] = command;
+		assert(op <= SGX545_NATIVE_UNBIND && sequence_count < 80); sequence[sequence_count++] = command;
 		if (op == SGX545_NATIVE_QUERY) runtime_queries++;
 		if ((runtime_fail_requery && runtime_queries == 2 && op == SGX545_NATIVE_QUERY) || (int)op == runtime_fail_op) { errno = EIO; return -1; }
 		if (op == SGX545_NATIVE_BIND) { assert(!runtime_live); runtime_live = 1; }
@@ -69,7 +79,7 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 	} else if (command == SGX545_IOCTL_NATIVE_CYCLE) {
 		struct sgx545_native_cycle *native = arg;
 		assert(native->services == 10 && native->stage == 200 && native->device == 20 && !native->flags);
-		assert(sequence_count < 40); sequence[sequence_count++] = command; native_calls++;
+		assert(sequence_count < 80); sequence[sequence_count++] = command; native_calls++;
 		if (command == fail_command) { errno = EIO; return -1; }
 		native->bound = 1; native->restored = corrupt_native ? 0 : 1;
 		native->flags = SGX545_NATIVE_CCB_ROUNDTRIP; native->buffers = 11; native->pages = 11;
@@ -77,7 +87,7 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 	} else if (command == SGX545_IOCTL_INIT_CONTENT) {
 		struct sgx545_init_content *content = arg;
 		assert(content->services == 10 && content->stage == 200 && content->index < 11 && !content->flags);
-		assert(sequence_count < 40); sequence[sequence_count++] = command; content_calls++;
+		assert(sequence_count < 80); sequence[sequence_count++] = command; content_calls++;
 		if (command == fail_command && content->index == 3) { errno = EIO; return -1; }
 		content->token = 0x100 + content->index;
 		content->bytes = 4096; content->address = 0xf2000000 + content->index * 4096;
@@ -89,7 +99,7 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 	} else if (command == SGX545_IOCTL_INIT_CONTROL) {
 		struct sgx545_init_control *control = arg;
 		assert(control->services == 10 && control->stage == 200 && !control->flags);
-		assert(sequence_count < 40); sequence[sequence_count++] = command + control->operation;
+		assert(sequence_count < 80); sequence[sequence_count++] = command + control->operation;
 		if (control->operation) { abort_calls++; runtime_live = 0; } else query_calls++;
 		if (command == fail_command && control->operation == fail_operation) { errno = EIO; return -1; }
 		control->buffers = control->operation ? 0 : 11;
@@ -103,14 +113,14 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 			assert(!copy->flags && copy->device == 20 && copy->info.build_options == 0x60218);
 		}
 		assert(!stage->stage && !stage->buffers && !stage->pages && !stage->flags);
-		assert(sequence_count < 40); sequence[sequence_count++] = command;
+		assert(sequence_count < 80); sequence[sequence_count++] = command;
 		if (command == fail_command) { errno = ENOSPC; return -1; }
 		stage->buffers = 11; stage->pages = 11;
 		if (command == SGX545_IOCTL_INIT_STAGE) stage->stage = 200;
 	} else if (command == SGX545_IOCTL_INIT_REQUIREMENTS) {
 		struct sgx545_init_requirements *caps = arg;
 		assert(caps->services == 10 && caps->device == 20);
-		assert(sequence_count < 40); sequence[sequence_count++] = command;
+		assert(sequence_count < 80); sequence[sequence_count++] = command;
 		if (command == fail_command) { errno = EACCES; return -1; }
 		caps->build_options = 0x360218; caps->build_option_mask = 0xffefffff;
 		caps->struct_sizes[11] = 68; caps->struct_sizes[12] = 32;
@@ -126,7 +136,7 @@ static void handoff_tests(unsigned *input)
 	struct sgx545_bridge32 wire = {SGX545_COMMAND(99), 28, (unsigned)(unsigned long)input,
 		2068, (unsigned)(unsigned long)output, 8, 10};
 	unsigned mode, before;
-	for (mode = 0; mode < 21; mode++) {
+	for (mode = 0; mode < 23; mode++) {
 		int blocker = mode == 0 ? drmOpen("psb", NULL) : -1;
 		int fd = drmOpen("psb", NULL);
 		memset(request, 0, sizeof(*request)); request->device = 20; request->flags = 0xdeadbeef;
@@ -146,14 +156,15 @@ static void handoff_tests(unsigned *input)
 		runtime_fail_op = mode >= 12 && mode <= 14 ? (int)mode - 12 : -1;
 		runtime_corrupt_op = mode >= 15 && mode <= 17 ? (int)mode - 15 : -1;
 		runtime_queries = 0; bm_fail_index = mode == 18 ? 3 : -1; bm_corrupt_index = mode == 19 ? 5 : -1; runtime_fail_requery = mode == 20;
+		owned_fail_index = mode == 21 ? 3 : -1; owned_corrupt_index = mode == 22 ? 5 : -1;
 		wire.bridge_id = SGX545_COMMAND(99); wire.in_size = 2068;
 		assert(drmCommandWrite(fd, 0x12, &wire, 28) == (mode == 1 ? -EACCES : mode == 2 || mode == 3 ? -ENOSPC :
-			mode == 6 || mode == 9 || mode == 11 || (mode >= 15 && mode <= 17) || mode == 19 ? -EPROTO : mode == 8 ? -EUCLEAN : mode >= 4 ? -EIO : -EOPNOTSUPP));
+			mode == 6 || mode == 9 || mode == 11 || (mode >= 15 && mode <= 17) || mode == 19 || mode == 22 ? -EPROTO : mode == 8 ? -EUCLEAN : mode >= 4 ? -EIO : -EOPNOTSUPP));
 		assert(request->flags == 0xdeadbeef); /* original reserved word untouched */
 		assert(output[0] == 0xfefefefe && output[1] == 0xfefefefe); /* never claim legacy success */
 		assert(sequence_count == (mode == 1 ? 1 : mode == 2 ? 2 : mode == 3 ? 3 :
-			mode == 7 ? 25 : mode == 8 ? 27 : mode == 9 ? 26 : mode == 10 || mode == 11 ? 6 :
-			mode == 18 ? 13 : mode == 19 ? 15 : mode == 20 ? 21 : mode == 12 ? 7 : mode == 13 || mode == 16 ? 9 : mode == 15 ? 8 : mode == 14 || mode == 17 || mode == 0 || mode == 5 ? 32 : 5));
+			mode == 7 ? 36 : mode == 8 ? 38 : mode == 9 ? 37 : mode == 10 || mode == 11 ? 6 :
+			mode == 21 ? 13 : mode == 22 ? 15 : mode == 18 ? 24 : mode == 19 ? 26 : mode == 20 ? 32 : mode == 12 ? 7 : mode == 13 || mode == 16 ? 9 : mode == 15 ? 8 : mode == 14 || mode == 17 || mode == 0 || mode == 5 ? 43 : 5));
 		assert(sequence[0] == SGX545_IOCTL_INIT_REQUIREMENTS);
 		if (sequence_count > 1) assert(sequence[1] == SGX545_IOCTL_INIT_VALIDATE);
 		if (sequence_count > 2) assert(sequence[2] == SGX545_IOCTL_INIT_STAGE);
@@ -163,7 +174,7 @@ static void handoff_tests(unsigned *input)
 		assert(native_calls == (mode == 0 || mode == 5 || mode >= 7));
 		assert(!runtime_live);
 		fail_command = 0; corrupt_query = corrupt_content = corrupt_native = 0;
-		runtime_fail_op = runtime_corrupt_op = bm_fail_index = bm_corrupt_index = -1; runtime_fail_requery = 0;
+		runtime_fail_op = runtime_corrupt_op = bm_fail_index = bm_corrupt_index = -1; runtime_fail_requery = 0; owned_fail_index = owned_corrupt_index = -1;
 		if (blocker > 0) assert(!drmClose(blocker)); /* move the staged fd's bookkeeping slot */
 		before = ioctls;
 		wire.bridge_id = SGX545_COMMAND(68); wire.in_size = 8; input[1] = 0;

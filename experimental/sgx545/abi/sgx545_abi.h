@@ -225,6 +225,12 @@ struct sgx545_bm_check {
 	__u32 services, stage, index, token, original_address, alias_address;
 	__u32 bytes, pages, memory_flags, passes, pt_before, pt_after;
 };
+/* Verify retained native BM/OS ownership of the original allocation. */
+#define SGX545_IOCTL_BM_INFO 0xc030470cU
+struct sgx545_bm_info {
+	__u32 services, stage, index, token, address, bytes, pages, memory_flags;
+	__u32 alignment, owned, registered, attached;
+};
 struct sgx545_content_measure { __u32 hash, nonzero, padding_nonzero, mapped_vmas; };
 static inline struct sgx545_content_measure sgx545_measure_content(const void *linear,
 	__u32 bytes, __u32 mapped_bytes)

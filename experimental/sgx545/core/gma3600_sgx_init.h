@@ -2,8 +2,8 @@
 #ifndef GMA3600_SGX_INIT_H
 #define GMA3600_SGX_INIT_H
 #include "sgx545_abi.h"
-/* Include after the DDK headers. These wrappers are metadata snapshots only:
- * they have no native BM/resource-manager registration and MUST NOT be passed
+/* Include after the DDK headers. These bridge-owned snapshots may borrow real BM/OS handles
+ * with native_bm enabled, but lack legacy ResMan/free ownership. They MUST NOT be passed
  * to DevInitSGXPart2KM, native free, power, or command-submission functions.
  * The audited gma3600_sgx_native_cycle may borrow them for InitDevInfo's
  * CPU-only prefix, or hold a file-owned CPU binding lease until explicit/automatic unbind.

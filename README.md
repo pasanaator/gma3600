@@ -31,17 +31,14 @@ The original Intel CONNECT/free test and both
 The services 0.9.1 [original Intel enumeration and allocation tests](docs/SGX545-ENUMERATION-TESTING.md)
 also passed on the Atom. A new [private initializer capture tool](docs/SGX545-INITIALIZER-CAPTURE.md)
 can now observe the unmodified i386 Intel initializer's real requests on that hardware.
-The real initializer now allocates coherent/EDM buffers and obtains mapping metadata.
-The latest Atom run passed all 15 Intel CPU mapping releases: 97,660 bytes
-remained unchanged after every CPU VMA closed, with clean teardown.
-The native CPU bind/CCB write/readback/restore test also passed with the real
-Intel initializer. Retained binding, explicit abort and last-close cleanup also
-passed on the Atom. Services 0.15.0 / transport 0.7.0 now exercise the native
-buffer manager's kernel-only wrapping, handle getters, PTE permissions, free
-and VA reuse through temporary aliases of the staged pages. The current
-allocator keeps the original GPU addresses. Four public firmware layouts are
-now enforced and independently audited against Intel's source. This new native
-BM path awaits hardware testing; rebuild the child and private bundle.
+The Atom has passed the real initializer's CPU diagnostics: mapping release,
+retained native binding, native BM wrapping/getters/PTE/free/reuse, and zero-page
+teardown. All 15 populated buffers remained unchanged across those checks.
+Services 0.16.0 / transport 0.8.0 now add an opt-in device-allocation backend
+(`native_bm=1`) that retains BM/OS objects from allocation through staging and
+cleanup, preserves VA alignment, and attaches real handles to native snapshots.
+Modern WC backing and CPU VMA lifetimes remain managed by the bridge.
+This allocation path awaits hardware testing; rebuild the child and private bundle.
 GPU execution remains disabled.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal

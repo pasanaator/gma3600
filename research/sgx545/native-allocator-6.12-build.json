@@ -1,0 +1,89 @@
+{
+  "target": "Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "services_module_version": "0.16.0",
+  "private_transport_version": "0.8.0",
+  "source_commit": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-native-bm.json",
+  "selection": "prepare=1 bridge=1 native_bm=1; readonly allocator selection per services instance; default MMU backend retained",
+  "ownership": {
+    "backing_RAM_and_CPU_VMAs": "modern WC provider with independent refs; caller pin lasts until native retirement succeeds",
+    "GPU_VA_PTE_and_OS_registration": "retained native BM object from ALLOC_DEVICE through free/staging/abort/close/detach",
+    "native_meminfo_snapshots": "bridge-owned metadata borrowing live BM/OS handles; not legacy ResMan/refcount/free-compatible"
+  },
+  "changes": [
+    "Add retained native BM constructor, physical/PTE verification, BM/OS snapshot attachment checks and ordered native release with quarantined failed ownership",
+    "Add explicit internal WrapMemory alignment; keep public wrapper page alignment, honor normalized bridge alignment including 64 KiB and remove the obsolete local page-size variable",
+    "Allocate original GPU addresses through native BM before Intel userspace populates buffers, preserving logical sizes and read/write/coherent/EDM attributes",
+    "Retain scatter, BM and OS metadata beyond ioctl return; file-to-stage transfer preserves the same native objects and GPU addresses",
+    "Attach real BM/OS handles and device-address fields to native snapshots and verify them during staged queries",
+    "Retire live native CPU binding before BM release and verify native PTE retirement before dropping modern RAM pins; CPU VMAs retain independent backing refs",
+    "Add 48-byte BM_INFO with opaque original ownership, registration, attachment and alignment metadata; no native pointers exposed",
+    "Expose allocator=native_bm plus live bm_allocations/bm_pages; require the backend and zero live/error counts for real capture",
+    "Add --native-alloc and --native-alloc-close; capture requires OWNED metadata matching original VA/content/flags before alias and binding checks"
+  ],
+  "validation": {
+    "host_C_suites": 12,
+    "python_unittests": 28,
+    "actual_bridge_lifetimes": "ASan/UBSan device-allocation and full staged lifetime suites run with both allocation backends, including copyout/rollback, retained mappings, native binding, close/detach and cleanup failure",
+    "actual_native_BM": "real wrapping, mapping, free and getter bodies plus native buffer/mapping definitions; OS registration and device/MMU callbacks mocked; both profiles under ASan/UBSan",
+    "retained_BM_cases": [
+      "four constructor allocation failures",
+      "64 KiB aligned retained allocation",
+      "callback scatter input overwritten and freed after constructor returns",
+      "failed sibling construction preserves first owner",
+      "two live siblings with BM/OS snapshot validation",
+      "freeing one owner preserves the sibling",
+      "CPU backing survives native release",
+      "uncertain retirement retains a failed owner and forbids repeated native free"
+    ],
+    "native_MMU_and_compatibility": "native PTE/flag/capacity/rollback tests and independent expanded Intel ABI audits passed",
+    "actual_ELF32_transport_mock": "23 full handoff scenarios passed under QEMU, including ownership ioctl errors, malformed attachment, BM/query errors and unbind/abort cleanup",
+    "private_runtime_fixture": "0.8.0 project-owned i386 loader/fixture passed under QEMU; proprietary libraries not executed",
+    "report_gates": "backend selection, original BM/OS ownership, alignment, matching content/VA/flags, native binding, alias tests and zero live/error counters required for native_allocator_verified_with_clean_resources"
+  },
+  "profiles": [
+    {
+      "profile": "10131",
+      "host_probe_core_client_build": "passed",
+      "compiled_core_inputs_match_final_repository": true,
+      "services_compiler_warnings": 0,
+      "original_Intel_ABI_audit": "schema 3 passed; i386=2068/native=2192 initializer bytes with explicit translation and four audited public firmware layouts",
+      "native_BM_MMU_initializer_source_fixtures": "ASan/UBSan passed for both profiles; retained-scatter lifetime separately verified after invalidating callback input",
+      "services_sha256": "7f65a8cba73d6a61d4f6d041c3341cdab6fb48729abb335528fc87a78ffaa6e2",
+      "client_sha256": "55b975c117cec39c7b544927e2e4e7a77ed863dfcf57266a91594246b85eeba9"
+    },
+    {
+      "profile": "10141",
+      "host_probe_core_client_build": "passed",
+      "compiled_core_inputs_match_final_repository": true,
+      "services_compiler_warnings": 0,
+      "original_Intel_ABI_audit": "schema 3 passed; i386=2068/native=2192 initializer bytes with explicit translation and four audited public firmware layouts",
+      "native_BM_MMU_initializer_source_fixtures": "ASan/UBSan passed for both profiles; retained-scatter lifetime separately verified after invalidating callback input",
+      "services_sha256": "87578d00afc4dcfc708821b4b962562b8daa0169789ec936d870aba5dbeb254e",
+      "client_sha256": "55b975c117cec39c7b544927e2e4e7a77ed863dfcf57266a91594246b85eeba9"
+    }
+  ],
+  "private_bundle_artifact_sha256": {
+    "sgx545-initializer": "c67a798a6ff1ad1b26447e2325618b33dada93547c0a3b26b74d2233f67da09f",
+    "lib/libdrm.so.2": "746b08a2da976b7153069f662639b208db67022b4b0a93b71707f78d8bc5a28d",
+    "lib/libsgx545_initializer_fixture.so": "0369cfd3dc551cf74112754f86cb8cb2b080be323cb0e9b97a4f6ec163e2fc93",
+    "lib/libsrv_init.so": "351cf55b4e4422af5a425ed209a0c43b4deae90786c2082abdb5226a0fbb4685",
+    "lib/libsrv_um.so": "7362337556a5f170c5aaa6db230a33af6c23601a0724b80472c565073c4a66c0",
+    "sysroot/lib/i386-linux-gnu/ld-2.15.so": "8aa47158b80f481e474cf64a8ea57b1905deaf4f92df7bd2fe550df2d1cfa9f9",
+    "sysroot/lib/i386-linux-gnu/libc.so.6": "f0bf329177e48a3c537b1a74b2c38ca1cfb50573620ea4fbab0eeefa9b6ecf44",
+    "sysroot/lib/i386-linux-gnu/libdl.so.2": "925d0eaf3fa9db718b98aadbca5a227a145ce77bb34390c84365d6acc4b16276",
+    "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
+    "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
+  },
+  "hardware_status": "pending --device-intel, --device-close, --native-alloc, --native-alloc-close and real initializer capture using native_bm=1",
+  "native_BM_objects_retained": true,
+  "legacy_ResMan_or_free_contract_enabled": false,
+  "default_allocator_changed": false,
+  "GPU_execution_enabled": false,
+  "GPU_DMA_or_firmware_compatibility_verified": false,
+  "power_reset_IRQ_enabled": false,
+  "display_parent_changed": false,
+  "proprietary_libraries_executed_in_cloud": false,
+  "private_initializer_bundle_rebuild_required": true,
+  "guide": "docs/SGX545-INITIALIZER-CAPTURE.md"
+}

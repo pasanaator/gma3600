@@ -103,7 +103,7 @@
     "sysroot/lib/i386-linux-gnu/libpthread.so.0": "caf554b9d8bce552871fef4c7ce97cba1168657e904054a49848f51a42ea932e",
     "sysroot/lib/i386-linux-gnu/librt.so.1": "51e694f741ed68d1780a30627024ec54d73bb959ce50c4bf11d8e2ddb2b2ee9f"
   },
-  "hardware_status": "pending --native-bm and real Intel native BM alias capture",
+  "hardware_status": "passed --native-bm and real Intel native BM alias capture; see d2500hn-native-bm.json",
   "hardware_expected": {
     "synthetic_bm_checks": 12,
     "real_bm_checks": 15,
