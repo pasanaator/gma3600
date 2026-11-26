@@ -275,6 +275,10 @@ struct gma3600_device {
 	struct pci_dev	 *bridge;	/* Host bridge PCI 0:0.0        */
 #ifdef GMA3600_SGX_HOST
 	struct gma3600_sgx_device *sgx;
+	struct mutex sgx_lifecycle_mutex;
+	bool sgx_suspending, sgx_removing;
+	bool sgx_lease_sealed;
+	void *sgx_lease_owner;
 	struct mutex sgx_irq_mutex;
 	bool sgx_irq_closing;
 	irqreturn_t (*sgx_irq_handler)(void *);

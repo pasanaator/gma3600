@@ -1,0 +1,1 @@
+/* Device reference functions are supplied by the selected test seam. */

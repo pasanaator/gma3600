@@ -13,3 +13,6 @@ _Static_assert(sizeof(struct sgx545_intel_enumerate_out32) == 328, "Intel i386 E
 _Static_assert(sizeof(struct sgx545_handle_out) == 8, "i386 handle output");
 _Static_assert(sizeof(struct sgx545_heap32) == 24, "i386 heap layout");
 _Static_assert(sizeof(struct sgx545_init_info_out) == 776, "i386 initializer info");
+_Static_assert(sizeof(struct sgx545_boot_owner) == 48, "CPU boot owner wire size");
+_Static_assert(offsetof(struct sgx545_boot_owner, parent_abi) == 16, "owner reply fields");
+_Static_assert(offsetof(struct sgx545_boot_owner, reserved) == 36, "owner reserved fields");

@@ -1,0 +1,11 @@
+{
+  "date_client": "2026-11-27",
+  "source": "User SSH transcript",
+  "transcript_sha256": "196ec8bd86f0b91e022aa91fab6f568d58b9e2dad240d071a11423dd750d2333",
+  "tested_commit": "a56a0d3",
+  "host_C_suites": 13,
+  "python_unittests": 31,
+  "result": "all passed on the Atom",
+  "scope": "Project-owned software tests, including simulated boot controller; no GPU execution or firmware boot",
+  "next_checkpoint": "host3/services 0.18.0/transport 0.10.0 actual stage/parent CPU lease"
+}

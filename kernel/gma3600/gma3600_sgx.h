@@ -15,10 +15,25 @@ struct gma3600_device;
 #define GMA3600_SGX_REG_SIZE   0x4000
 #define GMA3600_SGX_CORE_ID    0x001c
 #define GMA3600_SGX_CORE_REV   0x0020
-#define GMA3600_SGX_HOST_ABI   2
+#define GMA3600_SGX_HOST_ABI   3
 #define GMA3600_SGX_IRQ_BIT    (1U << 18)
 
 struct gma3600_sgx_device;
+struct module;
+/* ABI 3 adds a CPU-side resource lease. It excludes suspend/new IRQ users
+ * and pins parent device/storage. acquire grants NO programming authority.
+ * seal is a one-way authorization for one constrained polling-only SGX boot
+ * within the SGX register window. It permanently denies release until reboot,
+ * even if the attempt fails. No GPU write may precede successful seal.
+ * The child pins owner before acquire, and drops it AFTER release returns.
+ * acquire/release must use the same non-NULL, kernel-owned identity.
+ */
+struct gma3600_sgx_lease_ops {
+	struct module *owner;
+	int (*acquire)(struct gma3600_sgx_device *sgx, void *identity);
+	int (*release)(struct gma3600_sgx_device *sgx, void *identity);
+	int (*seal)(struct gma3600_sgx_device *sgx, void *identity);
+};
 
 /* Process-context calls; never invoke these from the registered ISR.
  * Registration leaves the source masked. Enable only after SGX is ready.
@@ -40,7 +55,8 @@ struct gma3600_sgx_irq_ops {
  * Child must not enable/disable PCI, request BAR0, change the display GTT,
  * reset the SoC, or install its own top-level interrupt handler.
  * Identification reads are permitted while in D0. Interrupt access must use
- * irq_ops. This interface does not authorize GPU power/reset/MMU writes.
+ * irq_ops. GPU programming additionally requires ABI 3's sealed boot lease;
+ * PCI power changes, display GTT access and SoC/PCI resets remain forbidden.
  */
 struct gma3600_sgx_device {
 	struct auxiliary_device adev;
@@ -50,7 +66,15 @@ struct gma3600_sgx_device {
 	u32 host_abi;
 	struct gma3600_device *host;
 	const struct gma3600_sgx_irq_ops *irq_ops;
+	/* Read only when host_abi >= 3; ABI 2 ends above this line. */
+	const struct gma3600_sgx_lease_ops *lease_ops;
 };
+
+void gma3600_sgx_lifecycle_init(struct gma3600_device *gdev);
+int gma3600_sgx_suspend_begin(struct gma3600_device *gdev);
+void gma3600_sgx_suspend_end(struct gma3600_device *gdev);
+void gma3600_sgx_remove_begin(struct gma3600_device *gdev);
+extern const struct gma3600_sgx_lease_ops gma3600_sgx_lease_ops;
 
 extern const struct gma3600_sgx_irq_ops gma3600_sgx_irq_ops;
 void gma3600_sgx_irq_init(struct gma3600_device *gdev);
@@ -59,6 +83,10 @@ void gma3600_sgx_irq_dispatch(struct gma3600_device *gdev, u32 iir);
 int gma3600_sgx_host_init(struct gma3600_device *gdev);
 void gma3600_sgx_host_fini(struct gma3600_device *gdev);
 #else
+static inline void gma3600_sgx_lifecycle_init(struct gma3600_device *gdev) { (void)gdev; }
+static inline int gma3600_sgx_suspend_begin(struct gma3600_device *gdev) { (void)gdev; return 0; }
+static inline void gma3600_sgx_suspend_end(struct gma3600_device *gdev) { (void)gdev; }
+static inline void gma3600_sgx_remove_begin(struct gma3600_device *gdev) { (void)gdev; }
 static inline int gma3600_sgx_host_init(struct gma3600_device *gdev)
 {
 	(void)gdev;

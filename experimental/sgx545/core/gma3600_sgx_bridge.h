@@ -10,7 +10,13 @@ struct gma_sgx_bridge_stats {
 	u32 device_allocations, device_pages, device_errors;
 	u32 stages, staged_buffers, staged_pages, stage_errors;
 	u32 native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages;
+	u32 boot_owners, parent_leases, owner_errors;
 };
+/* Internal CPU lease; only a future live provider may seal it. Sealing makes
+ * release fail until reboot; the stage and common DDK must then stay owned. */
+int gma3600_sgx_owner_acquire(void *identity, u32 *parent_abi);
+int gma3600_sgx_owner_release(void *identity);
+int gma3600_sgx_owner_seal(void *identity);
 bool gma3600_sgx_native_bm_enabled(void);
 int gma3600_sgx_bridge_register(struct device *dev, struct gma_sgx_bridge **result);
 void gma3600_sgx_bridge_stats(struct gma_sgx_bridge *bridge,

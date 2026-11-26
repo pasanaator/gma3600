@@ -24,8 +24,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.9.0":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.9.0 is required")
+    if manifest.get("transport_version") != "0.10.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.10.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -54,11 +54,11 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host2" or child not in ("0.16.0", "0.17.0"):
-        raise ValueError("Capture currently requires host2 and services 0.16.0 or 0.17.0")
+    if host != "1.0.4-sgx-host3" or child != "0.18.0":
+        raise ValueError("Capture currently requires host3 and services 0.18.0")
     status = services_status(sysroot)
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled", "allocator": "native_bm",
-                "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0"}
+                "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0", "host_abi": "3", "boot_owners": "0", "parent_leases": "0", "owner_errors": "0"}
     required.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
                     "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
                     "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors", "bm_errors", "bm_allocations", "bm_pages")})
@@ -67,11 +67,13 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
     return {"parent_version": host, "services_version": child, "status": status}
 
 
-def clean_status(status):
+def clean_status(status, require_owner=False):
     expected = {"state": "prepared", "gpu_execution": "disabled", "blocked_hw_accesses": "0", "pages_live": "4", "allocator": "native_bm"}
     expected.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
                     "buffers", "buffer_pages", "buffer_maps", "buffer_errors", "map_leases", "device_allocations", "device_pages",
                     "device_errors", "stages", "staged_buffers", "staged_pages", "stage_errors", "native_bindings", "native_errors", "bm_errors", "bm_allocations", "bm_pages")})
+    if require_owner:
+        expected.update({"host_abi": "3", "boot_owners": "0", "parent_leases": "0", "owner_errors": "0"})
     return all(status.get(key) == value for key, value in expected.items())
 
 
@@ -118,6 +120,18 @@ def handoff_status(stderr):
     return status
 
 
+def boot_owner_status(stderr, handoff):
+    matches = re.findall(r"^BOOT_OWNER acquired=([01]) queried=([01]) released=([01]) parent_abi=(\d+) "
+                         r"buffers=(\d+) pages=(\d+) errno=(\d+) gpu_execution=disabled$", stderr, re.M)
+    if len(matches) != 1:
+        return {"verified": False}
+    values = list(map(int, matches[0]))
+    result = dict(zip(("acquired", "queried", "released", "parent_abi", "buffers", "pages", "errno"), values))
+    result["verified"] = bool(handoff and handoff["cpu_cycle_passed"] and values[:4] == [1, 1, 1, 3] and not values[6]
+                              and values[4] == handoff["buffers"] and values[5] == handoff["pages"])
+    return result
+
+
 def first_failed_request(stderr):
     """Describe the first compatibility failure, excluding later cleanup calls."""
     current = None
@@ -128,6 +142,9 @@ def first_failed_request(stderr):
             continue
         if current is None:
             continue
+        owner_error = re.fullmatch(r"BOOT_OWNER .* errno=(\d+) gpu_execution=disabled", line)
+        if owner_error and int(owner_error[1]):
+            return {**current, "errno": int(owner_error[1]), "phase": "boot_owner"}
         match = re.fullmatch(r"ALLOC heap=([0-9a-f]+) flags=([0-9a-f]+) bytes=(\d+) alignment=(\d+)", line)
         if match and current["command"] == 6:
             current.update(heap_handle=int(match[1], 16), flags=int(match[2], 16),
@@ -316,7 +333,7 @@ def main():
             return 0
         try:
             after = services_status()
-            cleanup_ok = clean_status(after)
+            cleanup_ok = clean_status(after, require_owner=True)
         except (OSError, ValueError) as error:
             after, cleanup_ok = {"status_error": str(error)}, False
         outcome = "initializer_returned_failure_with_clean_resources" if code == 3 and cleanup_ok else "inspect_report"
@@ -328,18 +345,22 @@ def main():
         bm = bm_status(stderr, handoff, contents)
         ownership = ownership_status(stderr, handoff, contents)
         startup = startup_inputs(stderr)
+        owner = boot_owner_status(stderr, handoff)
         if outcome != "inspect_report" and handoff and handoff["cpu_cycle_passed"]:
             outcome = "native_allocator_verified_with_clean_resources" if mappings["all_staged_cpu_mappings_released"] and native["verified"] and runtime["verified"] and bm["verified"] and ownership["verified"] else "inspect_report"
         if contents["summary"] and not contents["verified"]:
             outcome = "inspect_report"
         if handoff and handoff["cpu_cycle_passed"] and not startup["complete"]:
             outcome = "inspect_report"
+        if outcome == "native_allocator_verified_with_clean_resources":
+            outcome = "boot_owner_verified_with_clean_resources" if owner["verified"] else "inspect_report"
         report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
                   "contents": contents,
                   "mapping_releases": mappings, "native_cycle": native, "native_runtime": runtime, "native_bm": bm, "native_ownership": ownership,
                   "startup_inputs": startup,
+                  "boot_owner": owner,
                   "first_failed_request": first_failed_request(stderr),
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
@@ -352,7 +373,8 @@ def main():
         print("Initializer diagnostic report:", args.report)
         if startup["complete"]:
             print("Ordered firmware register scripts and boot controls captured for review:", startup["sha256"])
-        if outcome == "native_allocator_verified_with_clean_resources":
+        if outcome == "boot_owner_verified_with_clean_resources":
+            print("Exclusive stage/parent lease acquired, queried and released:", owner)
             print("Original allocations retain native BM/OS ownership and snapshot handles:", ownership["summary"])
             print("Native BM aliases, getters, PTE attributes, VA reuse and retirement verified:", bm["summary"])
             print("Retained native binding, query, content checks and unbind verified:", runtime)
@@ -360,6 +382,10 @@ def main():
             print("CPU buffer contents, staging, PTE query and abort verified:", contents["summary"])
             print("Legacy CPU mappings released; staged RAM and GPU PTEs remained valid.")
             print("The Intel initializer is deliberately returned a failure after that diagnostic cycle.")
+        elif not cleanup_ok:
+            print("Driver resources did not return to idle; inspect the report's after counters:", after)
+        elif handoff and handoff["cpu_cycle_passed"] and not owner["verified"]:
+            print("Stage/parent ownership verification incomplete:", owner)
         elif handoff and handoff["cpu_cycle_passed"] and not startup["complete"]:
             print("Firmware startup input trace incomplete; inspect startup_inputs and rebuild the capture bundle.")
         elif ownership["summary"] and not ownership["verified"]:

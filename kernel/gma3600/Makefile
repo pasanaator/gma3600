@@ -31,7 +31,7 @@ ifeq ($(SGX_HOST),1)
 ifeq ($(CONFIG_AUXILIARY_BUS),)
 $(error SGX_HOST=1 requires CONFIG_AUXILIARY_BUS)
 endif
-gma3600-y += gma3600_sgx_host.o gma3600_sgx_irq.o
+gma3600-y += gma3600_sgx_host.o gma3600_sgx_irq.o gma3600_sgx_lease.o
 ccflags-y += -DGMA3600_SGX_HOST
 endif
 

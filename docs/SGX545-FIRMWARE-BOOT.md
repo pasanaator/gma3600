@@ -5,8 +5,9 @@ passed with 15 original native allocations, 36 pages, unchanged populated
 contents, and zero live/error counters after teardown. The captured script has
 2 pre-reset, 38 post-reset and 9 deinit writes.
 
-No additional hardware capture is needed for this checkpoint. The working
-host2 display parent and services 0.16.0 can remain in use.
+The boot-input capture is complete. The current [stage/parent ownership
+checkpoint](SGX545-STAGE-OWNER.md) tests real resource leases on host3 without
+enabling GPU execution.
 
 ## Register and address audit
 
@@ -34,8 +35,9 @@ are rejected rather than forwarded to a generic register-write interface.
 
 [gma3600_sgx_boot.c](../experimental/sgx545/core/gma3600_sgx_boot.c) implements
 the serialized one-shot controller, compiled into the experimental services
-module. It has **no bridge ioctl, module parameter, live MMIO provider or parent
-resource provider connected to it**. Existing production MMIO blocking remains.
+module. It has **no firmware-start ioctl or live MMIO provider connected to
+it**. A separate CPU-only `BOOT_OWNER` ioctl now tests the stage and parent
+resource lease. Existing production MMIO blocking remains.
 
 It copies and validates the plan, acquires an exclusive owner, revalidates the
 actual retained allocation set, programs clock/interrupt controls and part 1,
@@ -65,10 +67,11 @@ Detach forbids further MMIO and preserves the owner. Failed release is never
 retried automatically after potentially partial native destruction.
 
 The caller must serialize the controller and retain its object, ops table and
-context for as long as `owned` is set. These are integration contracts, not
-ownership already provided by the current bridge. The live provider must pin
-the actual stage and modules, coordinate suspend/detach with the parent, and
-preserve quarantined ownership across file close and remove.
+context for as long as `owned` is set. The bridge now provides a CPU stage owner
+with parent/child module pins, device references, original native allocation
+ownership and suspend exclusion. It blocks native unbind/alias modification
+while leased and retains common DDK state on failed retirement. The live
+controller must still be connected to that owner before any GPU programming.
 
 A first live provider may deliberately omit the quiescence hook. Every attempt
 that touches hardware must then retain its stage and module references until
@@ -88,10 +91,12 @@ detach. The native reset helpers have their own source tests. The offline audit
 and controller tests run in `bash tests/run.sh`; native source replay also runs
 inside the hybrid builder.
 
-Before a live test, connect the controller to an exclusive bridge/stage owner
-and parent power/suspend lifecycle. Host ABI 2 does not expose authority or a
-quiescence primitive for GPU reset/MMU programming. Do not bypass that boundary
-by unblocking generic native MMIO writes. The old empty Cedarview power
+Before a live test, connect the controller to the stage/parent lease and supply
+its bounded MMIO/reset/status provider. Host ABI 3 adds an internal one-way
+`seal`: it authorizes a constrained polling-only boot and permanently denies
+lease release until reboot. The CPU diagnostic cannot call it. There is no
+unseal or inferred quiescence proof. Do not bypass that boundary by unblocking
+generic native MMIO writes. The old empty Cedarview power
 callbacks do not establish isolation from the working VGA display.
 
 The first live result sought is `INIT_COMPLETE`, followed by firmware-returned

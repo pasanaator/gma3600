@@ -127,12 +127,19 @@ int main(void)
     device.pdev = &pci;
     device.crtcs[PIPE_B].base.index = PIPE_B;
     assert(!pthread_mutex_init(&device.irq_lock, NULL));
+    mutex_init(&device.sgx_lifecycle_mutex);
     gma3600_sgx_irq_init(&device);
     assert(!gma3600_irq_install(&device));
 
     assert(ops->enable(&sgx, &cookie, true) == -ENOENT);
     assert(ops->register_handler(&sgx, NULL, &cookie) == -EINVAL);
     assert(ops->register_handler(&sgx, gpu_isr, NULL) == -EINVAL);
+    device.sgx_lease_owner = &cookie;
+    assert(ops->register_handler(&sgx, gpu_isr, &cookie) == -EBUSY);
+    device.sgx_lease_owner = NULL;
+    device.sgx_suspending = true;
+    assert(ops->register_handler(&sgx, gpu_isr, &cookie) == -EBUSY);
+    device.sgx_suspending = false;
     assert(!ops->register_handler(&sgx, gpu_isr, &cookie));
     assert(!(device.irq_mask & GMA3600_SGX_IRQ_BIT));
     assert(ops->register_handler(&sgx, gpu_isr, &other_cookie) == -EBUSY);

@@ -34,10 +34,13 @@ static int sgx_irq_register(struct gma3600_sgx_device *sgx,
 
 	if (!handler || !data)
 		return -EINVAL;
+	mutex_lock(&gdev->sgx_lifecycle_mutex);
 	mutex_lock(&gdev->sgx_irq_mutex);
 	spin_lock_irqsave(&gdev->irq_lock, flags);
 	if (gdev->sgx_irq_closing)
 		ret = -ENODEV;
+	else if (gdev->sgx_lease_owner || gdev->sgx_suspending || gdev->sgx_removing)
+		ret = -EBUSY;
 	else if (gdev->sgx_irq_handler)
 		ret = -EBUSY;
 	else {
@@ -46,6 +49,7 @@ static int sgx_irq_register(struct gma3600_sgx_device *sgx,
 	}
 	spin_unlock_irqrestore(&gdev->irq_lock, flags);
 	mutex_unlock(&gdev->sgx_irq_mutex);
+	mutex_unlock(&gdev->sgx_lifecycle_mutex);
 	return ret;
 }
 

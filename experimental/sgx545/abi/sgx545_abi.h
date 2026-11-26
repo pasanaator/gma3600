@@ -172,6 +172,16 @@ struct sgx545_init2_info32 {
 struct sgx545_init2_in32 { __u32 flags, device; struct sgx545_init2_info32 info; };
 struct sgx545_init2_out32 { __u32 error, kernel_build_options; };
 
+/* CPU-only stage/parent lease. No hardware permission bits exist here. */
+#define SGX545_IOCTL_BOOT_OWNER 0xc030470dU
+#define SGX545_OWNER_ACQUIRE 0U
+#define SGX545_OWNER_QUERY 1U
+#define SGX545_OWNER_RELEASE 2U
+struct sgx545_boot_owner {
+	__u32 services, stage, device, operation;
+	__u32 parent_abi, buffers, pages, held, verified, reserved[3];
+};
+
 /* Project-only initializer staging: no legacy finalization or GPU execution. */
 #define SGX545_INIT_ROLES 9U
 #define SGX545_INIT_MAX_BUFFERS 27U

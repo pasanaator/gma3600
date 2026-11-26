@@ -47,12 +47,79 @@ struct gma_sgx_prepared {
 	bool os_ready, mm_ready, sys_ready, ready;
 	unsigned int devices;
 	struct gma_sgx_bridge *bridge;
+	void *lease_owner;
+	struct module *parent_module;
 };
 
 static DEFINE_MUTEX(prepare_lock);
 static bool attempted;
 static struct gma_sgx_prepared *active;
 static atomic_t blocked_io = ATOMIC_INIT(0);
+
+int gma3600_sgx_owner_acquire(void *identity, u32 *parent_abi)
+{
+	struct gma_sgx_prepared *ctx;
+	const struct gma3600_sgx_lease_ops *ops;
+	int ret;
+	mutex_lock(&prepare_lock);
+	ctx = active;
+	if (!identity || !parent_abi || !ctx || !ctx->ready) { ret = -ENODEV; goto out; }
+	if (ctx->lease_owner) { ret = -EBUSY; goto out; }
+	/* ABI 2 has no tail field. Never read beyond its published object. */
+	if (ctx->sgx->host_abi != 3) { ret = -EOPNOTSUPP; goto out; }
+	ops = ctx->sgx->lease_ops;
+	if (!ops || !ops->acquire || !ops->release || !try_module_get(ops->owner)) {
+		ret = -ENODEV; goto out;
+	}
+	if (!try_module_get(THIS_MODULE)) { module_put(ops->owner); ret = -ENODEV; goto out; }
+	get_device(ctx->dev);
+	ret = ops->acquire(ctx->sgx, identity);
+	if (ret) {
+		put_device(ctx->dev); module_put(THIS_MODULE); module_put(ops->owner);
+		goto out;
+	}
+	ctx->lease_owner = identity; ctx->parent_module = ops->owner;
+	*parent_abi = ctx->sgx->host_abi;
+out:
+	mutex_unlock(&prepare_lock);
+	return ret;
+}
+
+int gma3600_sgx_owner_release(void *identity)
+{
+	struct gma_sgx_prepared *ctx;
+	struct module *parent;
+	int ret;
+	mutex_lock(&prepare_lock);
+	ctx = active;
+	if (!ctx || !identity || ctx->lease_owner != identity) { ret = -ENOENT; goto out; }
+	parent = ctx->parent_module;
+	ret = ctx->sgx->lease_ops->release(ctx->sgx, identity);
+	if (ret) goto out; /* Keep every reference and the native context. */
+	ctx->lease_owner = NULL; ctx->parent_module = NULL;
+	put_device(ctx->dev);
+	module_put(parent); /* Parent callback has returned before dropping its pin. */
+	module_put(THIS_MODULE);
+out:
+	mutex_unlock(&prepare_lock);
+	return ret;
+}
+
+/* Internal future live-provider boundary. No ioctl or parameter calls this
+ * function in the CPU-only ownership diagnostic. Once sealed, parent release
+ * fails permanently, preserving stage/native/backing refs until reboot. */
+int gma3600_sgx_owner_seal(void *identity)
+{
+	struct gma_sgx_prepared *ctx;
+	int ret;
+	mutex_lock(&prepare_lock);
+	ctx = active;
+	if (!ctx || !ctx->ready || !identity || ctx->lease_owner != identity) ret = -ENOENT;
+	else if (!ctx->sgx->lease_ops->seal) ret = -EOPNOTSUPP;
+	else ret = ctx->sgx->lease_ops->seal(ctx->sgx, identity);
+	mutex_unlock(&prepare_lock);
+	return ret;
+}
 
 struct device *PVRLDMGetDevice(void)
 {
@@ -86,6 +153,12 @@ static void gma_sgx_prepare_cleanup(void *data)
 	PVRSRV_ERROR err = PVRSRV_OK;
 
 	ctx->ready = false;
+	/* bridge_stop runs first. A failed parent lease retirement must retain
+	 * DDK page directories, reset pages, mappings and their owning context. */
+	if (ctx->lease_owner) {
+		dev_err(ctx->dev, "services retained: parent lease could not be retired; common teardown blocked\n");
+		return;
+	}
 	if (ctx->sys_ready) {
 		err = SysDeinitialise(SysAcquireDataNoCheck());
 		ctx->sys_ready = false;
@@ -101,6 +174,8 @@ static void gma_sgx_prepare_cleanup(void *data)
 		 err, gma3600_sgx_live_pages(), atomic_read(&blocked_io));
 	gpsPVRLDMDev = NULL;
 	active = NULL;
+	dev_set_drvdata(ctx->dev, NULL);
+	kfree(ctx);
 }
 
 static ssize_t services_show(struct device *dev, struct device_attribute *attr,
@@ -108,18 +183,19 @@ static ssize_t services_show(struct device *dev, struct device_attribute *attr,
 {
 	struct gma_sgx_prepared *ctx = dev_get_drvdata(dev);
 	struct gma_sgx_bridge_stats stats = {0};
+	if (!ctx) return sysfs_emit(buf, "state=offline\n");
 
 	if (ctx->bridge)
 		gma3600_sgx_bridge_stats(ctx->bridge, &stats);
 	return sysfs_emit(buf,
-		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled bridge=%s files=%u connections=%u bridge_errors=%u heap_handles=%u init_running=%u init_ran=%u buffers=%u buffer_pages=%u buffer_maps=%u buffer_errors=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u map_leases=%u native_bindings=%u native_errors=%u bm_checks=%u bm_errors=%u allocator=%s bm_allocations=%u bm_pages=%u\n",
+		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled bridge=%s files=%u connections=%u bridge_errors=%u heap_handles=%u init_running=%u init_ran=%u buffers=%u buffer_pages=%u buffer_maps=%u buffer_errors=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u map_leases=%u native_bindings=%u native_errors=%u bm_checks=%u bm_errors=%u allocator=%s bm_allocations=%u bm_pages=%u boot_owners=%u parent_leases=%u owner_errors=%u host_abi=%u\n",
 		ctx->ready ? "prepared" : "failed", ctx->devices,
 		gma3600_sgx_live_pages(), atomic_read(&blocked_io),
 		ctx->bridge ? "enabled" : "disabled", stats.files, stats.connections, stats.errors,
 		stats.heap_handles, stats.init_running, stats.init_ran,
 		stats.buffers, stats.buffer_pages, stats.buffer_maps, stats.buffer_errors,
 		stats.device_allocations, stats.device_pages, stats.device_errors,
-		stats.stages, stats.staged_buffers, stats.staged_pages, stats.stage_errors, stats.map_leases, stats.native_bindings, stats.native_errors, stats.bm_checks, stats.bm_errors, native_bm ? "native_bm" : "mmu", stats.bm_allocations, stats.bm_pages);
+		stats.stages, stats.staged_buffers, stats.staged_pages, stats.stage_errors, stats.map_leases, stats.native_bindings, stats.native_errors, stats.bm_checks, stats.bm_errors, native_bm ? "native_bm" : "mmu", stats.bm_allocations, stats.bm_pages, stats.boot_owners, stats.parent_leases, stats.owner_errors, ctx->sgx->host_abi);
 }
 static DEVICE_ATTR_RO(services);
 static struct attribute *prepare_attrs[] = { &dev_attr_services.attr, NULL };
@@ -135,7 +211,7 @@ static int gma_sgx_prepare_probe(struct auxiliary_device *adev,
 	PVRSRV_ERROR err;
 	int ret;
 
-	if (sgx->host_abi != GMA3600_SGX_HOST_ABI)
+	if (sgx->host_abi != 2 && sgx->host_abi != GMA3600_SGX_HOST_ABI)
 		return -EPROTONOSUPPORT;
 	if (sgx->pdev->device != 0x0be1 || upper_32_bits(sgx->regs_phys) ||
 	    pci_channel_offline(sgx->pdev) || sgx->pdev->current_state != PCI_D0)
@@ -143,7 +219,7 @@ static int gma_sgx_prepare_probe(struct auxiliary_device *adev,
 	if (readl(sgx->regs + GMA3600_SGX_CORE_ID) != 0x01150000 ||
 	    readl(sgx->regs + GMA3600_SGX_CORE_REV) != 0x0001000d)
 		return -ENODEV;
-	ctx = devm_kzalloc(&adev->dev, sizeof(*ctx), GFP_KERNEL);
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
 	ctx->dev = &adev->dev;
@@ -152,6 +228,7 @@ static int gma_sgx_prepare_probe(struct auxiliary_device *adev,
 	/* DDK globals are not re-entrant. Reload the module for another run. */
 	if (attempted) {
 		mutex_unlock(&prepare_lock);
+		kfree(ctx);
 		return -EALREADY;
 	}
 	attempted = true;
@@ -225,4 +302,4 @@ module_init(gma_sgx_init);
 module_exit(gma_sgx_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SGX545 CPU-side services preparation; GPU execution disabled");
-MODULE_VERSION("0.17.0");
+MODULE_VERSION("0.18.0");

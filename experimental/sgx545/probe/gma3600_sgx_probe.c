@@ -38,7 +38,7 @@ static int gma3600_sgx_probe(struct auxiliary_device *adev,
 					struct gma3600_sgx_device, adev);
 	struct sgx_snapshot *s;
 
-	if (sgx->host_abi != GMA3600_SGX_HOST_ABI)
+	if (sgx->host_abi != 2 && sgx->host_abi != GMA3600_SGX_HOST_ABI)
 		return -EPROTONOSUPPORT;
 	/* Do not wake/reset the GPU just to obtain an identification snapshot. */
 	if (pci_channel_offline(sgx->pdev) || sgx->pdev->current_state != PCI_D0)

@@ -22,6 +22,8 @@ static int bm_fail_index = -1, bm_corrupt_index = -1, runtime_fail_requery;
 static unsigned runtime_queries;
 static int owned_fail_index = -1, owned_corrupt_index = -1;
 static unsigned sequence[80], sequence_count;
+static int owner_fail_op=-1, owner_malformed_op=-1, owner_held;
+static unsigned owner_calls[3];
 static int transport_open(const char *path, int flags)
 {
 	assert(!strcmp(path, "/dev/gma3600-sgx-bridge") && flags == (O_RDWR | O_CLOEXEC));
@@ -39,7 +41,19 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 {
 	assert(fd > 0 && arg); ioctls++;
 	if (fail_ioctl) { errno = EOPNOTSUPP; return -1; }
-	if (command == SGX545_IOCTL_BM_INFO) {
+	if (command == SGX545_IOCTL_BOOT_OWNER) {
+		struct sgx545_boot_owner *owner=arg;
+		unsigned op=owner->operation;
+		assert(runtime_live && owner->services==10 && owner->stage==200 && owner->device==20 && op<=2);
+		assert(!owner->held && !owner->parent_abi && sequence_count<80);
+		sequence[sequence_count++]=command; owner_calls[op]++;
+		if ((int)op==owner_fail_op) { errno=EIO; return -1; }
+		if (op==SGX545_OWNER_ACQUIRE) { assert(!owner_held); owner_held=1; }
+		else assert(owner_held);
+		if (op==SGX545_OWNER_RELEASE) owner_held=0;
+		else { owner->held=owner->verified=1; owner->parent_abi=3; owner->buffers=owner->pages=11; }
+		if ((int)op==owner_malformed_op) owner->held^=1;
+	} else if (command == SGX545_IOCTL_BM_INFO) {
 		struct sgx545_bm_info *info = arg;
 		assert(runtime_live && info->services == 10 && info->stage == 200 && info->index < 11 && !info->owned);
 		assert(sequence_count < 80); sequence[sequence_count++] = command;
@@ -167,7 +181,7 @@ static void handoff_tests(unsigned *input)
 		assert(output[0] == 0xfefefefe && output[1] == 0xfefefefe); /* never claim legacy success */
 		assert(sequence_count == (mode == 1 ? 1 : mode == 2 ? 2 : mode == 3 ? 3 :
 			mode == 7 ? 36 : mode == 8 ? 38 : mode == 9 ? 37 : mode == 10 || mode == 11 ? 6 :
-			mode == 21 ? 13 : mode == 22 ? 15 : mode == 18 ? 24 : mode == 19 ? 26 : mode == 20 ? 32 : mode == 12 ? 7 : mode == 13 || mode == 16 ? 9 : mode == 15 ? 8 : mode == 14 || mode == 17 || mode == 0 || mode == 5 ? 43 : 5));
+			mode == 21 ? 13 : mode == 22 ? 15 : mode == 18 ? 24 : mode == 19 ? 26 : mode == 20 ? 32 : mode == 12 ? 7 : mode == 13 || mode == 16 ? 9 : mode == 15 ? 8 : mode == 14 || mode == 17 || mode == 0 || mode == 5 ? 46 : 5));
 		assert(sequence[0] == SGX545_IOCTL_INIT_REQUIREMENTS);
 		if (sequence_count > 1) assert(sequence[1] == SGX545_IOCTL_INIT_VALIDATE);
 		if (sequence_count > 2) assert(sequence[2] == SGX545_IOCTL_INIT_STAGE);
@@ -176,6 +190,7 @@ static void handoff_tests(unsigned *input)
 		assert(content_calls == (mode == 0 || mode == 5 || mode == 14 || mode == 17 ? 11 : mode == 7 ? 4 : mode == 8 ? 6 : mode == 9 ? 5 : 0));
 		assert(native_calls == (mode == 0 || mode == 5 || mode >= 7));
 		assert(!runtime_live);
+		assert(!owner_held);
 		fail_command = 0; corrupt_query = corrupt_content = corrupt_native = 0;
 		runtime_fail_op = runtime_corrupt_op = bm_fail_index = bm_corrupt_index = -1; runtime_fail_requery = 0; owned_fail_index = owned_corrupt_index = -1;
 		if (blocker > 0) assert(!drmClose(blocker)); /* move the staged fd's bookkeeping slot */
@@ -279,6 +294,23 @@ int main(void)
 	assert(drmClose(other) == -EINTR && !descriptor_count);
 	fail_close = 0;
 	handoff_tests(input);
+	for (i=0;i<7;i++) {
+		int result;
+		fd=drmOpen("psb",NULL); runtime_live=1; sequence_count=0;
+		memset(owner_calls,0,sizeof(owner_calls));
+		owner_fail_op=i>=1 && i<=3 ? (int)i-1 : -1;
+		owner_malformed_op=i>=4 ? (int)i-4 : -1;
+		result=boot_owner_cycle(fd,10,200,20,11,11);
+		assert(result==(i==0 ? 0 : i<=3 ? EIO : EPROTO));
+		assert(owner_calls[0]==1 && owner_calls[2]==(i!=1));
+		if(i==3) {
+			struct sgx545_boot_owner cleanup={.services=10,.stage=200,.device=20,.operation=SGX545_OWNER_RELEASE};
+			assert(owner_held); owner_fail_op=-1;
+			assert(!transport_ioctl(fd,SGX545_IOCTL_BOOT_OWNER,&cleanup));
+		}
+		assert(!owner_held); runtime_live=0; assert(!drmClose(fd));
+	}
+	owner_fail_op=owner_malformed_op=-1;
 	assert(drmCommandWrite(fd, 0x12, &wire, 28) == -EBADF);
 	for (i = 0; i < 32; i++) assert(drmOpen("psb", NULL) > 0);
 	before = opens;

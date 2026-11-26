@@ -48,6 +48,7 @@ int gma3600_sgx_host_init(struct gma3600_device *gdev)
 	sgx->host_abi = GMA3600_SGX_HOST_ABI;
 	sgx->host = gdev;
 	sgx->irq_ops = &gma3600_sgx_irq_ops;
+	sgx->lease_ops = &gma3600_sgx_lease_ops;
 	gma3600_sgx_irq_init(gdev);
 	ret = auxiliary_device_init(&sgx->adev);
 	if (ret) {
@@ -66,6 +67,7 @@ int gma3600_sgx_host_init(struct gma3600_device *gdev)
 
 void gma3600_sgx_host_fini(struct gma3600_device *gdev)
 {
+	gma3600_sgx_remove_begin(gdev);
 	if (!gdev->sgx)
 		return;
 	/* Let the child drain jobs with IRQs available, unregister its callback,

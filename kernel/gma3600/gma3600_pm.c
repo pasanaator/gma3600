@@ -12,6 +12,7 @@
 
 #include "gma3600_drv.h"
 #include "gma3600_reg.h"
+#include "gma3600_sgx.h"
 
 int gma3600_pm_suspend(struct device *dev)
 {
@@ -19,13 +20,17 @@ int gma3600_pm_suspend(struct device *dev)
 	struct gma3600_device *gdev = pci_get_drvdata(pdev);
 	int ret;
 
-	if (!gdev)
+	if (!gdev || gdev->suspended)
 		return 0;
+	ret = gma3600_sgx_suspend_begin(gdev);
+	if (ret)
+		return ret;
 
 	/* Save atomic state and disable all active CRTCs/encoders */
 	ret = drm_mode_config_helper_suspend(&gdev->drm);
 	if (ret) {
 		dev_err(dev, "drm_mode_config_helper_suspend failed: %d\n", ret);
+		gma3600_sgx_suspend_end(gdev);
 		return ret;
 	}
 
@@ -92,7 +97,11 @@ int gma3600_pm_resume(struct device *dev)
 	if (ret)
 		dev_err(dev, "drm_mode_config_helper_resume failed: %d\n", ret);
 
-	gdev->suspended = false;
+	/* Failed display restore must continue to exclude an SGX lease. */
+	if (!ret) {
+		gdev->suspended = false;
+		gma3600_sgx_suspend_end(gdev);
+	}
 	return ret;
 }
 

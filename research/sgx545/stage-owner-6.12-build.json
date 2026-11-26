@@ -1,0 +1,73 @@
+{
+  "target": "Intel D2500HN / Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "host_version": "1.0.4-sgx-host3",
+  "host_abi": 3,
+  "services_version": "0.18.0",
+  "transport_version": "0.10.0",
+  "previous_Atom_tests": "d2500hn-boot-controller-tests.json",
+  "source_pin": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "hardware_execution_enabled": false,
+  "new_hardware_result": "pending user host3/services 0.18.0 CPU-owner test",
+  "implementation": [
+    "Parent CPU lease pins PCI/DRM storage and active runtime PM without waking hardware; acquisition serialized with system suspend/remove and SGX IRQ registration",
+    "System suspend rejected before display shutdown while leased; transition rolled back on failure; failed display resume retains exclusion",
+    "ABI 3 sealed transition authorizes only a constrained future SGX polling boot and permanently prevents release until reboot, including forced remove; no current ioctl/parameter invokes it",
+    "Child pins both modules and auxiliary device; ABI 2 prefix remains supported and missing tail never read",
+    "48-byte CPU BOOT_OWNER ACQUIRE/QUERY/RELEASE validates original native allocation stage, immutable contents, empty native binding and strict observed boot plan",
+    "ACQUIRE copyout failure rolls back parent refs; QUERY faults retain lease; RELEASE reply faults do not recreate ownership",
+    "Held owner blocks explicit native unbind and alias/PTE modification; abort/disconnect/close/detach release parent before CPU native/PTE/backing teardown",
+    "Failed lease retirement retains bridge/stage/pool/native common context and module/device refs; offline late close does not enter native teardown",
+    "Transport runs actual owner acquire/query/release while native binding is retained; runner checks owner telemetry and zero idle counters on host3/.18 only"
+  ],
+  "validation": {
+    "C_suites": 15,
+    "python_unittests": 32,
+    "sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "parent_lifecycle": "Actual parent lease functions; runtime PM/device refs mocked; 32 acquire/suspend races, active/disabled/inactive runtime PM, foreign/duplicate release, forced remove, sealed retention and target restriction",
+    "IRQ": "Actual shared IRQ code; new registration excluded by lease/PM transition; original display mask and drain tests passed",
+    "adapter": "Actual acquire/release/seal/common cleanup functions with module/device callbacks mocked; ABI2 allocation truncated at missing-tail offset checked with ASan; failed acquire and failed/sealed release retain/rollback expected refs",
+    "bridge": "Actual staging/native lifetime functions with outer policy and OS/native callbacks mocked; actual closed recipe tested separately; new 15-buffer owner tests cover transaction faults, busy unbind, explicit abort, last close, forced detach and failed-retirement/offline retention",
+    "ELF32_transport": "QEMU: 23 handoff scenarios plus 7 owner success/failure/malformed-reply scenarios",
+    "loader_fixture": "QEMU project-owned fixture passed with transport 0.10.0",
+    "proprietary_code_executed_in_cloud": false,
+    "profiles": {
+      "10131": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": "/workspace/gma3600-tools/legacy/stage-owner-ready-10131/host/gma3600.ko",
+          "probe": "/workspace/gma3600-tools/legacy/stage-owner-ready-10131/probe/gma3600_sgx_probe.ko",
+          "services_prepare_only": "/workspace/gma3600-tools/legacy/stage-owner-ready-10131/core/gma3600_sgx_services.ko"
+        }
+      },
+      "10141": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": "/workspace/gma3600-tools/legacy/stage-owner-ready-10141/host/gma3600.ko",
+          "probe": "/workspace/gma3600-tools/legacy/stage-owner-ready-10141/probe/gma3600_sgx_probe.ko",
+          "services_prepare_only": "/workspace/gma3600-tools/legacy/stage-owner-ready-10141/core/gma3600_sgx_services.ko"
+        }
+      }
+    },
+    "display_only_build": "passed against same Debian kernel headers, normal SGX_HOST=0 build",
+    "hardware_suspend_and_live_firmware": "not tested; live MMIO/reset/status provider remains disconnected"
+  },
+  "remaining_live_work": [
+    "Connect boot controller to stage owner and bounded native MMIO/reset/status provider",
+    "Successful seal before any possible GPU programming; preserve all references until reboot for first attempt",
+    "One-shot INIT_COMPLETE and firmware ABI/build/revision reply; rendering/submission remain blocked"
+  ],
+  "artifacts": {
+    "kernel/gma3600/gma3600_sgx_lease.c": "c0b91e5bbe251f3cb45dd9e668d1f8b21e14c04b02dab7c633518fcd37b51675",
+    "experimental/sgx545/core/gma3600_sgx_bridge.c": "478f1d54f940d23cb9f18a7c0a3ab51358a09bae4531eafa083975d19d3ab1cc",
+    "experimental/sgx545/core/gma3600_sgx_adapter.c": "16cf7011b1ea37e924b673a5d6dd32d98840a33b2f5e90bd60de79667dae6502",
+    "tests/sgx545_bridge_lifetime_test.c": "effaa703895afe81296c6ff1b6c8f86ffa219c89f6dc9d06e8a75aa19c835b53",
+    "tests/sgx545_owner_adapter_test.c": "3fe24e6f14957696f2e525cb5c07de0f6530078885426b8b446fdf75d225514c",
+    "tests/sgx_lease_test.c": "178a3406c5565e43c97c2ff71c26a0b5bcc44025d4ee123f9e4e36bc6ae11483",
+    "tools/sgx545_initializer_transport.c": "924a7bf547f068fcd970c822a1433921ab45d0a80959438de249c5982c11bc97"
+  }
+}

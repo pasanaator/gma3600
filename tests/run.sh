@@ -43,6 +43,11 @@ trap 'rm -f "$test_binary"' EXIT
 "$test_binary"
 
 PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_bridge_lifetime_test.py
+PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_owner_adapter_test.py
+"${CC:-cc}" -std=gnu11 -Wall -Wextra -Werror -fsanitize=address,undefined -pthread \
+    -D_GNU_SOURCE -DGMA3600_SGX_HOST -Itests/stubs -Itests -Ikernel/gma3600 \
+    -include tests/irq_stubs.h tests/sgx_lease_test.c kernel/gma3600/gma3600_sgx_lease.c -o "$test_binary"
+"$test_binary"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_buffers_test.py
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -Iexperimental/sgx545/abi -Iexperimental/sgx545/core tests/sgx545_boot_test.c \

@@ -8,13 +8,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sgx545_abi.h"
+#include "gma3600_sgx_boot.h"
 #include "gma3600_sgx_mmu.h"
 
 typedef uint32_t u32;
 typedef uint64_t u64;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages, boot_owners, parent_leases, owner_errors; };
 struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; struct sgx545_content_measure content; };
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
@@ -144,13 +145,23 @@ static unsigned native_calls;
 static int fail_native;
 static int gma3600_sgx_native_cycle(void *device, struct gma_sgx_native_init *snapshot, struct sgx545_native_cycle *out)
 {
-    assert(device == &fake_device && snapshot->count == 9); native_calls++;
+    assert(device == &fake_device && (snapshot->count == 9 || snapshot->count == 15)); native_calls++;
     if (fail_native) return fail_native;
     out->bound = out->restored = 1; out->flags = SGX545_NATIVE_CCB_ROUNDTRIP;
     out->ccb_bytes = 8192; out->slots = 256;
     return 0;
 }
 static unsigned native_live, native_stops;
+static void *lease_identity;
+static int fail_lease_acquire, fail_lease_release;
+static int gma3600_sgx_owner_acquire(void *identity, u32 *abi)
+{ assert(native_live && !lease_identity); if (fail_lease_acquire) return -EIO; lease_identity = identity; *abi = 3; return 0; }
+static int gma3600_sgx_owner_release(void *identity)
+{ assert(native_live && lease_identity == identity); if (fail_lease_release) return -EIO; lease_identity = NULL; return 0; }
+/* Outer policy seam; actual captured policy is tested in sgx545_boot_test. */
+int gma_sgx_boot_plan_build(const struct sgx545_init2_info32 *info,
+    const struct gma_sgx_boot_memory *memory, u32 count, struct gma_sgx_boot_plan *out)
+{ assert(count == 15 && info->ccb == memory[0].token); memset(out, 0, sizeof(*out)); return 0; }
 static int fail_native_end;
 static int gma3600_sgx_native_begin(void *device, struct gma_sgx_native_init *snapshot,
     void **runtime, struct sgx545_native_cycle *out)
@@ -169,6 +180,7 @@ static int gma3600_sgx_native_query(void *runtime, struct sgx545_native_cycle *o
 }
 static int gma3600_sgx_native_end(void **runtime)
 {
+    assert(!lease_identity); /* Parent owner retires before native binding. */
     assert(*runtime == &fake_device && native_live && live_bindings >= 9);
     *runtime = NULL; native_live = 0; native_stops++;
     if (fail_native_end) { fail_native_end = 0; return -EUCLEAN; }
@@ -609,7 +621,7 @@ static void device_allocation_lifetime(void)
 static int publish_stage(void *context, const struct sgx545_init_stage *message)
 { assert(message->stage && message->buffers == 9 && message->pages == 36); return context ? -EFAULT : 0; }
 static int publish_runtime(void *context, const struct sgx545_native_runtime *message)
-{ assert(message->state.buffers == 9 && message->state.pages == 36); return context ? -EFAULT : 0; }
+{ assert((message->state.buffers == 9 || message->state.buffers == 15) && message->state.pages == message->state.buffers * 4); return context ? -EFAULT : 0; }
 static void initializer_stage_lifetime(void)
 {
     unsigned mode, i;
@@ -850,6 +862,85 @@ static void initializer_stage_lifetime(void)
     }
 }
 
+static int publish_owner(void *context, const struct sgx545_boot_owner *message)
+{
+    assert(message->operation == SGX545_OWNER_RELEASE ? !message->held : message->held == 1);
+    return context ? -EFAULT : 0;
+}
+static int publish_fifteen(void *context, const struct sgx545_init_stage *message)
+{ (void)context; assert(message->buffers == 15 && message->pages == 60); return 0; }
+static void boot_owner_lifetime(void)
+{
+    unsigned mode, i;
+    for (mode = 0; mode < 5; mode++) {
+        struct device dev = {0}; struct file file;
+        struct gma_sgx_bridge *b = start(&dev);
+        struct gma_sgx_file *f = open_(b, &file);
+        struct sgx545_init2_in32 wire = {.device=2};
+        struct sgx545_init_stage stage = {.services=1,.device=2,.request_bytes=sizeof(wire)};
+        struct sgx545_alloc_device_out allocation;
+        struct sgx545_native_runtime runtime = {.state={.services=1,.device=2}};
+        struct sgx545_boot_owner message = {.services=1,.device=2}, clean;
+        BM_HEAP heap = {.pMMUHeap=&fake_device}; u32 token, tokens[15];
+        assert(!backend_connect(f, &token)); f->session.services=1; f->session.device=2; attach_device(f);
+        assert(!backend_init_connect(f)); f->info_ready = true; f->session.initializer=1;
+        f->init_info.heaps[0].handle=100; f->init_info.heaps[0].attributes=SGX545_HEAP_FLAGS;
+        assert(!PVRSRVAllocHandle(f->handles, &f->heap_handles[0], &heap,
+            PVRSRV_HANDLE_TYPE_DEV_MEM_HEAP, PVRSRV_HANDLE_ALLOC_FLAG_SHARED));
+        for (i=0;i<15;i++) {
+            assert(!backend_alloc_device(f,100,SGX545_INTEL_INIT_FLAGS,16384,4096,&allocation)); tokens[i]=allocation.kernel_mem;
+        }
+        wire.info.ccb=tokens[0];wire.info.ccb_control=tokens[1];wire.info.event_kicker=tokens[2];
+        wire.info.host_control=tokens[3];wire.info.ta3d_control=tokens[4];wire.info.misc=tokens[5];
+        wire.info.hwperf=tokens[6];wire.info.ta_signature=tokens[7];wire.info.signature_3d=tokens[8];
+        for(i=9;i<15;i++)wire.info.mem_handles[i-9]=tokens[i];
+        assert(!stage_publish(f,&wire,&stage,publish_fifteen,NULL));
+        runtime.state.stage=message.stage=stage.stage; clean=message;
+        assert(!stage_runtime(f,&runtime,publish_runtime,NULL));
+        fail_lease_acquire=1;
+        assert(stage_boot_owner(f,&message,publish_owner,NULL)==-EIO && !lease_identity && !b->stage->boot_plan);
+        fail_lease_acquire=0; message=clean;
+        assert(stage_boot_owner(f,&message,publish_owner,&dev)==-EFAULT && !lease_identity && !b->stats.boot_owners);
+        message=clean; assert(!stage_boot_owner(f,&message,publish_owner,NULL));
+        assert(lease_identity==b->stage && b->stats.boot_owners==1 && b->stats.parent_leases==1);
+        assert(message.parent_abi==3 && message.buffers==15 && message.pages==60 && message.verified);
+        message=clean; message.operation=SGX545_OWNER_QUERY;
+        assert(stage_boot_owner(f,&message,publish_owner,&dev)==-EFAULT && lease_identity && native_live);
+        message=clean; message.operation=SGX545_OWNER_QUERY;
+        assert(!stage_boot_owner(f,&message,publish_owner,NULL));
+        message=clean; assert(stage_boot_owner(f,&message,publish_owner,NULL)==-EALREADY);
+        runtime=(struct sgx545_native_runtime){.state={.services=1,.device=2,.stage=stage.stage},.operation=SGX545_NATIVE_UNBIND};
+        assert(stage_runtime(f,&runtime,publish_runtime,NULL)==-EBUSY && native_live);
+        if(mode==0) {
+            message=clean;message.operation=SGX545_OWNER_RELEASE;
+            assert(stage_boot_owner(f,&message,publish_owner,&dev)==-EFAULT && !lease_identity && native_live);
+            message=clean; assert(!stage_boot_owner(f,&message,publish_owner,NULL));
+            message=clean;message.operation=SGX545_OWNER_RELEASE;
+            assert(!stage_boot_owner(f,&message,publish_owner,NULL) && !lease_identity && native_live);
+        } else if(mode==1) {
+            fail_lease_release=1;
+            assert(stage_abort(b)==-EIO && native_live && live_bindings==15 && b->stage->parent_leased);
+            assert(b->stats.owner_errors==1); fail_lease_release=0;
+        } else if(mode==2) {
+            stop(&dev); assert(!native_live && !lease_identity && !b->stage);
+        } else if(mode==4) {
+            fail_lease_release=1; stop(&dev);
+            assert(!b->online && lease_identity && native_live && live_bindings==15);
+            assert(!bridge_release(NULL,&file));
+            assert(lease_identity && native_live && live_bindings==15);
+            /* Test-only recovery while the mocked common DDK is still live.
+             * Real failed removal retains its owner/context until reboot. */
+            fail_lease_release=0; bridge_stop(b); empty(); continue;
+        }
+        /* Explicit owner retirement, failed-retirement recovery, forced
+         * detach and last-close all retire parent before native/PTE backing. */
+        assert(!bridge_release(NULL,&file));
+        assert(!lease_identity && !native_live && !live_bindings);
+        if(dev.action)stop(&dev);
+        empty();
+    }
+}
+
 int main(void)
 {
     struct device dev = {0};
@@ -942,6 +1033,7 @@ int main(void)
     use_native_bm = true;
     device_allocation_lifetime();
     initializer_stage_lifetime();
+    boot_owner_lifetime();
     use_native_bm = false;
     puts("SGX bridge lifetime tests passed: ownership, heap translation/rollback, device allocation/pin ordering, failed unmap retention, close and detach");
     return 0;

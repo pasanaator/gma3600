@@ -107,6 +107,7 @@ static int gma3600_pci_probe(struct pci_dev *pdev, const struct pci_device_id *e
 	}
 
 	gdev->pdev = pdev;
+	gma3600_sgx_lifecycle_init(gdev);
 	pci_set_drvdata(pdev, gdev);
 
 	/* Locate Intel GMCH host bridge (PCI 0:0.0) for stolen memory size */
@@ -251,7 +252,7 @@ MODULE_AUTHOR("Henri Proos");
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE("GPL");
 #ifdef GMA3600_SGX_HOST
-MODULE_VERSION("1.0.4-sgx-host2");
+MODULE_VERSION("1.0.4-sgx-host3");
 #else
 MODULE_VERSION("1.0.4");
 #endif

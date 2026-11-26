@@ -15,6 +15,7 @@
 #define EXPORT __attribute__((visibility("default")))
 #ifndef SGX545_TRANSPORT_TEST
 _Static_assert(sizeof(void *) == 4, "Intel initializer transport must be i386");
+_Static_assert(sizeof(struct sgx545_boot_owner) == 48, "i386 boot owner message");
 #define transport_open open
 #define transport_close close
 #define transport_ioctl ioctl
@@ -35,7 +36,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.9.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.10.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -194,6 +195,40 @@ static int bm_readback(int fd, unsigned services, unsigned stage, const unsigned
 	return error;
 }
 
+static int boot_owner_cycle(int fd, unsigned services, unsigned stage, unsigned device,
+	unsigned buffers, unsigned pages)
+{
+	struct sgx545_boot_owner clean = {.services=services,.stage=stage,.device=device};
+	struct sgx545_boot_owner reply = clean;
+	int error=0, acquired=0, queried=0, released=0;
+	if (transport_ioctl(fd, SGX545_IOCTL_BOOT_OWNER, &reply) < 0) error=errno;
+	else {
+		acquired=1;
+		if (reply.services!=services || reply.stage!=stage || reply.device!=device || reply.operation ||
+		    reply.parent_abi!=3 || reply.buffers!=buffers || reply.pages!=pages || reply.held!=1 || reply.verified!=1 ||
+		    reply.reserved[0] || reply.reserved[1] || reply.reserved[2]) error=EPROTO;
+	}
+	if (!error) {
+		struct sgx545_boot_owner previous=reply;
+		reply=clean; reply.operation=SGX545_OWNER_QUERY; previous.operation=SGX545_OWNER_QUERY;
+		if (transport_ioctl(fd, SGX545_IOCTL_BOOT_OWNER, &reply)<0) error=errno;
+		else if (memcmp(&reply,&previous,sizeof(reply))) error=EPROTO;
+		else queried=1;
+	}
+	/* A delivered acquisition, even malformed, always gets a release attempt.
+	 * Kernel ACQUIRE copyout failures roll back their own undelivered lease. */
+	if (acquired) {
+		struct sgx545_boot_owner expected=clean;
+		reply=clean; reply.operation=expected.operation=SGX545_OWNER_RELEASE;
+		if (transport_ioctl(fd, SGX545_IOCTL_BOOT_OWNER, &reply)<0) { if(!error)error=errno; }
+		else if (memcmp(&reply,&expected,sizeof(reply))) { if(!error)error=EPROTO; }
+		else released=1;
+	}
+	fprintf(stderr,"BOOT_OWNER acquired=%d queried=%d released=%d parent_abi=3 buffers=%u pages=%u errno=%d gpu_execution=disabled\n",
+		acquired,queried,released,buffers,pages,error);
+	return error;
+}
+
 static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned device,
 	const unsigned *roles, unsigned buffers, unsigned pages)
 {
@@ -228,6 +263,7 @@ static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned d
 			else queried = 1;
 		}
 		if (!error) error = content_readback(fd, services, stage, roles, buffers);
+		if (!error) error = boot_owner_cycle(fd, services, stage, device, buffers, pages);
 	}
 	/* Always unbind a delivered BIND, even on a malformed reply, query error or
 	 * content failure. The caller additionally aborts the entire stage. */
