@@ -8,7 +8,7 @@
   "transport_version": "0.11.0",
   "source_pin": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
   "previous_hardware_result": "d2500hn-stage-owner.json",
-  "new_hardware_result": "pending first explicit live firmware attempt",
+  "new_hardware_result": "First 0.19.0 capture stopped before seal with EINVAL, no MMIO or polls and clean resources; see d2500hn-live-preflight.json. Corrected borrowed native register handoff is in 0.19.1.",
   "firmware_boot_default": false,
   "hardware_boot_requires": [
     "services loaded with firmware_boot=1",

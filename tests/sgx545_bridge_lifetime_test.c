@@ -16,7 +16,7 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef void *IMG_HANDLE;
 typedef struct { unsigned count; void *data[64]; int type[64]; } PVRSRV_HANDLE_BASE;
-struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages, boot_owners, parent_leases, owner_errors; struct sgx545_live_boot live; };
+struct gma_sgx_bridge_stats { u32 files, connections, errors, heap_handles, init_running, init_ran, stages, staged_buffers, staged_pages, stage_errors, device_allocations, device_pages, device_errors, native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages, boot_owners, parent_leases, owner_errors; struct sgx545_live_boot live; u32 live_phase; };
 struct mock_buffer { void *owner; u32 token, bytes, pins; struct gma_sgx_mmu_binding *binding; struct sgx545_content_measure content; };
 struct gma_sgx_buffers { struct mock_buffer slots[32]; };
 static struct mock_buffer *visiting_buffer;
@@ -166,6 +166,7 @@ int gma_sgx_live_start(struct gma_sgx_live *l, const struct sgx545_init2_info32 
     (void)info;(void)memory;assert(count==15 && runtime==&fake_device);
     l->owner_ops=ops;l->owner=owner;l->identity=identity;l->runtime=runtime;l->attached=1;
     assert(!ops->acquire(owner) && !ops->verify(owner));
+    l->boot.phase=GMA_SGX_BOOT_RESET;
     l->boot.owned=l->sealed=1;l->boot.state=GMA_SGX_BOOT_QUARANTINED;l->boot.error=-ETIMEDOUT;
     return -ETIMEDOUT;
 }
@@ -940,8 +941,10 @@ static void boot_owner_lifetime(void)
             firmware_enabled=true;
             assert(stage_live(f,&live,publish_live,mode==6 ? &dev : NULL)==(mode==6 ? -EFAULT : 0));
             assert(lease_identity && native_live && b->stage->live->sealed);
+            assert(b->stats.live_phase == GMA_SGX_BOOT_RESET);
             query=(struct sgx545_live_boot){.services=1,.device=2,.stage=stage.stage,.operation=SGX545_LIVE_QUERY};
             assert(!stage_live(f,&query,publish_live,NULL));
+            assert(b->stats.live_phase == GMA_SGX_BOOT_RESET);
             query=(struct sgx545_live_boot){.services=1,.device=2,.stage=stage.stage};
             assert(stage_live(f,&query,publish_live,NULL)==-EALREADY);
             assert(stage_abort(b)==-EBUSY && !b->stats.stage_errors && !b->stats.owner_errors);

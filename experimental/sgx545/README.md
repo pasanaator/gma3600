@@ -1,12 +1,13 @@
 # SGX545 hybrid port for Debian 13 amd64
 
-Current checkpoint: **services 0.19.0 / transport 0.11.0**, using the unchanged
+Current checkpoint: **services 0.19.1 / transport 0.11.0**, using the unchanged
 host3 parent. The [Atom CPU ownership checkpoint](../../research/sgx545/d2500hn-stage-owner.json)
 passed. The next [explicit polling firmware boot](../../docs/SGX545-FIRMWARE-BOOT.md)
 uses the actual bounded native reset and one kick, with resources retained until
 reboot after sealing. Software validation is recorded in
-[live boot builds](../../research/sgx545/live-boot-6.12-build.json).
-The live hardware path has not yet been tested; no 3D acceleration is enabled.
+[preflight-fix builds](../../research/sgx545/live-preflight-fix-6.12-build.json).
+The first capture stopped before GPU writes with a missing native register
+pointer, fixed in 0.19.1. Firmware boot and 3D acceleration remain unverified.
 The checkpoint chronology below records earlier behavior and test results.
 
 

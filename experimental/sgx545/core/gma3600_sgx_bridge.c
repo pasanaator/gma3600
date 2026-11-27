@@ -1072,9 +1072,10 @@ static int stage_live(struct gma_sgx_file *f, struct sgx545_live_boot *message,
 	} else if (!s->live) return -ENOENT;
 	gma_sgx_live_result(s->live, message);
 	b->stats.live = *message;
+	b->stats.live_phase = s->live->boot.phase;
 	if (message->operation == SGX545_LIVE_START)
-		pr_info("gma3600 SGX live boot: state=%u sealed=%u init=%08x error=%u reset=%u BIF=%08x fault=%08x; %s\n",
-			message->state,message->sealed,message->init_status,message->error,message->reset_error,
+		pr_info("gma3600 SGX live boot: state=%u phase=%u sealed=%u init=%08x error=%u reset=%u BIF=%08x fault=%08x; %s\n",
+			message->state,b->stats.live_phase,message->sealed,message->init_status,message->error,message->reset_error,
 			message->bif_status,message->bif_fault,message->sealed ? "resources retained until reboot" : "no hardware ownership");
 	/* A delivered hardware attempt can never be rolled back after EFAULT. */
 	return publish(context, message);

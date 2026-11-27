@@ -1,0 +1,84 @@
+{
+  "date_client": "2026-11-27",
+  "target": "Intel D2500HN / Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "host_version": "1.0.4-sgx-host3",
+  "services_version": "0.19.1",
+  "transport_version": "0.11.0",
+  "parent_changed": false,
+  "private_transport_or_Intel_libraries_changed": false,
+  "previous_hardware_result": "d2500hn-live-preflight.json",
+  "hardware_firmware_execution_verified": false,
+  "source_pin": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "problem": "Prepared DevInitSGXPart1 state leaves pvRegsBaseKM NULL; blocked legacy DevInitSGXPart2KM was its only assignment. Live preflight compared NULL to the parent mapping and returned EINVAL.",
+  "fix": "Validate all preconditions, reject NULL input and foreign existing mappings, then borrow the parent mapping into the native device and expected integrity image. Before seal, native_end restores the saved pointer/timing without acquiring/unmapping an MMIO resource. After seal, existing retention still prevents cleanup.",
+  "diagnostics": "Cached sysfs live_phase and kernel phase number identify the stopping phase. Python report decodes the cached field. The 64-byte wire ABI and existing 0.11.0 initializer bundle remain compatible.",
+  "validation": {
+    "regression_before_fix": "Actual native helper test fails its first live prepare assertion when the fixture starts with the production NULL register pointer; reproduced against 0.19.0 before applying the fix.",
+    "regression_after_fix": "Actual native binder/live helpers and DDK types pass for 10131 and 10141, with NULL prepared state, missing input, foreign mapping rejection, repeated same-base verification, pre-seal restore, armed retention and reset pointer checks.",
+    "C_suites": 16,
+    "python_unittests": 34,
+    "sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "bridge_telemetry": "Actual bridge saved phase persists for normal START and failed START copyout followed by QUERY; close/detach retention tests pass.",
+    "loader_fixture": "Existing private transport 0.11.0 project-owned i386 fixture passes under qemu-i386 using the current Python runner.",
+    "profiles": {
+      "10131": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": {
+            "path": "/workspace/gma3600-tools/legacy/live191-verified-10131/host/gma3600.ko",
+            "sha256": "73c8ee1aea875d499a785c82cdfba067cffc3fe607c3e2cc6c6bfa1a2a33d218"
+          },
+          "probe": {
+            "path": "/workspace/gma3600-tools/legacy/live191-verified-10131/probe/gma3600_sgx_probe.ko",
+            "sha256": "f47bff92290d24b82e379f6b13e31dda97368ec8e0c147de6fd08e282cce7499"
+          },
+          "services_prepare_only": {
+            "path": "/workspace/gma3600-tools/legacy/live191-verified-10131/core/gma3600_sgx_services.ko",
+            "sha256": "474c409c29781e7b47ddca95d2b6c38039540d303d0c978a409021d0aa17333a"
+          }
+        },
+        "build_report_sha256": "2cd454a8e0eff48301b8871cfe0ff1e374c2c856bfb0f70198ed5441e2ba63b6",
+        "source_tests_log_sha256": "e7f2edec7e72b4ae04d6c5dfbe75788f6655f06390fd694a26d3273c86f7fd41",
+        "live_trial_allowed": true
+      },
+      "10141": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": {
+            "path": "/workspace/gma3600-tools/legacy/live191-verified-10141/host/gma3600.ko",
+            "sha256": "f156aef8f97107447c5407dacd58faa70c4c47805013f235a0807c74d5bf1c57"
+          },
+          "probe": {
+            "path": "/workspace/gma3600-tools/legacy/live191-verified-10141/probe/gma3600_sgx_probe.ko",
+            "sha256": "45806b4d5068ca21a2bf99ba6faa5a0a2e08d8c3b1234a9de2a1838f0391df41"
+          },
+          "services_prepare_only": {
+            "path": "/workspace/gma3600-tools/legacy/live191-verified-10141/core/gma3600_sgx_services.ko",
+            "sha256": "b5ed2f11e15afd89fd455268548b16e58068cd5cb96e3af70b7b8bd80d2b6ac9"
+          }
+        },
+        "build_report_sha256": "40ebb7f7422a619368aef5295a9b6be7e53438e7254ea6aa0f09ff2935b2176f",
+        "source_tests_log_sha256": "e7f2edec7e72b4ae04d6c5dfbe75788f6655f06390fd694a26d3273c86f7fd41",
+        "live_trial_allowed": false
+      }
+    },
+    "kernel_module_loaded_in_cloud": false,
+    "proprietary_code_executed_in_cloud": false,
+    "hardware_retest": "pending services 0.19.1 on the Atom"
+  },
+  "source_sha256": {
+    "experimental/sgx545/core/gma3600_sgx_native_live.inc": "5cff84ea7f5ff055ca3afbc2dfbddbd91119065441dac4dbd8bd28f7dfaab940",
+    "experimental/sgx545/core/gma3600_sgx_adapter.c": "971a3bcc40936ecc6264c66f6eba9cdc60a427dc101db4e7123e20d42716b90f",
+    "experimental/sgx545/core/gma3600_sgx_bridge.c": "077770b6604602823bc083d95d07bdd3fe22210f715289278b28d35e8f2e6b6f",
+    "experimental/sgx545/core/gma3600_sgx_bridge.h": "ab1e33e4e125fd0b7155aba08f61a5dbf5f9bab83b590bf59f231ae813ecfd27",
+    "tests/sgx545_native_source_test.c": "43f66d2e57fd35abfcafbe77c7c8419add145d2072309225254119fbea5f0f95",
+    "tests/sgx545_bridge_lifetime_test.c": "ce12187cdcaf1b1378b5b11cd126e3d2f017f0a4a0081d84490e812c73237982",
+    "tools/sgx545_initializer_run.py": "75857b44f28f0695f05aed0326a4a6e1c8e5d1725f3d6649faa066047b7eafab",
+    "tests/test_sgx545_initializer.py": "4e054551d45f6e023b73feb2faa4bcc1662516547c5bc4f23903a1c7ab835e65"
+  }
+}

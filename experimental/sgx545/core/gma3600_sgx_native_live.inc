@@ -23,12 +23,21 @@ int gma3600_sgx_native_live_prepare(void *runtime, void *registers, struct gma_s
 	return -EOPNOTSUPP; /* Secondary build profile is not the first hardware trial. */
 #endif
 	d = b->dev;
-	if (!roots || d->pvRegsBaseKM != registers || state.read_offset || state.write_offset ||
+	if (!roots || !registers || (d->pvRegsBaseKM && d->pvRegsBaseKM != registers) ||
+	    state.read_offset || state.write_offset ||
 	    !d->sKernelPDDevPAddr.uiAddr || !d->sBIFResetPDDevPAddr.uiAddr ||
 	    !d->sBIFResetPTDevPAddr.uiAddr || !d->sBIFResetPageDevPAddr.uiAddr ||
 	    !d->pui32BIFResetPD || !d->pui32BIFResetPT) return -EINVAL;
 	if ((d->sKernelPDDevPAddr.uiAddr | d->sBIFResetPDDevPAddr.uiAddr |
 	     d->sBIFResetPTDevPAddr.uiAddr | d->sBIFResetPageDevPAddr.uiAddr) & 4095) return -EINVAL;
+	/* Part 1 leaves the native register pointer NULL. Legacy part 2 normally
+	 * assigns it, but that entry point stays blocked. Borrow only the base
+	 * supplied by the held parent lease; this neither maps nor accesses MMIO.
+	 * Include it in binding integrity checks. Pre-seal unbind restores the
+	 * saved device image (and NULL pointer); sealing forbids that teardown.
+	 */
+	d->pvRegsBaseKM = registers;
+	b->expected.pvRegsBaseKM = registers;
 	/* Pinned Cedarview platform timing. SGXWaitClocks needs this before reset;
 	 * changing the CPU copy does not program a frequency or enable a timer. */
 	d->ui32CoreClockSpeed = SYS_SGX_CLOCK_SPEED;

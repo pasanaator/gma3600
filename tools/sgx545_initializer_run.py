@@ -55,8 +55,8 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None, firm
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host3" or child != "0.19.0":
-        raise ValueError("Capture currently requires host3 and services 0.19.0")
+    if host != "1.0.4-sgx-host3" or child != "0.19.1":
+        raise ValueError("Capture currently requires host3 and services 0.19.1")
     if firmware_boot:
         flag = sysroot / "module/gma3600_sgx_services/parameters/firmware_boot"
         if flag.read_text().strip() not in ("Y", "1"):
@@ -105,7 +105,10 @@ def live_boot_status(stderr, after):
                     result["init_status"] & 1 and not result["error"] and not result["reset_error"] and not result["bif_status"] & 0xffff)
     outcome = ("firmware_init_complete_resources_retained" if complete else "firmware_boot_failed_resources_retained" if retained
                else "firmware_boot_failed_before_seal" if result and not result["sealed"] else "firmware_boot_result_unknown")
-    return {"result": result or None, "resources_retained": retained, "retained_ownership_verified": ownership_ok,
+    phases = ("validate", "acquire", "verify", "clocks", "part1", "reset", "part2", "publish", "kick", "poll")
+    phase = after.get("live_phase", "")
+    phase_name = phases[int(phase)] if phase.isdecimal() and int(phase) < len(phases) else "unavailable"
+    return {"phase": phase_name, "result": result or None, "resources_retained": retained, "retained_ownership_verified": ownership_ok,
             "result_matches_sysfs": agrees, "init_complete": complete, "reboot_required": retained or not result, "outcome": outcome}
 
 
@@ -417,6 +420,7 @@ def main():
         if live:
             print("Firmware boot outcome:", outcome)
             print("Saved kernel result:", live["result"])
+            print("Firmware boot phase:", live["phase"])
             print("Retained ownership verified:", live["retained_ownership_verified"])
             if live["reboot_required"]:
                 print("Keep SSH connected to collect this report, sysfs and dmesg, then reboot. Do not unload or retry the child.")

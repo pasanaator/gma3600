@@ -1,10 +1,16 @@
 # First SGX545 firmware boot
 
-Versions: **host 1.0.4-sgx-host3 / services 0.19.0 / transport 0.11.0**.
+Versions: **host 1.0.4-sgx-host3 / services 0.19.1 / transport 0.11.0**.
 The [CPU stage/parent ownership test](../research/sgx545/d2500hn-stage-owner.json)
 passed on the D2500HN, including clean teardown of 15 original allocations / 36
 pages. This next checkpoint connects that owner to a real polling boot provider.
-**The new hardware path has not yet been tested on the Atom.**
+The [first 0.19.0 attempt](../research/sgx545/d2500hn-live-preflight.json)
+stopped before sealing with `EINVAL`: zero writes, zero polls, clean resources.
+The prepared native device had no register pointer because the skipped legacy
+part 2 normally assigned it. Version **0.19.1** borrows the held parent's mapping
+into the retained native device image; pre-seal cleanup restores the original
+NULL field. It still rejects a foreign non-NULL mapping. The corrected first
+hardware sequence awaits a new Atom attempt; firmware has not run yet.
 
 ## What this attempts
 
@@ -59,6 +65,9 @@ The 64-byte private `LIVE_BOOT` START/QUERY message reports a saved result. A
 lost START copyout may already have started firmware: the client only queries
 and never retries START, unbinds native state or aborts the stage afterward.
 The kernel also publishes cached `live_*` sysfs fields and a dmesg summary.
+Services 0.19.1 append `live_phase`: 0 validate, 1 acquire, 2 verify, 3 clocks,
+4 part1, 5 reset, 6 part2, 7 publish, 8 kick, 9 poll. The runner records its name.
+The transport stays **0.11.0** and the existing private bundle can be reused.
 `state=2`, completion bit 0 set, zero error/reset error and no BIF fault indicate
 the first completion milestone. `state=4` means resources are quarantined after
 a failure. Positive `error` values are Linux errno numbers; `reset_error` is the
@@ -78,7 +87,7 @@ Use a fresh directory; these commands install no package or module:
 ```sh
 git pull --ff-only
 bash tests/run.sh
-sgx_build="$HOME/Desktop/gma3600-sgx-live19-$(date +%Y%m%d-%H%M%S)"
+sgx_build="$HOME/Desktop/gma3600-sgx-live191-$(date +%Y%m%d-%H%M%S)"
 python3 tools/sgx545_hybrid_build.py \
   --kdir "/lib/modules/$(uname -r)/build" \
   --source "$HOME/.cache/gma3600/openpvrsgx" \
@@ -90,6 +99,10 @@ python3 tools/sgx545_initializer_run.py --bundle "$init_build" --selftest
 
 Expect transport 0.11.0 and a passing project-owned selftest. The builder only
 extracts/hashes the pinned packages; selftest does not execute Intel code.
+
+The 0.19.0 result above was unsealed and all live counters returned to zero,
+so that particular idle child can be replaced without rebooting. An already
+sealed child requires reboot; never force its removal.
 
 ## One live attempt over SSH
 
@@ -117,7 +130,7 @@ cat /sys/bus/auxiliary/devices/gma3600.sgx.*/services \
 sudo dmesg > "$init_build/kernel-after.log"
 ```
 
-Expect child 0.19.0. Send `firmware-boot-report.json`, `services-after.txt` and
+Expect child 0.19.1. Send `firmware-boot-report.json`, `services-after.txt` and
 `kernel-after.log`, and describe whether VGA/desktop stayed responsive. Then
 reboot. **Do not rmmod or rerun capture after the live attempt**, including
 on timeout, a failed report copy or an unexpected result. A pending JSON report
@@ -125,7 +138,8 @@ also records that a hardware attempt may have occurred.
 
 ## Software validation
 
-See [live-boot-6.12-build.json](../research/sgx545/live-boot-6.12-build.json).
+See [preflight-fix builds](../research/sgx545/live-preflight-fix-6.12-build.json)
+and [original live-provider validation](../research/sgx545/live-boot-6.12-build.json).
 Actual provider/controller tests simulate completion, every controller write
 failure, timeout, faults, scoped reset access, wrong base/thread/interrupt,
 lost-device MMIO exclusion and sealed retention. The actual native reset,

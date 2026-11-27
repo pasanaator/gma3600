@@ -44,7 +44,7 @@ static void free_(void *memory) { assert(memory && allocated); allocated--; free
 #define OSClockus() 123456U
 static PVRSRV_ERROR reset_result;
 PVRSRV_ERROR SGXReset(PVRSRV_SGXDEV_INFO *d, IMG_BOOL recovery, IMG_UINT32 flags)
-{ assert(d && recovery && !flags && d->ui32CoreClockSpeed); return reset_result; }
+{ assert(d && d->pvRegsBaseKM == (void *)(uintptr_t)0x100000000ULL && recovery && !flags && d->ui32CoreClockSpeed); return reset_result; }
 #include "native_functions.inc"
 
 static struct gma_sgx_native_init snapshot;
@@ -58,7 +58,8 @@ static void setup(void)
     struct sgx545_init2_in32 wire = {.device = 2};
     unsigned i;
     memset(&dev, 0, sizeof(dev));
-    dev.pvRegsBaseKM = (void *)(uintptr_t)0x100000000ULL;
+    /* Part 1 leaves this NULL; only blocked legacy part 2 assigned it. */
+    assert(!dev.pvRegsBaseKM);
     dev.ui32CacheControl = 0x80;
     dev.sKernelPDDevPAddr.uiAddr = 0x12345000;
     dev.sBIFResetPDDevPAddr.uiAddr = 0x22345000;
@@ -124,6 +125,41 @@ int main(void)
         assert(gma3600_sgx_native_cycle(&node, &snapshot, &result) == -EOPNOTSUPP);
     }
     teardown();
+    /* Real prepared state has no native MMIO base. A pre-seal rollback must
+     * restore it after borrowing, without taking/freeing mapping ownership. */
+    for (attempt = 0; attempt < 3; attempt++) {
+        void *runtime = NULL;
+        void *borrowed = (void *)(uintptr_t)0x100000000ULL;
+        struct sgx545_native_cycle result = {0};
+        struct gma_sgx_live_roots roots;
+        setup();
+        if (attempt == 2) {
+            dev.pvRegsBaseKM = (void *)(uintptr_t)0x200000000ULL;
+            before = dev; /* An alien saved mapping must never be overwritten. */
+        }
+        assert(!gma3600_sgx_native_begin(&node, &snapshot, &runtime, &result));
+#if SGX_CORE_REV == 10131
+        if (attempt == 0) {
+            assert(gma3600_sgx_native_live_prepare(runtime, NULL, &roots) == -EINVAL);
+            assert(!dev.pvRegsBaseKM && !dev.ui32CoreClockSpeed);
+        } else if (attempt == 1) {
+            assert(!gma3600_sgx_native_live_prepare(runtime, borrowed, &roots));
+            assert(dev.pvRegsBaseKM == borrowed && dev.ui32CoreClockSpeed);
+            assert(!gma3600_sgx_native_query(runtime, &result));
+            assert(!gma3600_sgx_native_live_prepare(runtime, borrowed, &roots));
+            assert(gma3600_sgx_native_live_prepare(runtime, (char *)borrowed + 4, &roots) == -EINVAL);
+            assert(dev.pvRegsBaseKM == borrowed);
+        } else {
+            assert(gma3600_sgx_native_live_prepare(runtime, borrowed, &roots) == -EINVAL);
+            assert(dev.pvRegsBaseKM == before.pvRegsBaseKM && !dev.ui32CoreClockSpeed);
+        }
+#else
+        assert(gma3600_sgx_native_live_prepare(runtime, borrowed, &roots) == -EOPNOTSUPP);
+        assert(dev.pvRegsBaseKM == before.pvRegsBaseKM && !dev.ui32CoreClockSpeed);
+#endif
+        assert(!gma3600_sgx_native_end(&runtime) && !runtime);
+        teardown();
+    }
     setup();
     {
         void *runtime = NULL, *second = NULL;
@@ -158,7 +194,8 @@ int main(void)
         struct gma_sgx_live_roots roots;
         assert(!gma3600_sgx_native_begin(&node,&snapshot,&runtime,&result));
 #if SGX_CORE_REV == 10131
-        assert(!gma3600_sgx_native_live_prepare(runtime,dev.pvRegsBaseKM,&roots));
+        assert(!gma3600_sgx_native_live_prepare(runtime,(void *)(uintptr_t)0x100000000ULL,&roots));
+        assert(!before.pvRegsBaseKM && dev.pvRegsBaseKM == (void *)(uintptr_t)0x100000000ULL);
         assert(roots.kernel_pd==0x12345000 && roots.reset_pd==0x22345000 && roots.edm_dir==0xc70 && roots.bank==15);
         assert(!gma3600_sgx_native_query(runtime,&result));
         assert(!gma3600_sgx_native_live_arm(runtime));
@@ -177,7 +214,7 @@ int main(void)
         /* Test-only power-cycle cleanup; no production unarm API exists. */
         ((struct gma_sgx_native_runtime_state *)runtime)->hardware_owned=0;
 #else
-        assert(gma3600_sgx_native_live_prepare(runtime,dev.pvRegsBaseKM,&roots)==-EOPNOTSUPP);
+        assert(gma3600_sgx_native_live_prepare(runtime,(void *)(uintptr_t)0x100000000ULL,&roots)==-EOPNOTSUPP);
 #endif
         assert(!gma3600_sgx_native_end(&runtime));
     }

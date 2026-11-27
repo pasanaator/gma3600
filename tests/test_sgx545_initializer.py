@@ -128,7 +128,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host3",
-            "module/gma3600_sgx_services/version": "0.19.0",
+            "module/gma3600_sgx_services/version": "0.19.1",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.19.0")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.19.1")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1"),
                                ("allocator", "mmu"), ("bm_allocations", "1"), ("bm_pages", "1"),
@@ -189,11 +189,12 @@ class InitializerTests(unittest.TestCase):
                   "native_bindings": "1", "stages": "1", "staged_buffers": "15", "staged_pages": "36", "buffers": "15", "buffer_pages": "36",
                   "buffer_maps": "0", "map_leases": "0", "device_allocations": "15", "device_pages": "36", "bm_allocations": "15", "bm_pages": "36",
                   "boot_owners": "1", "parent_leases": "1", "blocked_hw_accesses": "0", "live_sealed": "1",
-                  "live_state": "2", "live_error": "0", "live_status": "00000001", "live_bif": "00000000", "live_fault": "00000000"}
+                  "live_phase": "9", "live_state": "2", "live_error": "0", "live_status": "00000001", "live_bif": "00000000", "live_fault": "00000000"}
         status.update({k: "0" for k in ("bridge_errors", "buffer_errors", "device_errors", "stage_errors", "native_errors", "bm_errors", "owner_errors")})
         trace = "LIVE_BOOT state=2 sealed=1 init_status=00000001 writes=45 polls=1 error=0 reset_error=0 bif_status=00000000 bif_fault=00000000 event_status=00000000 event_status2=00000000"
         result = runner.live_boot_status(trace, status)
         self.assertTrue(result["init_complete"] and result["resources_retained"] and result["reboot_required"])
+        self.assertEqual(result["phase"], "poll")
         self.assertFalse(runner.clean_status(status, require_owner=True))
         for key, value in (("live_status", "00000000"), ("live_error", "110"), ("live_bif", "00000001"), ("native_bindings", "0"), ("parent_leases", "0")):
             result = runner.live_boot_status(trace, {**status, key:value})
@@ -221,7 +222,7 @@ class InitializerTests(unittest.TestCase):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
             (root / "module/gma3600_sgx_services/version").write_text("0.11.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.19.0"):
+            with self.assertRaisesRegex(ValueError, "services 0.19.1"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):
