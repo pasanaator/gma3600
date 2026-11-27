@@ -17,6 +17,7 @@ struct gma_sgx_native_runtime_state {
 	PVRSRV_SGX_CCB_INFO *ccb;
 	struct sgx545_native_cycle result;
 	IMG_UINT32 kicker;
+	IMG_BOOL hardware_owned;
 };
 
 int gma3600_sgx_native_begin(void *device_node, struct gma_sgx_native_init *snapshot,
@@ -67,6 +68,7 @@ int gma3600_sgx_native_begin(void *device_node, struct gma_sgx_native_init *snap
 	error = OSAllocMem(PVRSRV_OS_NON_PAGEABLE_HEAP, sizeof(*binding), (IMG_VOID **)&binding, 0,
 		"SGX CPU binding state");
 	if (error != PVRSRV_OK) return -ENOMEM;
+	binding->hardware_owned = IMG_FALSE;
 	saved = &binding->saved;
 	OSMemCopy(saved, dev, sizeof(*saved));
 	error = InitDevInfo(IMG_NULL, node, &snapshot->info);
@@ -126,6 +128,7 @@ int gma3600_sgx_native_query(void *runtime, struct sgx545_native_cycle *out)
 	IMG_UINT32 offset = offsetof(PVRSRV_SGXDEV_INFO, ui32CacheControl);
 
 	if (!binding || !out) return -ENOENT;
+	if (binding->hardware_owned) return -EBUSY;
 	dev = binding->dev;
 	/* Only cache-control accumulation by existing-heap PTE cleanup is allowed
 	 * between calls. Compare pointers before dereferencing the live CCB. */
@@ -159,6 +162,7 @@ static int native_end(void **runtime, int accumulate_cache)
 
 	if (!runtime || !*runtime) return -ENOENT;
 	binding = *runtime; dev = binding->dev;
+	if (binding->hardware_owned) return -EBUSY;
 	ret = gma3600_sgx_native_query(binding, &result);
 	cache = dev->ui32CacheControl;
 	/* Free only the CCB allocation owned by this lease, even on a failed

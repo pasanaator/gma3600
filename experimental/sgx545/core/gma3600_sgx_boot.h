@@ -7,7 +7,7 @@
 #include "sgx545_abi.h"
 
 /* Internal preparation for the first polling-only boot, not a userspace ABI.
- * This controller is NOT connected to a live MMIO provider or bridge ioctl.
+ * The separate live provider is available only with explicit kernel and client opt-in.
  * The observed recipe includes registers absent from both public header sets;
  * matching it is a constrained input policy, not proof of hardware safety.
  */

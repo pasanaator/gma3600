@@ -24,6 +24,7 @@ typedef struct _MMU_CONTEXT_ {
     MMU_PT_INFO *apsPTInfoList[1024];
     PVRSRV_SGXDEV_INFO *psDevInfo;
     void *pvPDCpuVAddr;
+    IMG_DEV_PHYADDR sPDDevPAddr;
     struct _MMU_CONTEXT_ *psNext;
 } MMU_CONTEXT;
 typedef struct _MMU_HEAP_ MMU_HEAP;
@@ -242,6 +243,11 @@ static void persistent_bindings(MMU_HEAP *heap, const __u32 *physical)
 
 int main(void)
 {
+    MMU_CONTEXT root_context = {.sPDDevPAddr = {0x12345000}};
+    MMU_HEAP root_heap = {.psMMUContext=&root_context};
+    assert(!gma3600_sgx_mmu_root_matches(&root_heap,0x12345000));
+    assert(gma3600_sgx_mmu_root_matches(&root_heap,0x12346000)==-EIO);
+    assert(gma3600_sgx_mmu_root_matches(&root_heap,0x12345001)==-EINVAL);
     unsigned directory[1024] = {0}, i, iteration;
     PVRSRV_SGXDEV_INFO device = {0};
     MMU_CONTEXT context = {.psDevInfo = &device, .pvPDCpuVAddr = directory};

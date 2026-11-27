@@ -5,4 +5,6 @@
 struct _SGX_DEVICE_MAP_;
 PVRSRV_ERROR gma3600_sgx_borrow_map(struct _SGX_DEVICE_MAP_ *map);
 void gma3600_sgx_blocked_write(IMG_UINT32 offset, IMG_UINT32 value);
+int gma3600_sgx_live_read(void *base, unsigned int offset, unsigned int *value);
+int gma3600_sgx_live_write(void *base, unsigned int offset, unsigned int value);
 #endif

@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -15,6 +16,7 @@
 #define EXPORT __attribute__((visibility("default")))
 #ifndef SGX545_TRANSPORT_TEST
 _Static_assert(sizeof(void *) == 4, "Intel initializer transport must be i386");
+_Static_assert(sizeof(struct sgx545_live_boot) == 64, "i386 live boot message");
 _Static_assert(sizeof(struct sgx545_boot_owner) == 48, "i386 boot owner message");
 #define transport_open open
 #define transport_close close
@@ -36,7 +38,7 @@ static int descriptor_slot(int fd)
 }
 static int owned(int fd) { return descriptor_slot(fd) >= 0; }
 
-EXPORT const char *gma3600_sgx_transport_version(void) { return "0.10.0"; }
+EXPORT const char *gma3600_sgx_transport_version(void) { return "0.11.0"; }
 
 EXPORT int gma3600_sgx_transport_accepts_device(const char *name, const char *busid)
 {
@@ -147,10 +149,9 @@ static int content_readback(int fd, unsigned services, unsigned stage,
 	return error;
 }
 
-/* Exercise the CPU-only handoff on the real initializer's payload. The legacy
- * command itself is NEVER forwarded, and failure is returned even after this
- * diagnostic cycle passes. Native initialization and script execution stay
- * unreachable. The kernel owns all authorization, validation and lifetimes. */
+/* Verify original ownership before CPU diagnostics or an explicit private
+ * firmware attempt. Legacy part 2 is never forwarded or reported successful.
+ * The kernel owns authorization, validation, MMIO policy and lifetimes. */
 static int ownership_readback(int fd, unsigned services, unsigned stage, const unsigned *roles, unsigned buffers, unsigned pages)
 {
 	unsigned i, checked = 0, total = 0;
@@ -229,8 +230,37 @@ static int boot_owner_cycle(int fd, unsigned services, unsigned stage, unsigned 
 	return error;
 }
 
+/* START is one-shot even if copyout fails. QUERY only reads the saved result;
+ * neither userspace cleanup nor a second START may retire/reuse a live image. */
+static int firmware_boot(int fd, unsigned services, unsigned stage, unsigned device)
+{
+	struct sgx545_live_boot clean = {.services=services,.stage=stage,.device=device};
+	struct sgx545_live_boot reply = clean;
+	int error=0, known=0;
+	if (transport_ioctl(fd, SGX545_IOCTL_LIVE_BOOT, &reply)<0) error=errno;
+	else known=1;
+	if (!known || reply.services!=services || reply.stage!=stage || reply.device!=device || reply.operation ||
+	    reply.reserved || reply.state>4 || reply.sealed>1) {
+		if (!error) error=EPROTO;
+		reply=clean; reply.operation=SGX545_LIVE_QUERY;
+		known=transport_ioctl(fd,SGX545_IOCTL_LIVE_BOOT,&reply)==0 && reply.services==services &&
+			reply.stage==stage && reply.device==device && reply.operation==SGX545_LIVE_QUERY &&
+			!reply.reserved && reply.state<=4 && reply.sealed<=1;
+	}
+	if (known) fprintf(stderr,"LIVE_BOOT state=%u sealed=%u init_status=%08x writes=%u polls=%u error=%u reset_error=%u bif_status=%08x bif_fault=%08x event_status=%08x event_status2=%08x\n",
+		reply.state,reply.sealed,reply.init_status,reply.writes,reply.polls,reply.error,reply.reset_error,
+		reply.bif_status,reply.bif_fault,reply.event_status,reply.event_status2);
+	fprintf(stderr,"LIVE_ATTEMPT attempted=1 known=%d errno=%d\n",known,error);
+	return known ? (int)reply.error : error ? error : EPROTO;
+}
+static int live_requested(void)
+{
+	const char *value=getenv("GMA3600_SGX_FIRMWARE_BOOT");
+	return value && !strcmp(value,"1");
+}
+
 static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned device,
-	const unsigned *roles, unsigned buffers, unsigned pages)
+	const unsigned *roles, unsigned buffers, unsigned pages, int *live_attempted)
 {
 	struct sgx545_native_runtime request = {.state = {.services = services, .stage = stage, .device = device}};
 	struct sgx545_native_runtime reply = request;
@@ -264,10 +294,14 @@ static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned d
 		}
 		if (!error) error = content_readback(fd, services, stage, roles, buffers);
 		if (!error) error = boot_owner_cycle(fd, services, stage, device, buffers, pages);
+		if (!error && live_requested()) {
+			*live_attempted=1; /* Set before ioctl: delivery may succeed without copyout. */
+			error=firmware_boot(fd,services,stage,device);
+		}
 	}
 	/* Always unbind a delivered BIND, even on a malformed reply, query error or
 	 * content failure. The caller additionally aborts the entire stage. */
-	if (bound) {
+	if (bound && !*live_attempted) {
 		reply = request; reply.operation = SGX545_NATIVE_UNBIND;
 		if (transport_ioctl(fd, SGX545_IOCTL_NATIVE_RUNTIME, &reply) < 0) { if (!error) error = errno; }
 		else if (reply.state.services != services || reply.state.stage != stage || reply.state.device != device ||
@@ -277,8 +311,8 @@ static int runtime_handoff(int fd, unsigned services, unsigned stage, unsigned d
 			if (!error) error = EPROTO;
 		} else unbound = 1;
 	}
-	fprintf(stderr, "RUNTIME bound=%d queried=%d unbound=%d buffers=%u pages=%u errno=%d gpu_execution=disabled\n",
-		bound, queried, unbound, buffers, pages, error);
+	fprintf(stderr, "RUNTIME bound=%d queried=%d unbound=%d buffers=%u pages=%u errno=%d gpu_execution=%s\n",
+		bound, queried, unbound, buffers, pages, error, *live_attempted ? "experimental" : "disabled");
 	return error;
 }
 
@@ -290,7 +324,7 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 	struct sgx545_init_control control = {0};
 	struct sgx545_native_cycle native = {0};
 	unsigned roles[SGX545_INIT_MAX_BUFFERS], token_count = SGX545_INIT_ROLES, i, buffers = 0, pages = 0;
-	int slot = descriptor_slot(fd), error = 0, validated = 0, staged = 0, queried = 0, aborted = 0;
+	int slot = descriptor_slot(fd), error = 0, validated = 0, staged = 0, queried = 0, aborted = 0, live_attempted = 0;
 
 	if (wire->in_size != sizeof(request) || wire->out_size != sizeof(struct sgx545_init2_out32))
 		return -EINVAL;
@@ -355,9 +389,10 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 		else {
 			fprintf(stderr, "NATIVE bound=%u restored=%u ccb_bytes=%u slots=%u read=%u write=%u roundtrip=1 buffers=%u pages=%u gpu_execution=disabled\n",
 				native.bound, native.restored, native.ccb_bytes, native.slots, native.read_offset, native.write_offset, native.buffers, native.pages);
-			error = runtime_handoff(fd, wire->services, stage.stage, request.device, roles, buffers, pages);
+			error = runtime_handoff(fd, wire->services, stage.stage, request.device, roles, buffers, pages, &live_attempted);
 		}
 	}
+	if (live_attempted) goto done; /* Close retains sealed ownership in the kernel. */
 	/* Always attempt cleanup after a delivered STAGE, including query failure. */
 	control = (struct sgx545_init_control){.services = wire->services, .stage = stage.stage, .operation = SGX545_STAGE_ABORT};
 	if (transport_ioctl(fd, SGX545_IOCTL_INIT_CONTROL, &control) < 0) error = errno;
@@ -365,8 +400,8 @@ static int initializer_handoff(int fd, const struct sgx545_bridge32 *wire)
 		 control.buffers || control.pages || control.flags) error = EPROTO;
 	else aborted = 1;
 done:
-	fprintf(stderr, "HANDOFF validated=%d staged=%d queried=%d aborted=%d buffers=%u pages=%u errno=%d gpu_execution=disabled\n",
-		validated, staged, queried, aborted, buffers, pages, error);
+	fprintf(stderr, "HANDOFF validated=%d staged=%d queried=%d aborted=%d buffers=%u pages=%u errno=%d gpu_execution=%s\n",
+		validated, staged, queried, aborted, buffers, pages, error, live_attempted ? "experimental" : "disabled");
 	return error ? -error : -EOPNOTSUPP;
 }
 

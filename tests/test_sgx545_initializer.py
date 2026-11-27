@@ -107,7 +107,7 @@ class InitializerTests(unittest.TestCase):
     def test_runtime_and_intel_artifact_hashes_are_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            manifest = {"schema": 1, "transport_version": "0.10.0", "artifact_sha256": {}}
+            manifest = {"schema": 1, "transport_version": "0.11.0", "artifact_sha256": {}}
             for name in runner.ARTIFACTS:
                 file = folder / name
                 file.parent.mkdir(parents=True, exist_ok=True)
@@ -116,7 +116,7 @@ class InitializerTests(unittest.TestCase):
             (folder / "bundle.json").write_text(json.dumps(manifest))
             runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps({**manifest, "transport_version": "0.1.0"}))
-            with self.assertRaisesRegex(ValueError, "Rebuild.*0.10.0"):
+            with self.assertRaisesRegex(ValueError, "Rebuild.*0.11.0"):
                 runner.verify_bundle(folder)
             (folder / "bundle.json").write_text(json.dumps(manifest))
             (folder / "sysroot/lib/i386-linux-gnu/libc.so.6").write_bytes(b"changed")
@@ -128,7 +128,7 @@ class InitializerTests(unittest.TestCase):
             "bus/pci/devices/0000:00:02.0/vendor": "0x8086",
             "bus/pci/devices/0000:00:02.0/device": "0x0be1",
             "module/gma3600/version": "1.0.4-sgx-host3",
-            "module/gma3600_sgx_services/version": "0.18.0",
+            "module/gma3600_sgx_services/version": "0.19.0",
         }.items():
             p = root / file
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,7 @@ class InitializerTests(unittest.TestCase):
             root = Path(directory)
             path, status = self.target(root)
             self.write_status(path, status)
-            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.18.0")
+            self.assertEqual(runner.check_capture_target(root, "x86_64", 0)["services_version"], "0.19.0")
             for key, value in (("init_ran", "1"), ("gpu_execution", "enabled"), ("pages_live", "24"),
                                ("buffer_maps", "1"), ("stage_errors", "1"), ("blocked_hw_accesses", "1"),
                                ("allocator", "mmu"), ("bm_allocations", "1"), ("bm_pages", "1"),
@@ -164,6 +164,48 @@ class InitializerTests(unittest.TestCase):
             self.assertTrue(runner.clean_status({**status, "init_ran": "1"}))
             self.assertFalse(runner.clean_status({**status, "stages": "1"}))
             self.assertFalse(runner.clean_status({}))
+
+    def test_live_requires_both_flags_and_fresh_unsealed_child(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path, status = self.target(root)
+            status.update(live_state="0", live_sealed="0")
+            self.write_status(path, status)
+            flag = root / "module/gma3600_sgx_services/parameters/firmware_boot"
+            flag.parent.mkdir(parents=True)
+            flag.write_text("N")
+            # CPU capture can never be armed by an inherited environment variable.
+            runner.check_capture_target(root, "x86_64", 0)
+            with self.assertRaisesRegex(ValueError, "firmware_boot=1"):
+                runner.check_capture_target(root, "x86_64", 0, firmware_boot=True)
+            flag.write_text("Y")
+            runner.check_capture_target(root, "x86_64", 0, firmware_boot=True)
+            self.write_status(path, {**status, "live_sealed": "1"})
+            with self.assertRaisesRegex(ValueError, "reboot"):
+                runner.check_capture_target(root, "x86_64", 0, firmware_boot=True)
+
+    def test_live_result_requires_kernel_completion_fault_free_and_retained_ownership(self):
+        status = {"state": "prepared", "gpu_execution": "experimental", "files": "0", "connections": "1", "init_running": "0",
+                  "native_bindings": "1", "stages": "1", "staged_buffers": "15", "staged_pages": "36", "buffers": "15", "buffer_pages": "36",
+                  "buffer_maps": "0", "map_leases": "0", "device_allocations": "15", "device_pages": "36", "bm_allocations": "15", "bm_pages": "36",
+                  "boot_owners": "1", "parent_leases": "1", "blocked_hw_accesses": "0", "live_sealed": "1",
+                  "live_state": "2", "live_error": "0", "live_status": "00000001", "live_bif": "00000000", "live_fault": "00000000"}
+        status.update({k: "0" for k in ("bridge_errors", "buffer_errors", "device_errors", "stage_errors", "native_errors", "bm_errors", "owner_errors")})
+        trace = "LIVE_BOOT state=2 sealed=1 init_status=00000001 writes=45 polls=1 error=0 reset_error=0 bif_status=00000000 bif_fault=00000000 event_status=00000000 event_status2=00000000"
+        result = runner.live_boot_status(trace, status)
+        self.assertTrue(result["init_complete"] and result["resources_retained"] and result["reboot_required"])
+        self.assertFalse(runner.clean_status(status, require_owner=True))
+        for key, value in (("live_status", "00000000"), ("live_error", "110"), ("live_bif", "00000001"), ("native_bindings", "0"), ("parent_leases", "0")):
+            result = runner.live_boot_status(trace, {**status, key:value})
+            self.assertFalse(result["init_complete"])
+            self.assertTrue(result["reboot_required"])
+        result = runner.live_boot_status(trace, {"status_error":"device detached"})
+        self.assertTrue(result["resources_retained"] and result["reboot_required"])
+        self.assertFalse(result["init_complete"])
+        result = runner.live_boot_status("", status) # lost copyout/timeout still retains
+        self.assertTrue(result["resources_retained"] and result["reboot_required"])
+        self.assertFalse(result["init_complete"])
+        self.assertEqual(runner.live_boot_status("", {})["outcome"], "firmware_boot_result_unknown")
 
     def test_capture_rejects_wrong_architecture_privilege_hardware_or_version(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -178,8 +220,8 @@ class InitializerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "verified Intel"):
                 runner.check_capture_target(root, "x86_64", 0)
             device.write_text("0x0be1\n")
-            (root / "module/gma3600_sgx_services/version").write_text("0.10.0\n")
-            with self.assertRaisesRegex(ValueError, "services 0.18.0"):
+            (root / "module/gma3600_sgx_services/version").write_text("0.11.0\n")
+            with self.assertRaisesRegex(ValueError, "services 0.19.0"):
                 runner.check_capture_target(root, "x86_64", 0)
 
     def test_selftest_command_explicitly_selects_project_owned_fixture(self):
@@ -312,7 +354,7 @@ class InitializerTests(unittest.TestCase):
             status_path, status = self.target(folder / "sys")
             report = folder / "report.json"
             argv = ["run", "--bundle", str(folder), "--capture", "--report", str(report)]
-            manifest = {"transport_version": "0.10.0", "artifact_sha256": {"fixture": "mock"}}
+            manifest = {"transport_version": "0.11.0", "artifact_sha256": {"fixture": "mock"}}
             def child(*args, **kwargs):
                 self.assertEqual(json.loads(report.read_text())["outcome"], "capture_pending")
                 self.assertNotIn("LD_PRELOAD", kwargs["env"])

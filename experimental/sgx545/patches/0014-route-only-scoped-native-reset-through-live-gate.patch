@@ -1,0 +1,31 @@
+--- a/services4/srvkm/env/linux/osfunc.c
++++ b/services4/srvkm/env/linux/osfunc.c
+@@ -2257,7 +2257,8 @@
+ IMG_UINT32 OSReadHWReg(IMG_PVOID pvLinRegBaseAddr, IMG_UINT32 ui32Offset)
+ {
+ #if defined(GMA3600_SGX_PREPARE_ONLY)
+-    PVR_UNREFERENCED_PARAMETER(pvLinRegBaseAddr);
++    IMG_UINT32 value;
++    if (gma3600_sgx_live_read(pvLinRegBaseAddr, ui32Offset, &value)) return value;
+     gma3600_sgx_blocked_write(ui32Offset, 0);
+     return 0;
+ #else
+@@ -2272,7 +2273,7 @@
+ IMG_VOID OSWriteHWReg(IMG_PVOID pvLinRegBaseAddr, IMG_UINT32 ui32Offset, IMG_UINT32 ui32Value)
+ {
+ #if defined(GMA3600_SGX_PREPARE_ONLY)
+-    PVR_UNREFERENCED_PARAMETER(pvLinRegBaseAddr);
++    if (gma3600_sgx_live_write(pvLinRegBaseAddr, ui32Offset, ui32Value)) return;
+     gma3600_sgx_blocked_write(ui32Offset, ui32Value);
+ #else
+ #if !defined(NO_HARDWARE)
+--- a/services4/srvkm/devices/sgx/sgxinit.c
++++ b/services4/srvkm/devices/sgx/sgxinit.c
+@@ -320,6 +320,7 @@
+ 
+ #if defined(GMA3600_SGX_PREPARE_ONLY)
+ #include "gma3600_sgx_native.inc"
++#include "gma3600_sgx_native_live.inc"
+ #endif
+ 
+ static PVRSRV_ERROR SGXRunScript(PVRSRV_SGXDEV_INFO *psDevInfo, SGX_INIT_COMMAND *psScript, IMG_UINT32 ui32NumInitCommands)

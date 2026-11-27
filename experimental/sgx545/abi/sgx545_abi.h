@@ -181,6 +181,16 @@ struct sgx545_boot_owner {
 	__u32 services, stage, device, operation;
 	__u32 parent_abi, buffers, pages, held, verified, reserved[3];
 };
+#define SGX545_IOCTL_LIVE_BOOT 0xc040470eU
+#define SGX545_LIVE_START 0U
+#define SGX545_LIVE_QUERY 1U
+/* One-shot polling-only experiment. Sealed attempts retain all resources until
+ * reboot. error/reset_error are positive errno/PVR codes, not success flags. */
+struct sgx545_live_boot {
+	__u32 services, stage, device, operation;
+	__u32 state, sealed, init_status, writes, polls, error, reset_error;
+	__u32 bif_status, bif_fault, event_status, event_status2, reserved;
+};
 
 /* Project-only initializer staging: no legacy finalization or GPU execution. */
 #define SGX545_INIT_ROLES 9U

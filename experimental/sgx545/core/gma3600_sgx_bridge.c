@@ -24,6 +24,7 @@
 #include "sgx545_abi.h"
 #include "gma3600_sgx_bridge.h"
 #include "gma3600_sgx_boot.h"
+#include "gma3600_sgx_live.h"
 #include "gma3600_sgx_buffers.h"
 #include "gma3600_sgx_mmu.h"
 #include "buffer_manager.h"
@@ -77,6 +78,7 @@ static_assert(_IOC_SIZE(SGX545_IOCTL_NATIVE_RUNTIME) == sizeof(struct sgx545_nat
 static_assert(_IOC_SIZE(SGX545_IOCTL_BM_CHECK) == sizeof(struct sgx545_bm_check));
 static_assert(_IOC_SIZE(SGX545_IOCTL_BM_INFO) == sizeof(struct sgx545_bm_info));
 static_assert(_IOC_SIZE(SGX545_IOCTL_BOOT_OWNER) == sizeof(struct sgx545_boot_owner));
+static_assert(_IOC_SIZE(SGX545_IOCTL_LIVE_BOOT) == sizeof(struct sgx545_live_boot));
 
 struct gma_sgx_bridge {
 	struct miscdevice misc;
@@ -125,7 +127,9 @@ struct gma_sgx_file {
 };
 
 struct gma_sgx_stage {
+	struct gma_sgx_live *live;
 	struct sgx545_init2_info32 boot_info;
+	u32 boot_pd;
 	struct gma_sgx_boot_plan *boot_plan;
 	u32 parent_abi;
 	bool parent_leased;
@@ -558,6 +562,7 @@ static int stage_prepare(struct gma_sgx_file *f, const struct sgx545_init2_in32 
 	ret = gma_sgx_init_translate(wire, s->memory, s->count, &s->snapshot);
 	if (ret) goto fail;
 	s->boot_info = wire->info;
+	s->boot_pd = f->init_info.page_directory;
 	for (i = 0; b->native_bm && i < s->count; i++) {
 		struct gma_sgx_device_allocation *a = *device_slot(f, s->tokens[i]);
 		ret = gma3600_sgx_bm_info(a->bm, &s->snapshot.memory[i], 1);
@@ -592,6 +597,7 @@ static void stage_drop_metadata(struct gma_sgx_bridge *b)
 	b->stage = NULL;
 	b->stats.stages = b->stats.staged_buffers = b->stats.staged_pages = 0;
 	put_pid(s->owner);
+	if (s->live) kfree(s->live); /* Sealed stages never reach metadata teardown. */
 	kfree(s);
 	kref_put(&b->ref, bridge_free);
 }
@@ -663,9 +669,11 @@ static int stage_owner_release(struct gma_sgx_bridge *b)
 	struct gma_sgx_stage *s = b->stage;
 	int ret;
 	if (!s || !s->parent_leased) return 0;
+	if (s->live && s->live->sealed) return -EBUSY;
 	ret = gma3600_sgx_owner_release(s);
 	if (ret) { b->stats.owner_errors++; return ret; }
 	s->parent_leased = false; s->parent_abi = 0;
+	if (s->live) s->live->boot.owned = 0;
 	kfree(s->boot_plan); s->boot_plan = NULL;
 	b->stats.parent_leases = b->stats.boot_owners = 0;
 	return 0;
@@ -693,6 +701,7 @@ static int stage_abort(struct gma_sgx_bridge *b)
 	int error;
 
 	if (!s) return 0;
+	if (s->live && s->live->sealed) return -EBUSY;
 	error = stage_runtime_stop(b);
 	if (error) { s->dirty = true; b->stats.stage_errors++; return error; }
 	while (s->allocations) {
@@ -1001,6 +1010,76 @@ static int stage_boot_owner(struct gma_sgx_file *f, struct sgx545_boot_owner *me
 	return ret;
 }
 
+static int owner_no_copy(void *unused, const struct sgx545_boot_owner *message)
+{
+	(void)unused; (void)message;
+	return 0;
+}
+static int live_owner_acquire(void *context)
+{
+	struct gma_sgx_file *f = context;
+	struct sgx545_boot_owner message = {.services=f->session.services, .device=f->session.device,
+		.stage=f->bridge->stage->id, .operation=SGX545_OWNER_ACQUIRE};
+	return stage_boot_owner(f, &message, owner_no_copy, NULL);
+}
+static int live_owner_verify(void *context)
+{
+	struct gma_sgx_file *f = context;
+	struct gma_sgx_stage *s = f->bridge->stage;
+	struct gma_sgx_device_allocation *a;
+	int ret = stage_native_verify(f, s->id);
+	if (ret) return ret;
+	for (a=s->allocations; a; a=a->next) {
+		ret = gma3600_sgx_mmu_root_matches(a->binding.heap, s->boot_pd);
+		if (ret) return ret;
+	}
+	return 0;
+}
+static int live_owner_release(void *context)
+{
+	struct gma_sgx_file *f = context;
+	return stage_owner_release(f->bridge);
+}
+static const struct gma_sgx_live_owner_ops live_owner_ops = {
+	.acquire=live_owner_acquire, .verify=live_owner_verify, .release=live_owner_release,
+};
+static int stage_live(struct gma_sgx_file *f, struct sgx545_live_boot *message,
+	int (*publish)(void *, const struct sgx545_live_boot *), void *context)
+{
+	struct gma_sgx_bridge *b = f->bridge;
+	struct gma_sgx_stage *s = b->stage;
+	struct gma_sgx_boot_memory memory[GMA_SGX_BOOT_BUFFERS];
+	u32 i;
+	int ret;
+	if (message->operation > SGX545_LIVE_QUERY || message->state || message->sealed || message->init_status ||
+	    message->writes || message->polls || message->error || message->reset_error || message->bif_status ||
+	    message->bif_fault || message->event_status || message->event_status2 || message->reserved) return -EINVAL;
+	if (!s || message->stage != s->id || !f->session.services || message->services != f->session.services ||
+	    !f->session.device || message->device != f->session.device) return -ENOENT;
+	if (f->owner != s->owner || !OSProcHasPrivSrvInit()) return -EPERM;
+	if (!s->runtime || s->runtime_owner != f) return -EACCES;
+	if (message->operation == SGX545_LIVE_START) {
+		if (!gma3600_sgx_firmware_boot_enabled()) return -EOPNOTSUPP;
+		if (s->live) return -EALREADY;
+		if (s->parent_leased || !b->native_bm || s->count != GMA_SGX_BOOT_BUFFERS) return -EBUSY;
+		ret = stage_native_verify(f, s->id);
+		if (ret) return ret;
+		s->live = kzalloc(sizeof(*s->live), GFP_KERNEL);
+		if (!s->live) return -ENOMEM;
+		for (i=0;i<s->count;i++) memory[i]=(struct gma_sgx_boot_memory){s->memory[i].token,
+			s->memory[i].address,s->memory[i].bytes,s->memory[i].flags};
+		gma_sgx_live_start(s->live,&s->boot_info,memory,s->count,&live_owner_ops,f,s,s->runtime);
+	} else if (!s->live) return -ENOENT;
+	gma_sgx_live_result(s->live, message);
+	b->stats.live = *message;
+	if (message->operation == SGX545_LIVE_START)
+		pr_info("gma3600 SGX live boot: state=%u sealed=%u init=%08x error=%u reset=%u BIF=%08x fault=%08x; %s\n",
+			message->state,message->sealed,message->init_status,message->error,message->reset_error,
+			message->bif_status,message->bif_fault,message->sealed ? "resources retained until reboot" : "no hardware ownership");
+	/* A delivered hardware attempt can never be rolled back after EFAULT. */
+	return publish(context, message);
+}
+
 static int backend_disconnect(void *ctx)
 {
 	struct gma_sgx_file *f = ctx;
@@ -1249,6 +1328,10 @@ static int owner_copy_result(void *context, const struct sgx545_boot_owner *mess
 {
 	return copy_to_user(context, message, sizeof(*message)) ? -EFAULT : 0;
 }
+static int live_copy_result(void *context, const struct sgx545_live_boot *message)
+{
+	return copy_to_user(context, message, sizeof(*message)) ? -EFAULT : 0;
+}
 
 static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned long arg)
 {
@@ -1264,6 +1347,7 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 		struct sgx545_bm_check bm;
 		struct sgx545_bm_info bm_info;
 		struct sgx545_boot_owner owner;
+		struct sgx545_live_boot live;
 	} message;
 	u32 size = cmd == SGX545_IOCTL_INIT_REQUIREMENTS ? sizeof(message.caps) :
 		(cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_VALIDATE) ? sizeof(message.stage) :
@@ -1272,6 +1356,7 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 		cmd == SGX545_IOCTL_NATIVE_RUNTIME ? sizeof(message.runtime) :
 		cmd == SGX545_IOCTL_BM_CHECK ? sizeof(message.bm) :
 		cmd == SGX545_IOCTL_BOOT_OWNER ? sizeof(message.owner) :
+		cmd == SGX545_IOCTL_LIVE_BOOT ? sizeof(message.live) :
 		cmd == SGX545_IOCTL_BM_INFO ? sizeof(message.bm_info) : sizeof(message.control);
 	int ret;
 
@@ -1286,11 +1371,15 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 	}
 	mutex_lock(&b->lock);
 	if (!b->online) { ret = -ENODEV; goto out; }
+	if (b->stage && b->stage->live && b->stage->live->sealed && cmd != SGX545_IOCTL_LIVE_BOOT) {
+		ret = -EBUSY; goto out;
+	}
 	if (b->stats.boot_owners && cmd == SGX545_IOCTL_BM_CHECK) { ret = -EBUSY; goto out; }
 	if (b->stats.native_bindings && cmd != SGX545_IOCTL_NATIVE_RUNTIME && cmd != SGX545_IOCTL_INIT_CONTROL &&
-	    cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_BM_CHECK && cmd != SGX545_IOCTL_BM_INFO && cmd != SGX545_IOCTL_BOOT_OWNER) { ret = -EBUSY; goto out; }
+	    cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_BM_CHECK && cmd != SGX545_IOCTL_BM_INFO && cmd != SGX545_IOCTL_BOOT_OWNER && cmd != SGX545_IOCTL_LIVE_BOOT) { ret = -EBUSY; goto out; }
 	LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
-	if (cmd == SGX545_IOCTL_BOOT_OWNER) ret = stage_boot_owner(f, &message.owner, owner_copy_result, (void __user *)arg);
+	if (cmd == SGX545_IOCTL_LIVE_BOOT) ret = stage_live(f, &message.live, live_copy_result, (void __user *)arg);
+	else if (cmd == SGX545_IOCTL_BOOT_OWNER) ret = stage_boot_owner(f, &message.owner, owner_copy_result, (void __user *)arg);
 	else if (cmd == SGX545_IOCTL_BM_INFO) ret = stage_bm_info(f, &message.bm_info);
 	else if (cmd == SGX545_IOCTL_BM_CHECK) ret = stage_bm_check(f, &message.bm);
 	else if (cmd == SGX545_IOCTL_NATIVE_RUNTIME)
@@ -1303,7 +1392,7 @@ static long bridge_init_ioctl(struct gma_sgx_file *f, unsigned int cmd, unsigned
 	else if (cmd == SGX545_IOCTL_NATIVE_CYCLE) ret = stage_native_cycle(f, &message.native);
 	else ret = stage_control(f, &message.control);
 	/* STAGE copies its result transactionally. QUERY/ABORT own no new resource. */
-	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_NATIVE_RUNTIME && cmd != SGX545_IOCTL_BOOT_OWNER && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
+	if (!ret && cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_NATIVE_RUNTIME && cmd != SGX545_IOCTL_BOOT_OWNER && cmd != SGX545_IOCTL_LIVE_BOOT && copy_to_user((void __user *)arg, &message, size)) ret = -EFAULT;
 	LinuxUnLockMutex(&gPVRSRVLock);
 out:
 	mutex_unlock(&b->lock);
@@ -1321,11 +1410,11 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 
 	if (cmd != SGX545_IOCTL_SERVICES && cmd != SGX545_IOCTL_SERVICES_ALIAS &&
 	    cmd != SGX545_IOCTL_BUFFER_CHECK && cmd != SGX545_IOCTL_MMU_CHECK && cmd != SGX545_IOCTL_DEVICE_CHECK && cmd != SGX545_IOCTL_INIT_REQUIREMENTS &&
-	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_NATIVE_CYCLE && cmd != SGX545_IOCTL_NATIVE_RUNTIME && cmd != SGX545_IOCTL_BM_CHECK && cmd != SGX545_IOCTL_BM_INFO && cmd != SGX545_IOCTL_BOOT_OWNER)
+	    cmd != SGX545_IOCTL_INIT_STAGE && cmd != SGX545_IOCTL_INIT_CONTROL && cmd != SGX545_IOCTL_INIT_VALIDATE && cmd != SGX545_IOCTL_INIT_CONTENT && cmd != SGX545_IOCTL_NATIVE_CYCLE && cmd != SGX545_IOCTL_NATIVE_RUNTIME && cmd != SGX545_IOCTL_BM_CHECK && cmd != SGX545_IOCTL_BM_INFO && cmd != SGX545_IOCTL_BOOT_OWNER && cmd != SGX545_IOCTL_LIVE_BOOT)
 		return -ENOTTY;
 	if (task_tgid(current) != f->owner)
 		return -EPERM;
-	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT || cmd == SGX545_IOCTL_NATIVE_CYCLE || cmd == SGX545_IOCTL_NATIVE_RUNTIME || cmd == SGX545_IOCTL_BM_CHECK || cmd == SGX545_IOCTL_BM_INFO || cmd == SGX545_IOCTL_BOOT_OWNER)
+	if (cmd == SGX545_IOCTL_INIT_REQUIREMENTS || cmd == SGX545_IOCTL_INIT_STAGE || cmd == SGX545_IOCTL_INIT_CONTROL || cmd == SGX545_IOCTL_INIT_VALIDATE || cmd == SGX545_IOCTL_INIT_CONTENT || cmd == SGX545_IOCTL_NATIVE_CYCLE || cmd == SGX545_IOCTL_NATIVE_RUNTIME || cmd == SGX545_IOCTL_BM_CHECK || cmd == SGX545_IOCTL_BM_INFO || cmd == SGX545_IOCTL_BOOT_OWNER || cmd == SGX545_IOCTL_LIVE_BOOT)
 		return bridge_init_ioctl(f, cmd, arg);
 	if (cmd == SGX545_IOCTL_DEVICE_CHECK) {
 		struct sgx545_device_check check;
@@ -1385,6 +1474,8 @@ static long bridge_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	mutex_lock(&b->lock);
 	if (!b->online) {
 		ret = -ENODEV;
+	} else if (b->stage && b->stage->live && b->stage->live->sealed) {
+		ret = -EBUSY; /* Retained live owner never reaches legacy teardown. */
 	} else if (b->stats.native_bindings && (request.bridge_id & 255) != SGX545_CMD_DISCONNECT) {
 		ret = -EBUSY;
 	} else {
@@ -1443,6 +1534,10 @@ static void bridge_stop(void *data)
 	}
 	mutex_lock(&b->lock);
 	b->online = false;
+	if (b->stage && b->stage->live) {
+		gma_sgx_live_detach(b->stage->live);
+		gma_sgx_live_result(b->stage->live, &b->stats.live);
+	}
 	LinuxLockMutexNested(&gPVRSRVLock, PVRSRV_LOCK_CLASS_BRIDGE);
 	list_for_each_entry_safe(f, next, &b->files, link) {
 		backend_disconnect(f);

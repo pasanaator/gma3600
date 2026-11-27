@@ -2,6 +2,7 @@
 #ifndef GMA3600_SGX_BRIDGE_H
 #define GMA3600_SGX_BRIDGE_H
 #include <linux/types.h>
+#include "sgx545_abi.h"
 struct device;
 struct gma_sgx_bridge;
 struct gma_sgx_bridge_stats {
@@ -11,12 +12,15 @@ struct gma_sgx_bridge_stats {
 	u32 stages, staged_buffers, staged_pages, stage_errors;
 	u32 native_bindings, native_errors, bm_checks, bm_errors, bm_allocations, bm_pages;
 	u32 boot_owners, parent_leases, owner_errors;
+	struct sgx545_live_boot live;
 };
 /* Internal CPU lease; only a future live provider may seal it. Sealing makes
  * release fail until reboot; the stage and common DDK must then stay owned. */
 int gma3600_sgx_owner_acquire(void *identity, u32 *parent_abi);
 int gma3600_sgx_owner_release(void *identity);
 int gma3600_sgx_owner_seal(void *identity);
+int gma3600_sgx_owner_hardware(void *identity, void **registers);
+bool gma3600_sgx_firmware_boot_enabled(void);
 bool gma3600_sgx_native_bm_enabled(void);
 int gma3600_sgx_bridge_register(struct device *dev, struct gma_sgx_bridge **result);
 void gma3600_sgx_bridge_stats(struct gma_sgx_bridge *bridge,

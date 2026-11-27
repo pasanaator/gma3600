@@ -49,6 +49,11 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_owner_adapter_test.py
     -include tests/irq_stubs.h tests/sgx_lease_test.c kernel/gma3600/gma3600_sgx_lease.c -o "$test_binary"
 "$test_binary"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/sgx545_buffers_test.py
+"${CC:-cc}" -std=gnu11 -Wall -Wextra -Werror -fsanitize=address,undefined \
+    -Itests/stubs -Itests -Iexperimental/sgx545/abi -Iexperimental/sgx545/core \
+    -include tests/sgx_live_stubs.h tests/sgx545_live_test.c \
+    experimental/sgx545/core/gma3600_sgx_live.c experimental/sgx545/core/gma3600_sgx_boot.c -o "$test_binary"
+"$test_binary"
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -fsanitize=address,undefined \
     -Iexperimental/sgx545/abi -Iexperimental/sgx545/core tests/sgx545_boot_test.c \
     experimental/sgx545/core/gma3600_sgx_boot.c -o "$test_binary"

@@ -1,0 +1,110 @@
+{
+  "date_client": "2026-11-27",
+  "target": "Intel D2500HN / Debian 13 amd64 / Linux 6.12.117+deb13-amd64",
+  "host_version": "1.0.4-sgx-host3",
+  "host_abi": 3,
+  "parent_changed_this_checkpoint": false,
+  "services_version": "0.19.0",
+  "transport_version": "0.11.0",
+  "source_pin": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
+  "previous_hardware_result": "d2500hn-stage-owner.json",
+  "new_hardware_result": "pending first explicit live firmware attempt",
+  "firmware_boot_default": false,
+  "hardware_boot_requires": [
+    "services loaded with firmware_boot=1",
+    "privileged private LIVE_BOOT START after original native BM staging; client uses --capture --firmware-boot",
+    "host3, PCI 8086:0be1 already D0, SGX545 non-MP 10131 multiple-context profile",
+    "strict observed 15-buffer Intel recipe, unchanged immutable content, released CPU mappings and actual root/PTE checks"
+  ],
+  "implementation": [
+    "Actual one-shot controller connected to parent/stage owner; seal before any GPU register write and initialize shared host control/CCB with WC barriers",
+    "Scoped actual native reset MMIO for owning task/base only; no interrupts or unrelated callers; documented value/offset policy, 4096 accesses and 500 ms budget",
+    "Original kernel PD/reset pages; real MMU heap roots must match the initializer PD; SGX timing from pinned Cedarview sysinfo, not a frequency-programming API",
+    "Exact captured pre/post-reset plan with host IRQ banks masked, one EVENT_KICK2, host INIT_COMPLETE polling and BIF fault checks",
+    "Saved 64-byte START/QUERY reply plus cached sysfs and dmesg diagnostics; lost START copyout never permits a retry or destructive cleanup",
+    "Success, fault, timeout, close and forced detach all retain sealed original backing/PTE/native/common/parent/module resources until reboot; detach and lost-device/all-ones paths stop further MMIO",
+    "Default CPU captures still unbind/abort/unload normally; live reports distinguish intentional retention from resource cleanup"
+  ],
+  "validation": {
+    "C_suites": 16,
+    "python_unittests": 34,
+    "sanitizers": [
+      "address",
+      "undefined"
+    ],
+    "profiles": {
+      "10131": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": {
+            "path": "/workspace/gma3600-tools/legacy/live19-verified-10131/host/gma3600.ko",
+            "sha256": "f2586bf2ce3f1e008b9f68fabe4e4f3c0df124c21a2043bf9cb82c4a1ca58c32"
+          },
+          "probe": {
+            "path": "/workspace/gma3600-tools/legacy/live19-verified-10131/probe/gma3600_sgx_probe.ko",
+            "sha256": "a55a0cbd363b9aa2948980aa9a91d993004532641fc7a7f84827b6811030da7e"
+          },
+          "services_prepare_only": {
+            "path": "/workspace/gma3600-tools/legacy/live19-verified-10131/core/gma3600_sgx_services.ko",
+            "sha256": "f36e6902f7fc64106f585606656f041b5906bb2f2b55f2dfb28017121808f0a5"
+          }
+        },
+        "build_report_sha256": "d2989af70f87c106c4b31c7cf6ab1c0187525d120bb5960bc4ec548723533fc8",
+        "source_tests_log_sha256": "e7f2edec7e72b4ae04d6c5dfbe75788f6655f06390fd694a26d3273c86f7fd41",
+        "live_trial_allowed": true
+      },
+      "10141": {
+        "status": "passed",
+        "warnings": 0,
+        "modules": {
+          "host": {
+            "path": "/workspace/gma3600-tools/legacy/live19-verified-10141/host/gma3600.ko",
+            "sha256": "4cfb743eaf094c34b2e1b80eb9cbd74929a95644986c01650fb8d3e0dcdbe253"
+          },
+          "probe": {
+            "path": "/workspace/gma3600-tools/legacy/live19-verified-10141/probe/gma3600_sgx_probe.ko",
+            "sha256": "e3915dfdb665a49d80a4da22d0131996a982cb6b37c6ca576764a54fc2909dcf"
+          },
+          "services_prepare_only": {
+            "path": "/workspace/gma3600-tools/legacy/live19-verified-10141/core/gma3600_sgx_services.ko",
+            "sha256": "1ed443ca983d9c17df67548b535f0e1cf58298defb04093aac878d9a94aee040"
+          }
+        },
+        "build_report_sha256": "56e9f44ae7c97f4d2608a8fdd0bea6ade5667eb2c52d322f47c15b507dfd8092",
+        "source_tests_log_sha256": "e7f2edec7e72b4ae04d6c5dfbe75788f6655f06390fd694a26d3273c86f7fd41",
+        "live_trial_allowed": false
+      }
+    },
+    "source_tests": "Actual DDK initialization/MMU/BM/native binding/reset bodies and public types, both 10131/10141; forced single-context reset timeout variants; captured script replay and native shared host-control setup",
+    "provider": "Actual live provider plus actual boot controller; MMIO/native/platform boundaries simulated; seal order, task/interrupt/base scope, faults, timeout, access budget, absent device/all-ones and no-MMIO detach",
+    "bridge": "Actual lifetime functions with simulated platform/native boundaries, including lost START copyout, repeat START, saved QUERY, close and detach retention",
+    "ELF32_transport": "Project-owned test under QEMU and private glibc 2.15: 23 CPU handoff scenarios, 5 live delivery/timeout/malformed/lost-reply scenarios, 7 CPU owner success/failure cases; no legacy success or destructive live cleanup",
+    "loader_fixture": "Project-owned fixture passed under qemu-i386 with transport 0.11.0; no proprietary initializer loaded",
+    "runner": "Dual opt-in/fresh target checks; independent result/sysfs/retained-ownership agreement; failures, lost reply and unreadable sysfs cannot report successful initialization",
+    "kernel_modules_loaded_in_cloud": false,
+    "proprietary_code_executed_in_cloud": false,
+    "new_hardware_path_tested": false
+  },
+  "limitations": [
+    "INIT_COMPLETE is only a first milestone, not firmware ABI/build/revision/13-structure verification",
+    "19 script offsets remain unnamed in both public header sets; fixed observed recipe only, not a complete hardware specification",
+    "No render submission, legacy initialization success, GPU interrupts/recovery/power management, EGL integration or amd64 application acceleration",
+    "No live quiescence proof; all sealed attempts require reboot",
+    "Deadline cannot interrupt a hung bus transaction; VGA/display coexistence during live boot remains untested"
+  ],
+  "source_sha256": {
+    "experimental/sgx545/abi/sgx545_abi.h": "4c221ce5485df3b6f6a67e556646a04d333eff9111cb9ff0e0f0f4cdbffc617b",
+    "experimental/sgx545/core/gma3600_sgx_live.c": "18a77d1e0792d782de6f3d81093a7ff886c22d8b3a84deb2752f52eed0b61f1a",
+    "experimental/sgx545/core/gma3600_sgx_live.h": "3ebeab53245050f12ccd7fd5a44e7e885dbe96d11b53db55b13dc7365440b8cc",
+    "experimental/sgx545/core/gma3600_sgx_native_live.inc": "dc7def64fe0da18feffdef0e955c0db44c731679587fd528fc9190d0750af3d4",
+    "experimental/sgx545/core/gma3600_sgx_live_policy.h": "f479ef96413e3a8565d2f20ba095e4f7e95f6ebc37e005a01ee64b1f1bc77d28",
+    "experimental/sgx545/core/gma3600_sgx_mmu_diag.inc": "87e72a19e1f26d1ae46cdc13e0155e17105d2e4fbf80d54ad01283127ac4dee2",
+    "experimental/sgx545/core/gma3600_sgx_bridge.c": "00c561a5dcfa49d2ca009943620f2d0334afc0273c1e9d86eea22769424a1b4a",
+    "experimental/sgx545/core/gma3600_sgx_adapter.c": "c35086d0841d847c4e0cf5cd365a16e7b46542ea17721d0c8bdc5bdc478bf9ed",
+    "experimental/sgx545/patches/0014-route-only-scoped-native-reset-through-live-gate.patch": "4011fb487f66f4bec611ee8aed95063079e6d69232fe1ba92dde3550d6d4d439",
+    "tools/sgx545_initializer_transport.c": "e3173b27c4fe1128b92e8da19428d47525b5ae0208fc6f432061ef6e2cc8ee52",
+    "tools/sgx545_initializer_run.py": "83a860ae97c52d5f8ffab4074a7f455b915ad5c5a18bda4694d4b7dc8e5b4798",
+    "tests/sgx545_live_test.c": "69505dfdafb9c80890c6eea8085f6c34c8fc124a9fd17645fed329df9942d9a4"
+  }
+}

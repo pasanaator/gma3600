@@ -85,6 +85,8 @@ def main():
     report = {
         "status": "building", "target": "Debian 13 amd64",
         "kernel_headers": str(kdir), "sgx_runtime_enabled": False,
+        "firmware_boot_compiled": bool(source), "firmware_boot_default": False,
+        "render_submission_enabled": False, "hardware_executed_by_builder": False,
         "source_pin": PIN if source else None,
         "unverified_sgx_compile_profile": args.sgx_rev if source else None,
         "commands": [], "modules": {},
@@ -121,7 +123,7 @@ def main():
             for item in (ROOT / "experimental/sgx545/abi").iterdir():
                 shutil.copy2(item, core)
             with (core / "Makefile").open("a") as stream:
-                stream.write("\n$(TARGET) += sgx545_abi.o sgx545_protocol.o gma3600_sgx_abi_manifest.o gma3600_sgx_init.o gma3600_sgx_boot.o\n")
+                stream.write("\n$(TARGET) += sgx545_abi.o sgx545_protocol.o gma3600_sgx_abi_manifest.o gma3600_sgx_init.o gma3600_sgx_boot.o gma3600_sgx_live.o\n")
             run_logged([sys.executable, str(ROOT / "tests/sgx545_source_test.py"),
                         str(core), str(output / "source-tests")],
                        output, output / "source-tests.log", report)

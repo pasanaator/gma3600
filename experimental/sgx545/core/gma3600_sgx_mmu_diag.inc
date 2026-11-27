@@ -319,3 +319,11 @@ cleanup:
 	return ret;
 #endif
 }
+
+/* A correct PTE walk is insufficient if reset installs a different PD. */
+int gma3600_sgx_mmu_root_matches(void *handle, __u32 physical)
+{
+	MMU_HEAP *heap = handle;
+	if (!heap || !heap->psMMUContext || !physical || (physical & 4095)) return -EINVAL;
+	return heap->psMMUContext->sPDDevPAddr.uiAddr == physical ? 0 : -EIO;
+}

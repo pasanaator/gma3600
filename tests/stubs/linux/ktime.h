@@ -1,0 +1,1 @@
+/* Test clock supplied by the selected seam. */

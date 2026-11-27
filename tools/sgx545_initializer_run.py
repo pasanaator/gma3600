@@ -3,7 +3,8 @@
 """Run the project-owned loader selftest, or capture Intel initializer requests.
 
 Real capture is restricted to the user's supported Intel board with fresh,
-prepare-only services. This helper never loads modules or enables execution.
+services. Hardware access requires both --firmware-boot and firmware_boot=1.
+This helper never loads modules; a sealed live attempt requires a reboot.
 """
 import argparse
 import hashlib
@@ -24,8 +25,8 @@ ARTIFACTS.update("sysroot/lib/i386-linux-gnu/" + name for name in
 def verify_bundle(bundle):
     manifest = json.loads((bundle / "bundle.json").read_text())
     hashes = manifest["artifact_sha256"]
-    if manifest.get("transport_version") != "0.10.0":
-        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.10.0 is required")
+    if manifest.get("transport_version") != "0.11.0":
+        raise ValueError("Rebuild the initializer bundle with the current helper; transport 0.11.0 is required")
     if manifest.get("schema") != 1 or set(hashes) != ARTIFACTS:
         raise ValueError("Unknown/incomplete initializer bundle")
     for name, expected in hashes.items():
@@ -42,7 +43,7 @@ def services_status(sysroot=Path("/sys")):
     return {item.split("=", 1)[0]: item.split("=", 1)[1] for item in text.split()}
 
 
-def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
+def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None, firmware_boot=False):
     if (platform.machine() if architecture is None else architecture) != "x86_64":
         raise ValueError("Real capture requires Debian amd64 on the Intel Atom")
     if (os.geteuid() if uid is None else uid) != 0:
@@ -54,9 +55,15 @@ def check_capture_target(sysroot=Path("/sys"), architecture=None, uid=None):
         raise ValueError("PCI display parent must be gma3600")
     host = (sysroot / "module/gma3600/version").read_text().strip()
     child = (sysroot / "module/gma3600_sgx_services/version").read_text().strip()
-    if host != "1.0.4-sgx-host3" or child != "0.18.0":
-        raise ValueError("Capture currently requires host3 and services 0.18.0")
+    if host != "1.0.4-sgx-host3" or child != "0.19.0":
+        raise ValueError("Capture currently requires host3 and services 0.19.0")
+    if firmware_boot:
+        flag = sysroot / "module/gma3600_sgx_services/parameters/firmware_boot"
+        if flag.read_text().strip() not in ("Y", "1"):
+            raise ValueError("Live boot requires loading the services child with firmware_boot=1")
     status = services_status(sysroot)
+    if firmware_boot and any(status.get(key) != "0" for key in ("live_state", "live_sealed")):
+        raise ValueError("Live boot requires a fresh child; a sealed attempt requires reboot")
     required = {"state": "prepared", "devices": "1", "gpu_execution": "disabled", "bridge": "enabled", "allocator": "native_bm",
                 "pages_live": "4", "blocked_hw_accesses": "0", "init_ran": "0", "host_abi": "3", "boot_owners": "0", "parent_leases": "0", "owner_errors": "0"}
     required.update({key: "0" for key in ("files", "connections", "bridge_errors", "heap_handles", "init_running",
@@ -75,6 +82,31 @@ def clean_status(status, require_owner=False):
     if require_owner:
         expected.update({"host_abi": "3", "boot_owners": "0", "parent_leases": "0", "owner_errors": "0"})
     return all(status.get(key) == value for key, value in expected.items())
+
+
+def live_boot_status(stderr, after):
+    """Use saved result plus independent sysfs ownership; never infer boot from exit code."""
+    matches = re.findall(r"^LIVE_BOOT state=(\d+) sealed=([01]) init_status=([0-9a-f]{8}) writes=(\d+) polls=(\d+) "
+                         r"error=(\d+) reset_error=(\d+) bif_status=([0-9a-f]{8}) bif_fault=([0-9a-f]{8}) "
+                         r"event_status=([0-9a-f]{8}) event_status2=([0-9a-f]{8})$", stderr, re.M)
+    keys = ("state", "sealed", "init_status", "writes", "polls", "error", "reset_error", "bif_status", "bif_fault", "event_status", "event_status2")
+    result = dict(zip(keys, (int(v, 16 if i in (2, 7, 8, 9, 10) else 10) for i, v in enumerate(matches[0])))) if len(matches) == 1 else {}
+    retained = after.get("live_sealed") == "1" or bool(result and result["sealed"])
+    expected = {"state": "prepared", "gpu_execution": "experimental", "files": "0", "connections": "1", "init_running": "0",
+                "native_bindings": "1", "stages": "1", "staged_buffers": "15", "staged_pages": "36", "buffers": "15", "buffer_pages": "36",
+                "buffer_maps": "0", "map_leases": "0", "device_allocations": "15", "device_pages": "36", "bm_allocations": "15", "bm_pages": "36",
+                "boot_owners": "1", "parent_leases": "1", "blocked_hw_accesses": "0"}
+    expected.update({key: "0" for key in ("bridge_errors", "buffer_errors", "device_errors", "stage_errors", "native_errors", "bm_errors", "owner_errors")})
+    ownership_ok = retained and all(after.get(k) == v for k, v in expected.items())
+    agrees = bool(result and all(after.get(k) == value for k, value in {
+        "live_state": str(result["state"]), "live_error": str(result["error"]), "live_status": "%08x" % result["init_status"],
+        "live_bif": "%08x" % result["bif_status"], "live_fault": "%08x" % result["bif_fault"]}.items()))
+    complete = bool(ownership_ok and agrees and result["sealed"] == 1 and result["state"] == 2 and
+                    result["init_status"] & 1 and not result["error"] and not result["reset_error"] and not result["bif_status"] & 0xffff)
+    outcome = ("firmware_init_complete_resources_retained" if complete else "firmware_boot_failed_resources_retained" if retained
+               else "firmware_boot_failed_before_seal" if result and not result["sealed"] else "firmware_boot_result_unknown")
+    return {"result": result or None, "resources_retained": retained, "retained_ownership_verified": ownership_ok,
+            "result_matches_sysfs": agrees, "init_complete": complete, "reboot_required": retained or not result, "outcome": outcome}
 
 
 def startup_inputs(stderr):
@@ -142,6 +174,9 @@ def first_failed_request(stderr):
             continue
         if current is None:
             continue
+        if current["command"] == 99 and line.startswith("LIVE_BOOT "):
+            failure = re.search(r" error=(\d+)", line)
+            return {**current, "errno": int(failure[1]), "phase": "firmware_boot"} if failure and int(failure[1]) else None
         owner_error = re.fullmatch(r"BOOT_OWNER .* errno=(\d+) gpu_execution=disabled", line)
         if owner_error and int(owner_error[1]):
             return {**current, "errno": int(owner_error[1]), "phase": "boot_owner"}
@@ -294,10 +329,13 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--selftest", action="store_true", help="only project-owned fixture; no driver/hardware needed")
     mode.add_argument("--capture", action="store_true", help="invoke the unmodified Intel initializer on the verified Atom")
+    parser.add_argument("--firmware-boot", action="store_true", help="one polling-only hardware boot; sealed resources remain until reboot")
     parser.add_argument("--report", type=Path, help="new JSON file, required for capture")
     parser.add_argument("--qemu", type=Path, help="i386 emulator for the open-source selftest only")
     args = parser.parse_args()
     try:
+        if args.firmware_boot and not args.capture:
+            raise ValueError("--firmware-boot requires --capture")
         bundle = args.bundle.resolve(strict=True)
         manifest = verify_bundle(bundle)
         before = None
@@ -307,15 +345,17 @@ def main():
                 raise ValueError("Real capture must run natively on the Intel hardware")
             if not args.report or args.report.exists():
                 raise ValueError("Capture needs --report pointing to a new JSON file")
-            before = check_capture_target()
+            before = check_capture_target(firmware_boot=True) if args.firmware_boot else check_capture_target()
             # Establish a writable, exclusive report before calling proprietary
             # code. Even an interrupted helper leaves a pending-capture record.
             report_stream = args.report.open("x")
-            report_stream.write(json.dumps({"schema": 1, "outcome": "capture_pending", "before": before}) + "\n")
+            report_stream.write(json.dumps({"schema": 1, "outcome": "capture_pending", "firmware_boot_requested": args.firmware_boot, "before": before}) + "\n")
             report_stream.flush()
         # Ignore external loader overrides and desktop configuration. These
         # private libraries are never added to the system linker configuration.
         environment = {"PATH": "/usr/bin:/bin", "HOME": str(bundle / "empty-home"), "LANG": "C", "LC_ALL": "C"}
+        if args.firmware_boot:
+            environment["GMA3600_SGX_FIRMWARE_BOOT"] = "1"
         try:
             result = subprocess.run(command(bundle, args.selftest, args.qemu), cwd=bundle, env=environment,
                                     capture_output=True, text=True, timeout=25, errors="replace")
@@ -354,7 +394,10 @@ def main():
             outcome = "inspect_report"
         if outcome == "native_allocator_verified_with_clean_resources":
             outcome = "boot_owner_verified_with_clean_resources" if owner["verified"] else "inspect_report"
-        report = {"schema": 1, "outcome": outcome, "initializer_process_exit": code, "before": before,
+        live = live_boot_status(stderr, after) if args.firmware_boot else None
+        if live:
+            outcome = live["outcome"]
+        report = {"schema": 1, "outcome": outcome, "firmware_boot_requested": args.firmware_boot, "firmware_boot": live, "initializer_process_exit": code, "before": before,
                   "transport_version": manifest["transport_version"],
                   "handoff": handoff,
                   "contents": contents,
@@ -365,12 +408,20 @@ def main():
                   "after": after, "resources_clean": cleanup_ok, "stdout": stdout, "stderr": stderr,
                   "bridge_commands": [int(n) for n in re.findall(r"^BRIDGE command=(\d+)", stderr, re.M)],
                   "bundle_artifact_sha256": manifest["artifact_sha256"],
-                  "scope": "Unmodified Intel initializer and userspace services; private libdrm transport; GPU execution disabled"}
+                  "scope": "First polling-only firmware boot; no render submission or acceleration" if args.firmware_boot else "Unmodified Intel initializer and userspace services; private libdrm transport; GPU execution disabled"}
         report_stream.seek(0)
         report_stream.write(json.dumps(report, indent=2) + "\n")
         report_stream.truncate()
         report_stream.close()
         print("Initializer diagnostic report:", args.report)
+        if live:
+            print("Firmware boot outcome:", outcome)
+            print("Saved kernel result:", live["result"])
+            print("Retained ownership verified:", live["retained_ownership_verified"])
+            if live["reboot_required"]:
+                print("Keep SSH connected to collect this report, sysfs and dmesg, then reboot. Do not unload or retry the child.")
+            print("This does not enable 3D acceleration. The legacy initializer failure is intentional after the private boot attempt.")
+            return 0 if live["init_complete"] else 1
         if startup["complete"]:
             print("Ordered firmware register scripts and boot controls captured for review:", startup["sha256"])
         if outcome == "boot_owner_verified_with_clean_resources":

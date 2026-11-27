@@ -7,7 +7,7 @@
   "previous_Atom_tests": "d2500hn-boot-controller-tests.json",
   "source_pin": "4000c3fb6577ecad4800e4fa2695777643bfaf86",
   "hardware_execution_enabled": false,
-  "new_hardware_result": "pending user host3/services 0.18.0 CPU-owner test",
+  "new_hardware_result": "passed; see d2500hn-stage-owner.json",
   "implementation": [
     "Parent CPU lease pins PCI/DRM storage and active runtime PM without waking hardware; acquisition serialized with system suspend/remove and SGX IRQ registration",
     "System suspend rejected before display shutdown while leased; transition rolled back on failure; failed display resume retains exclusion",

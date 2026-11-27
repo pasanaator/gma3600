@@ -13,6 +13,7 @@ typedef struct _PVRSRV_DEVICE_NODE_ PVRSRV_DEVICE_NODE;
 #include "sgxmmu.h"
 #include "sysinfo.h"
 #include "gma3600_sgx_boot.h"
+#include "gma3600_sgx_live_policy.h"
 #include "fixtures/sgx545_boot_capture.h"
 
 _Static_assert(EUR_CR_EVENT_KICK2 == GMA_SGX_BOOT_KICK2, "boot kick register");
@@ -32,12 +33,20 @@ static struct { unsigned offset, value; } writes[4096];
 static unsigned write_count, fault_reads, faults, fault_address, waits_us, polls, kicks;
 static unsigned fail_poll, init_complete;
 static unsigned captured_replay;
+static unsigned reset_scope;
 
 static void write_reg(void *base, unsigned offset, unsigned value)
 {
     assert(base == registers_ && !(offset & 3) && offset < sizeof(registers_));
     assert(write_count < sizeof(writes) / sizeof(writes[0]));
     writes[write_count].offset = offset; writes[write_count++].value = value;
+    if(captured_replay) {
+        struct gma_sgx_live_roots roots={dev.sKernelPDDevPAddr.uiAddr >> SGX_MMU_PDE_ADDR_ALIGNSHIFT,
+            dev.sBIFResetPDDevPAddr.uiAddr,EUR_CR_BIF_DIR_LIST_BASE1+4*(SGX_BIF_DIR_LIST_INDEX_EDM-1),SGX_BIF_DIR_LIST_INDEX_EDM,0};
+        if(offset==EUR_CR_SOFT_RESET && value)reset_scope=1;
+        if(reset_scope)assert(gma_sgx_reset_write_allowed(&roots,offset,value));
+        if(offset==EUR_CR_SOFT_RESET && !value)reset_scope=0;
+    }
     registers_[offset / 4] = value;
     if (captured_replay && (offset == EUR_CR_EVENT_HOST_ENABLE || offset == EUR_CR_EVENT_HOST_ENABLE2))
         assert(value == 0);
@@ -54,6 +63,7 @@ static void write_reg(void *base, unsigned offset, unsigned value)
 }
 static unsigned read_reg(void *base, unsigned offset)
 {
+    if(captured_replay && reset_scope)assert(gma_sgx_reset_read_allowed(offset));
     assert(base == registers_ && !(offset & 3) && offset < sizeof(registers_));
     if (offset == EUR_CR_BIF_INT_STAT) {
         fault_reads++;
@@ -183,7 +193,7 @@ int main(void)
     /* Replay the user's real register inputs through actual native reset and
      * SGXInitialise, after policy normalization. Firmware completion remains
      * a simulated host-control write, never an execution of Intel firmware. */
-    setup(); captured_replay = 1;
+    setup(); captured_replay = 1; faults=1;
     {
         struct gma_sgx_boot_plan plan;
         unsigned phase;

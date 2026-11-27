@@ -34,12 +34,14 @@ can now observe the unmodified i386 Intel initializer's real requests on that ha
 The Atom has passed the real initializer's CPU diagnostics: mapping release,
 retained native binding, native BM wrapping/getters/PTE/free/reuse, and zero-page
 teardown. All 15 populated buffers remained unchanged across those checks.
-Services 0.16.0 / transport 0.8.0 now add an opt-in device-allocation backend
-(`native_bm=1`) that retains BM/OS objects from allocation through staging and
-cleanup, preserves VA alignment, and attaches real handles to native snapshots.
-Modern WC backing and CPU VMA lifetimes remain managed by the bridge.
-This allocation path awaits hardware testing; rebuild the child and private bundle.
-GPU execution remains disabled.
+The [host3 stage/parent ownership test](research/sgx545/d2500hn-stage-owner.json)
+also passed with 15 original allocations / 36 pages and clean teardown.
+Services **0.19.0** and transport **0.11.0** add an explicit, one-shot
+[polling firmware boot](docs/SGX545-FIRMWARE-BOOT.md). It needs both
+`firmware_boot=1` and `--capture --firmware-boot`; defaults still run CPU checks.
+Once sealed, resources remain pinned until reboot, on success or failure.
+This new hardware path is **not yet tested on the Atom**. It does not enable 3D
+rendering; the desktop still uses llvmpipe. The working host3 parent can be reused.
 The separated legacy SGX core now builds against 6.12.117; runtime rendering,
 the complete i386 compat bridge, and presentation remain unfinished. The normal
 1.0.4 display build stays the default. See also the

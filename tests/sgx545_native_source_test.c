@@ -41,11 +41,16 @@ static void free_(void *memory) { assert(memory && allocated); allocated--; free
 #define OSMemSet memset
 #define OSMemoryBarrier() __sync_synchronize()
 #define PVR_DPF(args) ((void)0)
+#define OSClockus() 123456U
+static PVRSRV_ERROR reset_result;
+PVRSRV_ERROR SGXReset(PVRSRV_SGXDEV_INFO *d, IMG_BOOL recovery, IMG_UINT32 flags)
+{ assert(d && recovery && !flags && d->ui32CoreClockSpeed); return reset_result; }
 #include "native_functions.inc"
 
 static struct gma_sgx_native_init snapshot;
 static struct gma_sgx_init_memory memory[15];
 static PVRSRV_SGXDEV_INFO dev, before;
+static IMG_UINT32 reset_pd[1024], reset_pt[1024];
 static PVRSRV_DEVICE_NODE node;
 static void setup(void)
 {
@@ -56,6 +61,10 @@ static void setup(void)
     dev.pvRegsBaseKM = (void *)(uintptr_t)0x100000000ULL;
     dev.ui32CacheControl = 0x80;
     dev.sKernelPDDevPAddr.uiAddr = 0x12345000;
+    dev.sBIFResetPDDevPAddr.uiAddr = 0x22345000;
+    dev.sBIFResetPTDevPAddr.uiAddr = 0x22346000;
+    dev.sBIFResetPageDevPAddr.uiAddr = 0x22347000;
+    dev.pui32BIFResetPD=reset_pd; dev.pui32BIFResetPT=reset_pt;
     before = dev;
     node.pvDevice = &dev; node.sDevId.eDeviceType = PVRSRV_DEVICE_TYPE_SGX;
     gma_sgx_init_requirements(&caps);
@@ -142,6 +151,37 @@ int main(void)
         assert(!memcmp(&dev, &before, sizeof(dev)));
     }
     teardown();
-    puts("Native SGX CPU cycle passed: actual InitDevInfo/DeinitDevInfo, CCB roundtrip, offsets 0/255, retained binding/query/unbind, cache-bit preservation, corrupt pointer recovery and failure restoration");
+    setup();
+    {
+        void *runtime=NULL;
+        struct sgx545_native_cycle result={0};
+        struct gma_sgx_live_roots roots;
+        assert(!gma3600_sgx_native_begin(&node,&snapshot,&runtime,&result));
+#if SGX_CORE_REV == 10131
+        assert(!gma3600_sgx_native_live_prepare(runtime,dev.pvRegsBaseKM,&roots));
+        assert(roots.kernel_pd==0x12345000 && roots.reset_pd==0x22345000 && roots.edm_dir==0xc70 && roots.bank==15);
+        assert(!gma3600_sgx_native_query(runtime,&result));
+        assert(!gma3600_sgx_native_live_arm(runtime));
+        assert(gma3600_sgx_native_query(runtime,&result)==-EBUSY);
+        assert(gma3600_sgx_native_end(&runtime)==-EBUSY && runtime);
+        assert(dev.psSGXHostCtl->ui32PowerStatus==PVRSRV_USSE_EDM_POWMAN_NO_WORK);
+        assert(dev.psSGXHostCtl->ui32uKernelTimerClock==400000 && !dev.psSGXHostCtl->ui32ActivePowManSampleRate);
+        assert(!gma3600_sgx_native_live_publish(runtime) && dev.psSGXHostCtl->ui32HostClock==123456);
+        dev.psSGXHostCtl->ui32InitStatus=1;
+        { __u32 status=0, error=0;
+          assert(!gma3600_sgx_native_live_status(runtime,&status) && status==1);
+          reset_result=PVRSRV_ERROR_TIMEOUT;
+          assert(gma3600_sgx_native_live_reset(runtime,&error)==-ETIMEDOUT && error==PVRSRV_ERROR_TIMEOUT);
+          reset_result=0;assert(!gma3600_sgx_native_live_reset(runtime,&error) && !error);
+        }
+        /* Test-only power-cycle cleanup; no production unarm API exists. */
+        ((struct gma_sgx_native_runtime_state *)runtime)->hardware_owned=0;
+#else
+        assert(gma3600_sgx_native_live_prepare(runtime,dev.pvRegsBaseKM,&roots)==-EOPNOTSUPP);
+#endif
+        assert(!gma3600_sgx_native_end(&runtime));
+    }
+    teardown();
+    puts("Native SGX CPU/live helpers passed: binding lifetime, live timing/host control, native reset result, retained hardware binding and unsupported-profile rejection");
     return 0;
 }

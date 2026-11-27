@@ -25,6 +25,8 @@ def main():
     code = extract_function(source, "static IMG_UINT32 DeinitDevInfo(")
     code += extract_function(source, "static PVRSRV_ERROR InitDevInfo(")
     code += "\n".join(line for line in (root / "experimental/sgx545/core/gma3600_sgx_native.inc").read_text().splitlines() if not line.startswith("#include"))
+    code += '\n#include "sgxmmu.h"\n#include "sysinfo.h"\n#include "gma3600_sgx_live_native.h"\n'
+    code += "\n".join(line for line in (root / "experimental/sgx545/core/gma3600_sgx_native_live.inc").read_text().splitlines() if not line.startswith("#include"))
     (output / "native_functions.inc").write_text(code)
     for rev in ("10131", "10141"):
         command = [os.environ.get("HOSTCC", "cc"), "-std=gnu11", "-Wall", "-Wextra", "-Werror",

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 #include <dlfcn.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 int main(int argc, char **argv)
@@ -15,14 +16,15 @@ int main(int argc, char **argv)
 	if (!handle) { fprintf(stderr, "LOADER error=%s\n", dlerror()); return 2; }
 	version = (const char *(*)(void))dlsym(handle, "gma3600_sgx_transport_version");
 	initialize = (int (*)(void))dlsym(handle, "SrvInit");
-	if (!initialize || !version || strcmp(version(), "0.10.0")) {
+	if (!initialize || !version || strcmp(version(), "0.11.0")) {
 		fprintf(stderr, "LOADER missing initializer or private transport\n");
 		dlclose(handle);
 		return 2;
 	}
 	fprintf(stderr, "LOADER mode=%s transport=%s\n", selftest ? "open-source-fixture" : "Intel-initializer", version());
 	result = initialize();
-	fprintf(stderr, "INITIALIZER return=%d gpu_execution=disabled\n", result);
+	fprintf(stderr, "INITIALIZER return=%d gpu_execution=%s\n", result,
+		!selftest && getenv("GMA3600_SGX_FIRMWARE_BOOT") && !strcmp(getenv("GMA3600_SGX_FIRMWARE_BOOT"),"1") ? "experimental" : "disabled");
 	dlclose(handle);
 	if (selftest) return result ? 1 : 0;
 	/* A normal initializer cannot succeed through the prepare-only bridge. */

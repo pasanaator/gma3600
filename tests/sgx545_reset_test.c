@@ -71,6 +71,10 @@ static void *OSMapPhysToLin(IMG_CPU_PHYADDR p, unsigned bytes, unsigned flags, v
 { (void)p; (void)bytes; (void)flags; (void)h; assert(0); return NULL; }
 static void gma3600_sgx_blocked_write(IMG_UINT32 offset, IMG_UINT32 value)
 { (void)offset; (void)value; blocked_accesses++; }
+static int gma3600_sgx_live_read(void *base, unsigned offset, unsigned *value)
+{ (void)base; (void)offset; (void)value; return 0; }
+static int gma3600_sgx_live_write(void *base, unsigned offset, unsigned value)
+{ (void)base; (void)offset; (void)value; return 0; }
 
 #include "sgx545_source_functions.inc"
 

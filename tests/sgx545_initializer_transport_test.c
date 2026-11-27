@@ -7,6 +7,7 @@
 #include <sys/mman.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include "sgx545_abi.h"
 static unsigned opens, closes, ioctls;
@@ -24,6 +25,7 @@ static int owned_fail_index = -1, owned_corrupt_index = -1;
 static unsigned sequence[80], sequence_count;
 static int owner_fail_op=-1, owner_malformed_op=-1, owner_held;
 static unsigned owner_calls[3];
+static unsigned live_mode, live_calls[2];
 static int transport_open(const char *path, int flags)
 {
 	assert(!strcmp(path, "/dev/gma3600-sgx-bridge") && flags == (O_RDWR | O_CLOEXEC));
@@ -41,7 +43,18 @@ static int transport_ioctl(int fd, unsigned long command, void *arg)
 {
 	assert(fd > 0 && arg); ioctls++;
 	if (fail_ioctl) { errno = EOPNOTSUPP; return -1; }
-	if (command == SGX545_IOCTL_BOOT_OWNER) {
+	if (command == SGX545_IOCTL_LIVE_BOOT) {
+		struct sgx545_live_boot *r=arg;
+		assert(runtime_live && r->services==10 && r->stage==200 && r->device==20 && r->operation<=1);
+		unsigned op=r->operation;
+		live_calls[op]++;
+		assert(!r->state && !r->sealed && live_calls[0]==1);
+		if ((live_mode==25 || live_mode==26) && !op) { errno=EFAULT; return -1; }
+		if (live_mode==26 && op) { errno=EIO; return -1; }
+		r->state=live_mode==24 ? 4 : 2; r->sealed=1; r->init_status=live_mode==24 ? 0 : 1;
+		r->error=live_mode==24 ? ETIMEDOUT : 0;
+		if (live_mode==27 && !op) r->reserved=1;
+	} else if (command == SGX545_IOCTL_BOOT_OWNER) {
 		struct sgx545_boot_owner *owner=arg;
 		unsigned op=owner->operation;
 		assert(runtime_live && owner->services==10 && owner->stage==200 && owner->device==20 && op<=2);
@@ -150,7 +163,7 @@ static void handoff_tests(unsigned *input)
 	struct sgx545_bridge32 wire = {SGX545_COMMAND(99), 28, (unsigned)(unsigned long)input,
 		2068, (unsigned)(unsigned long)output, 8, 10};
 	unsigned mode, before;
-	for (mode = 0; mode < 23; mode++) {
+	for (mode = 0; mode < 28; mode++) {
 		int blocker = mode == 0 ? drmOpen("psb", NULL) : -1;
 		int fd = drmOpen("psb", NULL);
 		memset(request, 0, sizeof(*request)); request->device = 20; request->flags = 0xdeadbeef;
@@ -175,6 +188,19 @@ static void handoff_tests(unsigned *input)
 		runtime_queries = 0; bm_fail_index = mode == 18 ? 3 : -1; bm_corrupt_index = mode == 19 ? 5 : -1; runtime_fail_requery = mode == 20;
 		owned_fail_index = mode == 21 ? 3 : -1; owned_corrupt_index = mode == 22 ? 5 : -1;
 		wire.bridge_id = SGX545_COMMAND(99); wire.in_size = 2068;
+		if (mode>=23) {
+			live_mode=mode; memset(live_calls,0,sizeof(live_calls));
+			assert(!setenv("GMA3600_SGX_FIRMWARE_BOOT","1",1));
+			int result=drmCommandWrite(fd,0x12,&wire,28);
+			assert(result==(mode==24 ? -ETIMEDOUT : mode==26 ? -EFAULT : -EOPNOTSUPP));
+			assert(live_calls[0]==1 && live_calls[1]==(mode>=25));
+			assert(runtime_live && !abort_calls && !owner_held);
+			assert(sequence[sequence_count-1]==SGX545_IOCTL_BOOT_OWNER);
+			assert(output[0]==0xfefefefe && output[1]==0xfefefefe);
+			assert(!drmClose(fd)); runtime_live=0;
+			assert(!unsetenv("GMA3600_SGX_FIRMWARE_BOOT"));
+			continue;
+		}
 		assert(drmCommandWrite(fd, 0x12, &wire, 28) == (mode == 1 ? -EACCES : mode == 2 || mode == 3 ? -ENOSPC :
 			mode == 6 || mode == 9 || mode == 11 || (mode >= 15 && mode <= 17) || mode == 19 || mode == 22 ? -EPROTO : mode == 8 ? -EUCLEAN : mode >= 4 ? -EIO : -EOPNOTSUPP));
 		assert(request->flags == 0xdeadbeef); /* original reserved word untouched */
@@ -215,6 +241,7 @@ static void handoff_tests(unsigned *input)
 
 int main(void)
 {
+	assert(!unsetenv("GMA3600_SGX_FIRMWARE_BOOT"));
 	struct sgx545_bridge32 wire = {SGX545_COMMAND(0), 28, 0, 0, 0, 0, 1};
 	unsigned before, i;
 	int fd, other;

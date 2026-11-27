@@ -16,6 +16,7 @@ def main():
         start = source.index(f"struct {name} {{")
         code += source[start:source.index("\n};", start) + 3] + "\n"
     code += "static void bridge_free(struct kref *ref);\n"
+    code += "static const struct gma_sgx_live_owner_ops live_owner_ops;\n"
     init = (root / "experimental/sgx545/core/gma3600_sgx_init.c").read_text()
     code += extract_function(init, "static void wire_roles(")
     code += extract_function(init, "int gma_sgx_init_tokens(")
@@ -29,7 +30,9 @@ def main():
         "static int bridge_device_check(", "static int stage_requirements(",
         "static int stage_prepare(", "static int stage_validate(", "static void stage_drop_metadata(", "static int stage_commit(",
         "static int stage_rollback(", "static int stage_publish(", "static int stage_owner_release(", "static int stage_runtime_stop(", "static int stage_abort(",
-        "static int stage_control(", "static int stage_content(", "static int stage_native_verify(", "static int bm_visit(", "static int stage_bm_check(", "static int stage_bm_info(", "static int stage_native_cycle(", "static int stage_runtime(", "static int stage_boot_owner(", "static int backend_disconnect(", "static void bridge_free(struct kref *ref)\n{",
+        "static int stage_control(", "static int stage_content(", "static int stage_native_verify(", "static int bm_visit(", "static int stage_bm_check(", "static int stage_bm_info(", "static int stage_native_cycle(", "static int stage_runtime(", "static int stage_boot_owner(",
+        "static int owner_no_copy(", "static int live_owner_acquire(", "static int live_owner_verify(", "static int live_owner_release(", "static int stage_live(",
+        "static int backend_disconnect(", "static void bridge_free(struct kref *ref)\n{",
         "static void bridge_file_free(", "static int bridge_open(",
         "static int bridge_release(", "static void bridge_stop(",
         "static int bridge_mmap(",
@@ -37,6 +40,7 @@ def main():
         "static int bridge_mmu_visit(", "static int bridge_mmu_check(",
     ):
         code += extract_function(source, signature)
+    code += "static const struct gma_sgx_live_owner_ops live_owner_ops = {.acquire=live_owner_acquire,.verify=live_owner_verify,.release=live_owner_release};\n"
     with tempfile.TemporaryDirectory(prefix="sgx-bridge-lifetime-") as directory:
         output = Path(directory)
         (output / "bridge_functions.inc").write_text(code)

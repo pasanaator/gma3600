@@ -1,5 +1,8 @@
 # Stage and parent ownership checkpoint
 
+Historical CPU checkpoint, now [passed on the Atom](../research/sgx545/d2500hn-stage-owner.json).
+For the current child and explicit live test use [firmware boot](SGX545-FIRMWARE-BOOT.md).
+
 Versions: **host 1.0.4-sgx-host3, services 0.18.0, transport 0.10.0**.
 The previous Atom software run passed all 13 C suites and 31 Python tests.
 This checkpoint adds actual resource ownership; it does not start firmware.

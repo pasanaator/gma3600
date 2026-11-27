@@ -1,5 +1,15 @@
 # Verified Intel SGX545 legacy artifacts
 
+Current checkpoint: **services 0.19.0 / transport 0.11.0**, using the unchanged
+host3 parent. The [Atom CPU ownership checkpoint](../../research/sgx545/d2500hn-stage-owner.json)
+passed. The next [explicit polling firmware boot](../../docs/SGX545-FIRMWARE-BOOT.md)
+uses the actual bounded native reset and one kick, with resources retained until
+reboot after sealing. Software validation is recorded in
+[live boot builds](../../research/sgx545/live-boot-6.12-build.json).
+The live hardware path has not yet been tested; no 3D acceleration is enabled.
+The checkpoint chronology below records earlier behavior and test results.
+
+
 The selected route is a hybrid SGX port for Debian 13 amd64. The normal gma3600
 kernel module remains version **1.0.4**. These research tools do not enable
 acceleration. The [first implementation and hardware test](../../experimental/sgx545/README.md)

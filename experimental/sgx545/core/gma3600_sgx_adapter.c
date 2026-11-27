@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
-/* CPU-side services and an opt-in diagnostic bridge. No GPU execution. */
+/* CPU services; separate opt-in polling firmware boot, no render submission. */
 #include <linux/atomic.h>
 #include <linux/module.h>
 #include <linux/mutex.h>
@@ -33,9 +33,13 @@ struct drm_device *gpsPVRDRMDev;
 static bool prepare;
 static bool bridge;
 static bool native_bm;
+static bool firmware_boot;
 module_param(prepare, bool, 0444);
 module_param(bridge, bool, 0444);
 module_param(native_bm, bool, 0444);
+module_param(firmware_boot, bool, 0444);
+MODULE_PARM_DESC(firmware_boot, "Permit the explicit one-shot firmware ioctl; sealed attempts require reboot (default off)");
+bool gma3600_sgx_firmware_boot_enabled(void) { return firmware_boot; }
 bool gma3600_sgx_native_bm_enabled(void) { return native_bm; }
 MODULE_PARM_DESC(native_bm, "Use retained native BM objects for device allocations (requires bridge=1)");
 MODULE_PARM_DESC(prepare, "Prepare CPU-side SGX services only; GPU execution stays disabled");
@@ -105,8 +109,8 @@ out:
 	return ret;
 }
 
-/* Internal future live-provider boundary. No ioctl or parameter calls this
- * function in the CPU-only ownership diagnostic. Once sealed, parent release
+/* Only the explicit live provider calls this; the CPU owner test does not.
+ * Once sealed, parent release
  * fails permanently, preserving stage/native/backing refs until reboot. */
 int gma3600_sgx_owner_seal(void *identity)
 {
@@ -117,6 +121,19 @@ int gma3600_sgx_owner_seal(void *identity)
 	if (!ctx || !ctx->ready || !identity || ctx->lease_owner != identity) ret = -ENOENT;
 	else if (!ctx->sgx->lease_ops->seal) ret = -EOPNOTSUPP;
 	else ret = ctx->sgx->lease_ops->seal(ctx->sgx, identity);
+	mutex_unlock(&prepare_lock);
+	return ret;
+}
+
+int gma3600_sgx_owner_hardware(void *identity, void **registers)
+{
+	struct gma_sgx_prepared *ctx;
+	int ret = 0;
+	mutex_lock(&prepare_lock);
+	ctx = active;
+	if (!ctx || !ctx->ready || !identity || ctx->lease_owner != identity ||
+	    pci_channel_offline(ctx->sgx->pdev) || ctx->sgx->pdev->current_state != PCI_D0) ret = -ENODEV;
+	else *registers = (void __force *)ctx->sgx->regs;
 	mutex_unlock(&prepare_lock);
 	return ret;
 }
@@ -188,14 +205,14 @@ static ssize_t services_show(struct device *dev, struct device_attribute *attr,
 	if (ctx->bridge)
 		gma3600_sgx_bridge_stats(ctx->bridge, &stats);
 	return sysfs_emit(buf,
-		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=disabled bridge=%s files=%u connections=%u bridge_errors=%u heap_handles=%u init_running=%u init_ran=%u buffers=%u buffer_pages=%u buffer_maps=%u buffer_errors=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u map_leases=%u native_bindings=%u native_errors=%u bm_checks=%u bm_errors=%u allocator=%s bm_allocations=%u bm_pages=%u boot_owners=%u parent_leases=%u owner_errors=%u host_abi=%u\n",
+		"state=%s devices=%u pages_live=%lu blocked_hw_accesses=%d gpu_execution=%s bridge=%s files=%u connections=%u bridge_errors=%u heap_handles=%u init_running=%u init_ran=%u buffers=%u buffer_pages=%u buffer_maps=%u buffer_errors=%u device_allocations=%u device_pages=%u device_errors=%u stages=%u staged_buffers=%u staged_pages=%u stage_errors=%u map_leases=%u native_bindings=%u native_errors=%u bm_checks=%u bm_errors=%u allocator=%s bm_allocations=%u bm_pages=%u boot_owners=%u parent_leases=%u owner_errors=%u host_abi=%u live_state=%u live_sealed=%u live_status=%08x live_error=%u live_bif=%08x live_fault=%08x\n",
 		ctx->ready ? "prepared" : "failed", ctx->devices,
-		gma3600_sgx_live_pages(), atomic_read(&blocked_io),
+		gma3600_sgx_live_pages(), atomic_read(&blocked_io), stats.live.sealed ? "experimental" : "disabled",
 		ctx->bridge ? "enabled" : "disabled", stats.files, stats.connections, stats.errors,
 		stats.heap_handles, stats.init_running, stats.init_ran,
 		stats.buffers, stats.buffer_pages, stats.buffer_maps, stats.buffer_errors,
 		stats.device_allocations, stats.device_pages, stats.device_errors,
-		stats.stages, stats.staged_buffers, stats.staged_pages, stats.stage_errors, stats.map_leases, stats.native_bindings, stats.native_errors, stats.bm_checks, stats.bm_errors, native_bm ? "native_bm" : "mmu", stats.bm_allocations, stats.bm_pages, stats.boot_owners, stats.parent_leases, stats.owner_errors, ctx->sgx->host_abi);
+		stats.stages, stats.staged_buffers, stats.staged_pages, stats.stage_errors, stats.map_leases, stats.native_bindings, stats.native_errors, stats.bm_checks, stats.bm_errors, native_bm ? "native_bm" : "mmu", stats.bm_allocations, stats.bm_pages, stats.boot_owners, stats.parent_leases, stats.owner_errors, ctx->sgx->host_abi, stats.live.state, stats.live.sealed, stats.live.init_status, stats.live.error, stats.live.bif_status, stats.live.bif_fault);
 }
 static DEVICE_ATTR_RO(services);
 static struct attribute *prepare_attrs[] = { &dev_attr_services.attr, NULL };
@@ -302,4 +319,4 @@ module_init(gma_sgx_init);
 module_exit(gma_sgx_exit);
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SGX545 CPU-side services preparation; GPU execution disabled");
-MODULE_VERSION("0.18.0");
+MODULE_VERSION("0.19.0");
